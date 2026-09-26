@@ -1,0 +1,171 @@
+<mxfile host="Electron">
+  <diagram id="arena3-court-booking-swimlane" name="Arena3 Court Booking Swimlane">
+    <mxGraphModel dx="1288" dy="783" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="lane_customer" parent="1" style="swimlane;startSize=30;html=1;horizontal=1;fontStyle=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Customer / Member (Client App)" vertex="1">
+          <mxGeometry height="760" width="280" x="40" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c_start" parent="lane_customer" style="ellipse;html=1;shape=startState;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="30" width="30" x="125" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="c_select" parent="lane_customer" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Select Court, Date&#xa;&amp;amp; Time Slot" vertex="1">
+          <mxGeometry height="50" width="140" x="70" y="105" as="geometry" />
+        </mxCell>
+        <mxCell id="c_submit_hold" parent="lane_customer" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Submit Hold Request&#xa;(POST /v1/bookings)" vertex="1">
+          <mxGeometry height="50" width="140" x="70" y="185" as="geometry" />
+        </mxCell>
+        <mxCell id="c_dec_hold" parent="lane_customer" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Hold&#xa;Successful?" vertex="1">
+          <mxGeometry height="60" width="100" x="90" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="c_conflict_alert" parent="lane_customer" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Receive Alert:&#xa;Slot already booked/overlap" vertex="1">
+          <mxGeometry height="45" width="160" x="60" y="365" as="geometry" />
+        </mxCell>
+        <mxCell id="c_receive_hold" parent="lane_customer" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Receive Hold ID&#xa;&amp;amp; 15-min Countdown" vertex="1">
+          <mxGeometry height="50" width="140" x="70" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="c_dec_pay" parent="lane_customer" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Pay Within&#xa;15-min TTL?" vertex="1">
+          <mxGeometry height="60" width="100" x="90" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="c_pay" parent="lane_customer" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Make Payment (QR /&#xa;Cash / Sport Pass Quota)" vertex="1">
+          <mxGeometry height="50" width="160" x="60" y="615" as="geometry" />
+        </mxCell>
+        <mxCell id="c_receive_ticket" parent="lane_customer" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Receive QR Access Ticket&#xa;&amp;amp; Electronic Invoice" vertex="1">
+          <mxGeometry height="50" width="160" x="60" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_api" parent="1" style="swimlane;startSize=30;html=1;horizontal=1;fontStyle=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Arena3 Backend API &amp;amp; Jobs" vertex="1">
+          <mxGeometry height="760" width="310" x="320" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="api_gen_booking" parent="lane_api" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Validate Idempotency-Key&#xa;&amp;amp; Generate Booking UUID" vertex="1">
+          <mxGeometry height="50" width="160" x="75" y="185" as="geometry" />
+        </mxCell>
+        <mxCell id="api_call_attach" parent="lane_api" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Execute Stored Function:&#xa;occupancy_attach(kind=&#39;hold&#39;)" vertex="1">
+          <mxGeometry height="50" width="170" x="70" y="275" as="geometry" />
+        </mxCell>
+        <mxCell id="job_expire" parent="lane_api" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Periodic Job: expire_holds&#xa;Cancel Expired Holds &amp;amp; Release" vertex="1">
+          <mxGeometry height="50" width="180" x="65" y="525" as="geometry" />
+        </mxCell>
+        <mxCell id="api_confirm_tx" parent="lane_api" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="BEGIN Transaction:&#xa;SELECT booking FOR UPDATE&#xa;WHERE hold_until &amp;gt; now()" vertex="1">
+          <mxGeometry height="50" width="170" x="70" y="615" as="geometry" />
+        </mxCell>
+        <mxCell id="api_issue_invoice" parent="lane_api" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Snapshot Price, Issue Invoice&#xa;&amp;amp; Set status=&#39;confirmed&#39;" vertex="1">
+          <mxGeometry height="50" width="170" x="70" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_db" parent="1" style="swimlane;startSize=30;html=1;horizontal=1;fontStyle=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="PostgreSQL DB (Occupancy Locking Engine)" vertex="1">
+          <mxGeometry height="760" width="300" x="630" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="db_check_gist" parent="lane_db" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Evaluate btree_gist&#xa;Exclusion Constraint&#xa;on [court_id, timerange]" vertex="1">
+          <mxGeometry height="55" width="160" x="70" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="db_dec_conflict" parent="lane_db" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Schedule&#xa;Conflict (Overlap)?" vertex="1">
+          <mxGeometry height="60" width="130" x="85" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="db_insert_hold" parent="lane_db" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="INSERT occupancies (kind=&#39;hold&#39;)&#xa;&amp;amp; INSERT court_bookings" vertex="1">
+          <mxGeometry height="50" width="180" x="60" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="db_release_hold" parent="lane_db" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="RELEASE/DELETE occupancy&#xa;&amp;amp; Set status=&#39;cancelled&#39;" vertex="1">
+          <mxGeometry height="50" width="170" x="65" y="525" as="geometry" />
+        </mxCell>
+        <mxCell id="end_timeout" parent="lane_db" style="ellipse;html=1;shape=endState;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="30" width="30" x="135" y="605" as="geometry" />
+        </mxCell>
+        <mxCell id="db_confirm_hold" parent="lane_db" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="occupancy_confirm_hold():&#xa;UPDATE kind=&#39;booking&#39; (same id)&#xa;&amp;amp; COMMIT" vertex="1">
+          <mxGeometry height="50" width="180" x="60" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_cashier" parent="1" style="swimlane;startSize=30;html=1;horizontal=1;fontStyle=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Cashier / Payment Gateway" vertex="1">
+          <mxGeometry height="760" width="210" x="930" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="pay_verify" parent="lane_cashier" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="Verify Payment&#xa;(Cash / Transfer / Gateway)&#xa;&amp;amp; Record Shift Audit" vertex="1">
+          <mxGeometry height="55" width="150" x="30" y="615" as="geometry" />
+        </mxCell>
+        <mxCell id="act_final" parent="lane_cashier" style="ellipse;html=1;shape=endState;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="30" width="30" x="90" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="e_start_select" edge="1" parent="1" source="c_start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="c_select">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_select_submit" edge="1" parent="1" source="c_select" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="c_submit_hold">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_submit_api" edge="1" parent="1" source="c_submit_hold" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="api_gen_booking">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_gen_attach" edge="1" parent="1" source="api_gen_booking" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="api_call_attach">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_attach_db" edge="1" parent="1" source="api_call_attach" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="db_check_gist">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_db_check_dec" edge="1" parent="1" source="db_check_gist" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="db_dec_conflict">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_conflict_yes" edge="1" parent="1" source="db_dec_conflict" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="c_conflict_alert" value="[Yes: GiST Conflict]">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="780" y="388" />
+              <mxPoint x="280" y="388" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_retry_select" edge="1" parent="1" source="c_conflict_alert" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="c_select" value="[Select Another Slot]">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="80" y="388" />
+              <mxPoint x="80" y="130" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_conflict_no" edge="1" parent="1" source="db_dec_conflict" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="db_insert_hold" value="[No: Slot Available]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hold_customer" edge="1" parent="1" source="db_insert_hold" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="c_receive_hold">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hold_pay_dec" edge="1" parent="1" source="c_receive_hold" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="c_dec_pay">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pay_timeout" edge="1" parent="1" source="c_dec_pay" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="job_expire" value="[Expired 15m / Cancelled]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_job_release" edge="1" parent="1" source="job_expire" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="db_release_hold">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_release_end" edge="1" parent="1" source="db_release_hold" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="end_timeout">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pay_yes" edge="1" parent="1" source="c_dec_pay" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="c_pay" value="[Proceed to Pay]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_customer_to_cashier" edge="1" parent="1" source="c_pay" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="pay_verify">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cashier_api_confirm" edge="1" parent="1" source="pay_verify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="api_confirm_tx">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1000" y="640" />
+              <mxPoint x="550" y="640" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_api_db_confirm" edge="1" parent="1" source="api_confirm_tx" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="db_confirm_hold">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_db_api_invoice" edge="1" parent="1" source="db_confirm_hold" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="api_issue_invoice">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_api_customer_ticket" edge="1" parent="1" source="api_issue_invoice" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="c_receive_ticket">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ticket_final" edge="1" parent="1" source="c_receive_ticket" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=1.5;strokeColor=#000000;fontColor=#000000;" target="act_final">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="210" y="715" />
+              <mxPoint x="930" y="715" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

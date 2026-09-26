@@ -1,0 +1,917 @@
+<mxfile host="Electron" pages="2">
+  <diagram id="conceptual-erd" name="1. Conceptual ERD">
+    <mxGraphModel dx="1717" dy="2143" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="c_user" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;User&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="697" y="-288" as="geometry" />
+        </mxCell>
+        <mxCell id="c_court" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;Court&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="960" y="-323" as="geometry" />
+        </mxCell>
+        <mxCell id="c_occupancy" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;Occupancy&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="700" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="c_class" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;Class&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="1184" y="-201" as="geometry" />
+        </mxCell>
+        <mxCell id="c_enrollment" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;Enrollment&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="1340" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="c_membership_plan" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;MembershipPlan&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="28" y="-312" as="geometry" />
+        </mxCell>
+        <mxCell id="c_court_booking" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;CourtBooking&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="835" y="-185" as="geometry" />
+        </mxCell>
+        <mxCell id="c_price_rule" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;PriceRule&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="700" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="c_session" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;Session&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="1020" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="c_attendance" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;Attendance&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="1340" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="c_subscription" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;Subscription&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="401" y="-129" as="geometry" />
+        </mxCell>
+        <mxCell id="c_cashier_shift" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;CashierShift&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="324" y="565" as="geometry" />
+        </mxCell>
+        <mxCell id="c_payment" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;Payment&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="700" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="c_equipment" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;Equipment&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="1020" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="c_equipment_loan" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;EquipmentLoan&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="1340" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="c_invoice" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;Invoice&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="700" y="680" as="geometry" />
+        </mxCell>
+        <mxCell id="c_invoice_line" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=13;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontColor=#000000;" value="&lt;b&gt;InvoiceLine&lt;/b&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="1077" y="587" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_user_sub" edge="1" parent="1" source="c_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" target="c_subscription" value="subscribes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_user_sub_src" connectable="0" parent="crel_user_sub" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_sub_trg" connectable="0" parent="crel_user_sub" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_plan_sub" edge="1" parent="1" source="c_membership_plan" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="c_subscription" value="defines terms">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_plan_sub_src" connectable="0" parent="crel_plan_sub" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_plan_sub_trg" connectable="0" parent="crel_plan_sub" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_booking" edge="1" parent="1" source="c_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.8;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" target="c_court_booking" value="places">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_user_booking_src" connectable="0" parent="crel_user_booking" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_booking_trg" connectable="0" parent="crel_user_booking" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_booking" edge="1" parent="1" source="c_court" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="c_court_booking" value="reserved in">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_court_booking_src" connectable="0" parent="crel_court_booking" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_booking_trg" connectable="0" parent="crel_court_booking" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_occ" edge="1" parent="1" source="c_court" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="c_occupancy" value="schedules">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_court_occ_src" connectable="0" parent="crel_court_occ" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_occ_trg" connectable="0" parent="crel_court_occ" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_booking_occ" edge="1" parent="1" source="c_court_booking" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0.2;entryY=1;entryDx=0;entryDy=0;" target="c_occupancy" value="locks slot via">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_booking_occ_src" connectable="0" parent="crel_booking_occ" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_booking_occ_trg" connectable="0" parent="crel_booking_occ" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..1" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_price" edge="1" parent="1" source="c_court" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.8;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" target="c_price_rule" value="priced by">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_court_price_src" connectable="0" parent="crel_court_price" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_price_trg" connectable="0" parent="crel_court_price" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_pair" edge="1" parent="1" source="c_court" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.3;exitY=0;exitDx=0;exitDy=0;entryX=0.7;entryY=0;entryDx=0;entryDy=0;" target="c_court" value="paired with (convertible)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="434" y="40" />
+              <mxPoint x="506" y="40" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_pair_src" connectable="0" parent="crel_court_pair" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_pair_trg" connectable="0" parent="crel_court_pair" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..1" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_class" edge="1" parent="1" source="c_court" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.9;exitY=0;exitDx=0;exitDy=0;entryX=0.1;entryY=0;entryDx=0;entryDy=0;" target="c_class" value="hosts">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="542" y="20" />
+              <mxPoint x="1038" y="20" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_class_src" connectable="0" parent="crel_court_class" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_court_class_trg" connectable="0" parent="crel_court_class" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_coach_class" edge="1" parent="1" source="c_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="c_class" value="coaches">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="150" y="10" />
+              <mxPoint x="1110" y="10" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_coach_class_src" connectable="0" parent="crel_coach_class" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_coach_class_trg" connectable="0" parent="crel_coach_class" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_class_session" edge="1" parent="1" source="c_class" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=diamond;startFill=1;startSize=12;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="c_session" value="consists of">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_class_session_src" connectable="0" parent="crel_class_session" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_class_session_trg" connectable="0" parent="crel_class_session" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_session_occ" edge="1" parent="1" source="c_session" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0;exitY=0.3;exitDx=0;exitDy=0;entryX=0.8;entryY=1;entryDx=0;entryDy=0;" target="c_occupancy" value="locks slot via">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_session_occ_src" connectable="0" parent="crel_session_occ" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_session_occ_trg" connectable="0" parent="crel_session_occ" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..1" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_class_enroll" edge="1" parent="1" source="c_class" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="c_enrollment" value="accepts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_class_enroll_src" connectable="0" parent="crel_class_enroll" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_class_enroll_trg" connectable="0" parent="crel_class_enroll" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_enroll" edge="1" parent="1" source="c_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.9;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="c_enrollment" value="registers">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="222" y="50" />
+              <mxPoint x="1430" y="50" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_enroll_src" connectable="0" parent="crel_user_enroll" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_enroll_trg" connectable="0" parent="crel_user_enroll" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_session_att" edge="1" parent="1" source="c_session" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="c_attendance" value="tracks">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_session_att_src" connectable="0" parent="crel_session_att" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_session_att_trg" connectable="0" parent="crel_session_att" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_att" edge="1" parent="1" source="c_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.8;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="c_attendance" value="recorded in">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="300" y="200" />
+              <mxPoint x="1430" y="200" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_att_src" connectable="0" parent="crel_user_att" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_att_trg" connectable="0" parent="crel_user_att" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_shift" edge="1" parent="1" source="c_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" target="c_cashier_shift" value="manages">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_user_shift_src" connectable="0" parent="crel_user_shift" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_shift_trg" connectable="0" parent="crel_user_shift" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_shift_pay" edge="1" parent="1" source="c_cashier_shift" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="c_payment" value="settles in shift">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_shift_pay_src" connectable="0" parent="crel_shift_pay" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_shift_pay_trg" connectable="0" parent="crel_shift_pay" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_pay" edge="1" parent="1" source="c_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.6;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" target="c_payment" value="makes">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="168" y="430" />
+              <mxPoint x="736" y="430" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_pay_src" connectable="0" parent="crel_user_pay" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_pay_trg" connectable="0" parent="crel_user_pay" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_booking_pay" edge="1" parent="1" source="c_court_booking" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.4;entryY=0;entryDx=0;entryDy=0;" target="c_payment" value="settled by">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_booking_pay_src" connectable="0" parent="crel_booking_pay" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_booking_pay_trg" connectable="0" parent="crel_booking_pay" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_sub_pay" edge="1" parent="1" source="c_subscription" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" target="c_payment" value="settled by">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_sub_pay_src" connectable="0" parent="crel_sub_pay" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_sub_pay_trg" connectable="0" parent="crel_sub_pay" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_pay_inv" edge="1" parent="1" source="c_payment" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="c_invoice" value="issues">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_pay_inv_src" connectable="0" parent="crel_pay_inv" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_pay_inv_trg" connectable="0" parent="crel_pay_inv" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..1" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_inv_lines" edge="1" parent="1" source="c_invoice" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=diamond;startFill=1;startSize=12;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="c_invoice_line" value="contains">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_inv_lines_src" connectable="0" parent="crel_inv_lines" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_inv_lines_trg" connectable="0" parent="crel_inv_lines" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_eq_loan" edge="1" parent="1" source="c_equipment" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="c_equipment_loan" value="loaned in">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_eq_loan_src" connectable="0" parent="crel_eq_loan" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_eq_loan_trg" connectable="0" parent="crel_eq_loan" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_loan" edge="1" parent="1" source="c_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.9;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="c_equipment_loan" value="borrows">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="222" y="400" />
+              <mxPoint x="1430" y="400" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_loan_src" connectable="0" parent="crel_user_loan" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_user_loan_trg" connectable="0" parent="crel_user_loan" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_booking_loan" edge="1" parent="1" source="c_court_booking" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.8;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" target="c_equipment_loan" value="associated with">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="crel_booking_loan_src" connectable="0" parent="crel_booking_loan" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..1" vertex="1">
+          <mxGeometry relative="1" x="-0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="crel_booking_loan_trg" connectable="0" parent="crel_booking_loan" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" value="0..*" vertex="1">
+          <mxGeometry relative="1" x="0.75" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="logical-erd" name="2. Logical ERD">
+    <mxGraphModel dx="1400" dy="950" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1300" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="l_user" value="&lt;b&gt;User&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="60" y="80" width="210" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="l_user_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ userId : ID [PK]&lt;/div&gt;&lt;div&gt;+ memberCode : String&lt;/div&gt;&lt;div&gt;+ fullName : String&lt;/div&gt;&lt;div&gt;+ phone : String&lt;/div&gt;&lt;div&gt;+ email : String&lt;/div&gt;&lt;div&gt;+ role : UserRole&lt;/div&gt;&lt;div&gt;+ status : UserStatus&lt;/div&gt;&lt;div&gt;+ dateOfBirth : Date&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_user">
+          <mxGeometry y="28" width="210" height="172" as="geometry" />
+        </mxCell>
+        <mxCell id="l_court" value="&lt;b&gt;Court&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="390" y="80" width="210" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="l_court_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ courtId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ pairCourtId : ID [FK]&lt;/div&gt;&lt;div&gt;+ courtCode : String&lt;/div&gt;&lt;div&gt;+ sportType : SportKind&lt;/div&gt;&lt;div&gt;+ status : CourtStatus&lt;/div&gt;&lt;div&gt;+ isConvertible : Boolean&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_court">
+          <mxGeometry y="28" width="210" height="132" as="geometry" />
+        </mxCell>
+        <mxCell id="l_occupancy" value="&lt;b&gt;Occupancy&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="710" y="80" width="210" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="l_occupancy_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ occupancyId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ courtId : ID [FK]&lt;/div&gt;&lt;div&gt;+ startTime : DateTime&lt;/div&gt;&lt;div&gt;+ endTime : DateTime&lt;/div&gt;&lt;div&gt;+ occupancyType : OccKind&lt;/div&gt;&lt;div&gt;+ reason : String&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_occupancy">
+          <mxGeometry y="28" width="210" height="132" as="geometry" />
+        </mxCell>
+        <mxCell id="l_class" value="&lt;b&gt;Class&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="80" width="220" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="l_class_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ classId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ coachId : ID [FK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ courtId : ID [FK]&lt;/div&gt;&lt;div&gt;+ className : String&lt;/div&gt;&lt;div&gt;+ sportType : SportKind&lt;/div&gt;&lt;div&gt;+ level : String&lt;/div&gt;&lt;div&gt;+ capacity : Integer&lt;/div&gt;&lt;div&gt;+ enrolledCount : Integer&lt;/div&gt;&lt;div&gt;+ scheduleRule : String&lt;/div&gt;&lt;div&gt;+ startDate : Date&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_class">
+          <mxGeometry y="28" width="220" height="192" as="geometry" />
+        </mxCell>
+        <mxCell id="l_enrollment" value="&lt;b&gt;Enrollment&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="80" width="210" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="l_enrollment_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ enrollmentId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ classId : ID [FK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ userId : ID [FK]&lt;/div&gt;&lt;div&gt;+ enrollDate : Date&lt;/div&gt;&lt;div&gt;+ status : EnrollStatus&lt;/div&gt;&lt;div&gt;+ waitlistPosition : Integer&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_enrollment">
+          <mxGeometry y="28" width="210" height="122" as="geometry" />
+        </mxCell>
+        <mxCell id="l_membership_plan" value="&lt;b&gt;MembershipPlan&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="60" y="360" width="210" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="l_membership_plan_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ planId : ID [PK]&lt;/div&gt;&lt;div&gt;+ planName : String&lt;/div&gt;&lt;div&gt;+ sportScope : SportKind&lt;/div&gt;&lt;div&gt;+ durationDays : Integer&lt;/div&gt;&lt;div&gt;+ courtHours : Integer&lt;/div&gt;&lt;div&gt;+ sessionQuota : Integer&lt;/div&gt;&lt;div&gt;+ courtDiscountPct : Integer&lt;/div&gt;&lt;div&gt;+ price : Money&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_membership_plan">
+          <mxGeometry y="28" width="210" height="162" as="geometry" />
+        </mxCell>
+        <mxCell id="l_court_booking" value="&lt;b&gt;CourtBooking&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="390" y="340" width="220" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="l_court_booking_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ bookingId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ courtId : ID [FK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ userId : ID [FK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ occupancyId : ID [FK]&lt;/div&gt;&lt;div&gt;+ bookingCode : String&lt;/div&gt;&lt;div&gt;+ startTime : DateTime&lt;/div&gt;&lt;div&gt;+ endTime : DateTime&lt;/div&gt;&lt;div&gt;+ status : BookingStatus&lt;/div&gt;&lt;div&gt;+ channel : BookingChannel&lt;/div&gt;&lt;div&gt;+ price : Money&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_court_booking">
+          <mxGeometry y="28" width="220" height="182" as="geometry" />
+        </mxCell>
+        <mxCell id="l_price_rule" value="&lt;b&gt;PriceRule&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="710" y="340" width="210" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="l_price_rule_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ ruleId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ courtId : ID [FK]&lt;/div&gt;&lt;div&gt;+ sportType : SportKind&lt;/div&gt;&lt;div&gt;+ dayType : DayKind&lt;/div&gt;&lt;div&gt;+ startTime : Time&lt;/div&gt;&lt;div&gt;+ endTime : Time&lt;/div&gt;&lt;div&gt;+ hourlyRate : Money&lt;/div&gt;&lt;div&gt;+ isPeak : Boolean&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_price_rule">
+          <mxGeometry y="28" width="210" height="142" as="geometry" />
+        </mxCell>
+        <mxCell id="l_session" value="&lt;b&gt;Session&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="360" width="220" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="l_session_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ sessionId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ classId : ID [FK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ occupancyId : ID [FK]&lt;/div&gt;&lt;div&gt;+ startTime : DateTime&lt;/div&gt;&lt;div&gt;+ endTime : DateTime&lt;/div&gt;&lt;div&gt;+ status : SessionStatus&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_session">
+          <mxGeometry y="28" width="220" height="122" as="geometry" />
+        </mxCell>
+        <mxCell id="l_attendance" value="&lt;b&gt;Attendance&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="360" width="210" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="l_attendance_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ attendanceId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ userId : ID [FK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ sessionId : ID [FK]&lt;/div&gt;&lt;div&gt;+ checkInTime : DateTime&lt;/div&gt;&lt;div&gt;+ attendanceType : AttendKind&lt;/div&gt;&lt;div&gt;+ result : AttendResult&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_attendance">
+          <mxGeometry y="28" width="210" height="122" as="geometry" />
+        </mxCell>
+        <mxCell id="l_subscription" value="&lt;b&gt;Subscription&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="60" y="630" width="210" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="l_subscription_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ subscriptionId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ userId : ID [FK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ planId : ID [FK]&lt;/div&gt;&lt;div&gt;+ sportScope : SportKind&lt;/div&gt;&lt;div&gt;+ startDate : Date&lt;/div&gt;&lt;div&gt;+ endDate : Date&lt;/div&gt;&lt;div&gt;+ status : SubStatus&lt;/div&gt;&lt;div&gt;+ remainingCourtHours : Decimal&lt;/div&gt;&lt;div&gt;+ remainingSessions : Integer&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_subscription">
+          <mxGeometry y="28" width="210" height="162" as="geometry" />
+        </mxCell>
+        <mxCell id="l_cashier_shift" value="&lt;b&gt;CashierShift&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="390" y="630" width="210" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="l_cashier_shift_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ shiftId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ receptionistId : ID [FK]&lt;/div&gt;&lt;div&gt;+ openTime : DateTime&lt;/div&gt;&lt;div&gt;+ closeTime : DateTime&lt;/div&gt;&lt;div&gt;+ cashDeclared : Money&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_cashier_shift">
+          <mxGeometry y="28" width="210" height="112" as="geometry" />
+        </mxCell>
+        <mxCell id="l_payment" value="&lt;b&gt;Payment&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="710" y="610" width="220" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="l_payment_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ paymentId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ userId : ID [FK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ shiftId : ID [FK]&lt;/div&gt;&lt;div&gt;+ paymentCode : String&lt;/div&gt;&lt;div&gt;+ paymentMethod : PayMethod&lt;/div&gt;&lt;div&gt;+ amount : Money&lt;/div&gt;&lt;div&gt;+ status : PayStatus&lt;/div&gt;&lt;div&gt;+ referenceType : String&lt;/div&gt;&lt;div&gt;+ paymentDate : DateTime&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_payment">
+          <mxGeometry y="28" width="220" height="162" as="geometry" />
+        </mxCell>
+        <mxCell id="l_equipment" value="&lt;b&gt;Equipment&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="610" width="210" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="l_equipment_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ equipmentId : ID [PK]&lt;/div&gt;&lt;div&gt;+ itemCode : String&lt;/div&gt;&lt;div&gt;+ itemName : String&lt;/div&gt;&lt;div&gt;+ sportType : SportKind&lt;/div&gt;&lt;div&gt;+ stockQuantity : Integer&lt;/div&gt;&lt;div&gt;+ rentalFee : Money&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_equipment">
+          <mxGeometry y="28" width="210" height="132" as="geometry" />
+        </mxCell>
+        <mxCell id="l_equipment_loan" value="&lt;b&gt;EquipmentLoan&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="610" width="220" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="l_equipment_loan_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ loanId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ equipmentId : ID [FK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ userId : ID [FK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ bookingId : ID [FK]&lt;/div&gt;&lt;div&gt;+ quantity : Integer&lt;/div&gt;&lt;div&gt;+ status : LoanStatus&lt;/div&gt;&lt;div&gt;+ dueDate : DateTime&lt;/div&gt;&lt;div&gt;+ returnedDate : DateTime&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_equipment_loan">
+          <mxGeometry y="28" width="220" height="142" as="geometry" />
+        </mxCell>
+        <mxCell id="l_invoice" value="&lt;b&gt;Invoice&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="710" y="880" width="220" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="l_invoice_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ invoiceId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ paymentId : ID [FK]&lt;/div&gt;&lt;div&gt;+ invoiceCode : String&lt;/div&gt;&lt;div&gt;+ buyerName : String&lt;/div&gt;&lt;div&gt;+ buyerTaxCode : String&lt;/div&gt;&lt;div&gt;+ issueDate : DateTime&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_invoice">
+          <mxGeometry y="28" width="220" height="122" as="geometry" />
+        </mxCell>
+        <mxCell id="l_invoice_line" value="&lt;b&gt;InvoiceLine&lt;/b&gt;" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=0;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="880" width="210" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="l_invoice_line_attrs" value="&lt;div style=&#39;font-weight:bold;text-decoration:underline;&#39;&gt;+ lineId : ID [PK]&lt;/div&gt;&lt;div style=&#39;font-style:italic;&#39;&gt;+ invoiceId : ID [FK]&lt;/div&gt;&lt;div&gt;+ itemDescription : String&lt;/div&gt;&lt;div&gt;+ quantity : Integer&lt;/div&gt;&lt;div&gt;+ unitPrice : Money&lt;/div&gt;&lt;div&gt;+ totalAmount : Money&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;spacingRight=6;overflow=hidden;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#000000;lineHeight=1.5;" vertex="1" parent="l_invoice_line">
+          <mxGeometry y="28" width="210" height="122" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_user_sub" value="subscribes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_user" target="l_subscription" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_user_sub_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_sub">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_sub_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_sub">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_plan_sub" value="defines terms" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_membership_plan" target="l_subscription" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_plan_sub_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_plan_sub">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_plan_sub_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_plan_sub">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_booking" value="places" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.8;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_user" target="l_court_booking" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_user_booking_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_booking">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_booking_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_booking">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_booking" value="reserved in" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_court" target="l_court_booking" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_court_booking_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_court_booking">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_booking_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_court_booking">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_occ" value="schedules" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="l_court" target="l_occupancy" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_court_occ_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_court_occ">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_occ_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_court_occ">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_booking_occ" value="locks slot via" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0.2;entryY=1;entryDx=0;entryDy=0;" edge="1" source="l_court_booking" target="l_occupancy" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_booking_occ_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_booking_occ">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_booking_occ_trg" value="0..1" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_booking_occ">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_price" value="priced by" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.8;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_court" target="l_price_rule" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_court_price_src" value="0..1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_court_price">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_price_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_court_price">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_pair" value="paired with (convertible)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.3;exitY=0;exitDx=0;exitDy=0;entryX=0.7;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_court" target="l_court" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="453" y="40" />
+              <mxPoint x="537" y="40" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_pair_src" value="0..1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_court_pair">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_pair_trg" value="0..1" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_court_pair">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_class" value="hosts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.9;exitY=0;exitDx=0;exitDy=0;entryX=0.1;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_court" target="l_class" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="579" y="20" />
+              <mxPoint x="1052" y="20" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_class_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_court_class">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_court_class_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_court_class">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_coach_class" value="coaches" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_user" target="l_class" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="165" y="10" />
+              <mxPoint x="1140" y="10" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_coach_class_src" value="0..1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_coach_class">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_coach_class_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_coach_class">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_class_session" value="consists of" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=diamond;startFill=1;startSize=12;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_class" target="l_session" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_class_session_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_class_session">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_class_session_trg" value="1..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_class_session">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_session_occ" value="locks slot via" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0;exitY=0.3;exitDx=0;exitDy=0;entryX=0.8;entryY=1;entryDx=0;entryDy=0;" edge="1" source="l_session" target="l_occupancy" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_session_occ_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_session_occ">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_session_occ_trg" value="0..1" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_session_occ">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_class_enroll" value="accepts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="l_class" target="l_enrollment" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_class_enroll_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_class_enroll">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_class_enroll_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_class_enroll">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_enroll" value="registers" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.9;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_user" target="l_enrollment" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="249" y="50" />
+              <mxPoint x="1465" y="50" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_enroll_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_enroll">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_enroll_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_enroll">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_session_att" value="tracks" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="l_session" target="l_attendance" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_session_att_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_session_att">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_session_att_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_session_att">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_att" value="recorded in" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.8;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_user" target="l_attendance" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="320" y="240" />
+              <mxPoint x="1465" y="240" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_att_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_att">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_att_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_att">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_shift" value="manages" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_user" target="l_cashier_shift" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_user_shift_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_shift">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_shift_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_shift">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_shift_pay" value="settles in shift" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="l_cashier_shift" target="l_payment" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_shift_pay_src" value="0..1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_shift_pay">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_shift_pay_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_shift_pay">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_pay" value="makes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.6;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_user" target="l_payment" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="186" y="520" />
+              <mxPoint x="754" y="520" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_pay_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_pay">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_pay_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_pay">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_booking_pay" value="settled by" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.4;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_court_booking" target="l_payment" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_booking_pay_src" value="0..1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_booking_pay">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_booking_pay_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_booking_pay">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_sub_pay" value="settled by" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" edge="1" source="l_subscription" target="l_payment" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_sub_pay_src" value="0..1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_sub_pay">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_sub_pay_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_sub_pay">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_pay_inv" value="issues" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_payment" target="l_invoice" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_pay_inv_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_pay_inv">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_pay_inv_trg" value="0..1" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_pay_inv">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_inv_lines" value="contains" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=diamond;startFill=1;startSize=12;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="l_invoice" target="l_invoice_line" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_inv_lines_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_inv_lines">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_inv_lines_trg" value="1..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_inv_lines">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_eq_loan" value="loaned in" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="l_equipment" target="l_equipment_loan" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_eq_loan_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_eq_loan">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_eq_loan_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_eq_loan">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_loan" value="borrows" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=0.9;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="l_user" target="l_equipment_loan" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="249" y="440" />
+              <mxPoint x="1470" y="440" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_loan_src" value="1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_loan">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_user_loan_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_user_loan">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_booking_loan" value="associated with" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#000000;startArrow=none;endArrow=none;exitX=1;exitY=0.8;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" edge="1" source="l_court_booking" target="l_equipment_loan" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lrel_booking_loan_src" value="0..1" style="edgeLabel;html=1;align=left;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_booking_loan">
+          <mxGeometry x="-0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lrel_booking_loan_trg" value="0..*" style="edgeLabel;html=1;align=right;verticalAlign=bottom;resizable=0;points=[];fontSize=11;fontFamily=Helvetica;fontColor=#000000;fontStyle=1;" vertex="1" connectable="0" parent="lrel_booking_loan">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <mxPoint y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
