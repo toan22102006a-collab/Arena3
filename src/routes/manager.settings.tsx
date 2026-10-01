@@ -17,7 +17,6 @@ const FLAG_META: { key: string; label: string; hint: string }[] = [
   { key: "F4", label: "Register & session plans", hint: "Coaches take attendance and hand out drills." },
   { key: "F5", label: "Plan suggestions", hint: "Drill templates per sport — a coach still has to approve." },
   { key: "F6", label: "Member assistant", hint: "Gemini Q&A, grounded in the timetable, plans and coaches." },
-  { key: "SMS", label: "SMS (outbox)", hint: "Logged only — no carrier is wired up yet." },
 ];
 
 function Page() {

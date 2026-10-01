@@ -77,9 +77,51 @@ export async function nextCode(sql: Sql, kind: string): Promise<string> {
   return row?.next_doc_code ?? `${kind}-0000`;
 }
 
+/**
+ * The next order code to hand a payment provider.
+ *
+ * Deliberately NOT `next_doc_code`. A document number is this centre's own
+ * bookkeeping and may legitimately restart — on a fresh install, a restored
+ * backup, a wiped demo database. An order code is a promise to somebody else's
+ * system: payOS remembers every code it has ever seen and rejects a repeat, so
+ * a number that can move backwards is a payment feature that stops working
+ * one day with no change to the code.
+ *
+ * Two sources, whichever is higher:
+ *
+ *  - **The clock**, in milliseconds. Monotonic across any database reset,
+ *    because it does not come from the database at all.
+ *  - **The recorded high-water mark**, which covers the case the clock cannot:
+ *    a machine whose time is wrong, or a snapshot restored from the future.
+ *
+ * `GREATEST` in a single statement, so two requests racing cannot both read
+ * the same previous value — the second one sees the first one's write.
+ *
+ * `provider_sequences` is the one piece of state here that cannot be rebuilt
+ * from anything else, because the authority for it is the provider's records
+ * rather than ours. Migration 0018 explains how to carry it to a new database.
+ */
+export async function nextOrderCode(sql: Sql, provider: string): Promise<number> {
+  const row = await one<{ last_order_code: string | number }>(
+    sql,
+    `insert into provider_sequences (provider, last_order_code, updated_at)
+     values ($1, $2, now())
+     on conflict (provider) do update
+       set last_order_code = greatest(provider_sequences.last_order_code + 1, excluded.last_order_code),
+           updated_at = now()
+     returning last_order_code`,
+    [provider, Date.now()],
+  );
+  const code = Number(row?.last_order_code ?? Date.now());
+  if (!Number.isSafeInteger(code)) {
+    throw err.validation(`Order code ${code} is outside the range the gateway accepts.`);
+  }
+  return code;
+}
+
 export async function enqueue(
   sql: Sql,
-  channel: "inapp" | "sms",
+  channel: "inapp" | "email",
   template: string,
   userId: string | null,
   payload: unknown,
@@ -116,6 +158,64 @@ export async function enqueueReceipt(
 ) {
   if (!userId) return;
   await enqueue(sql, "inapp", "payment_receipt", userId, receipt, `payment_receipt|${receipt.payment_id}`);
+}
+
+/**
+ * Write an invoice and its single goods line for a payment just taken.
+ *
+ * Three routes take money — the till, a member confirming a court, and a
+ * walk-in at the desk — and each used to write its own `insert into invoices`
+ * with a different set of columns. That is how the seller block and the tax
+ * split came to be filled in on one path and left null on the other two, and
+ * how two of the three ended up with unaccented goods lines. One writer means
+ * an invoice carries the same fields regardless of which door the money came
+ * through.
+ *
+ * Counter prices are tax-inclusive, so `amountVnd` IS the payable total and the
+ * net is derived from it. Flooring the net and taking VAT as the remainder
+ * keeps `subtotal + vat = total` exact, which reconciliation checks.
+ */
+export async function issueInvoice(
+  sql: Sql,
+  args: {
+    paymentId: string;
+    buyerName: string;
+    amountVnd: number;
+    vatRate: number;
+    description: string;
+    unit: string;
+    settings: Pick<Settings, "legal_name" | "tax_code" | "address">;
+  },
+): Promise<string> {
+  const code = await nextCode(sql, "INV");
+  const subtotal = Math.floor(args.amountVnd / (1 + args.vatRate / 100));
+  const inv = await one<{ id: string }>(
+    sql,
+    `insert into invoices
+       (code, payment_id, buyer_name, form_no, serial_no,
+        seller_legal_name, seller_tax_code, seller_address,
+        subtotal_vnd, vat_rate, vat_vnd, total_vnd)
+     values ($1,$2,$3,'1',$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
+    [
+      code,
+      args.paymentId,
+      args.buyerName,
+      `A3${new Date().getFullYear().toString().slice(2)}E`,
+      args.settings.legal_name,
+      args.settings.tax_code,
+      args.settings.address,
+      subtotal,
+      args.vatRate,
+      args.amountVnd - subtotal,
+      args.amountVnd,
+    ],
+  );
+  await sql.query(
+    `insert into invoice_lines (invoice_id, description, unit, qty, unit_vnd, amount_vnd)
+     values ($1,$2,$3,1,$4,$4)`,
+    [inv!.id, args.description, args.unit, args.amountVnd],
+  );
+  return inv!.id;
 }
 
 export async function withIdempotency(

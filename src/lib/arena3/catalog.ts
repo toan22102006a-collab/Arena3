@@ -33,6 +33,73 @@ export type CatalogPrice = {
   court_id?: string | null;
 };
 
+export type CatalogCourt = {
+  id: string;
+  court_code: string;
+  sport: string;
+  status: string;
+  convertible: boolean;
+  pair_court_id: string | null;
+};
+
+export type CatalogSlot = {
+  court_id: string;
+  start: string;
+  end: string;
+  kind: string;
+};
+
+/**
+ * Today's court schedule, for somebody who has not signed in.
+ *
+ * The first question a visitor has is "is there a court free at seven tonight",
+ * and until now the only way to answer it was to create an account — which is
+ * the wrong way round: nobody buys a membership to find out whether the place
+ * has room for them. This is the same occupancy the booking grid draws, minus
+ * the one thing that is nobody else's business: `ref_id`, the booking or
+ * enrolment the hour belongs to. What is left is when the building is busy,
+ * which is what a sign on the door would say anyway.
+ */
+export const getPublicAvailability = createServerFn({ method: "POST" })
+  .inputValidator((input: { date?: string } | undefined) => {
+    const date = input?.date ?? "";
+    return { date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "" };
+  })
+  .handler(async ({ data }) => {
+    const { getSql } = await import("@/lib/db");
+    const { ictDateString, ictDateTime } = await import("./time");
+    const sql = await getSql();
+    const date = data.date || ictDateString();
+    const start = ictDateTime(date, "00:00");
+    const end = new Date(ictDateTime(date, "23:59").getTime() + 60_000);
+    const [courts, slots] = await Promise.all([
+      sql.query<CatalogCourt>(
+        `select id, court_code, sport, status, convertible, pair_court_id
+           from courts order by court_code`,
+      ),
+      sql.query<{ court_id: string; start_at: string | Date; end_at: string | Date; kind: string }>(
+        `select court_id, start_at, end_at, kind
+           from occupancies
+          where start_at < $2 and end_at > $1
+          order by court_id, start_at`,
+        [start.toISOString(), end.toISOString()],
+      ),
+    ]);
+    return {
+      date,
+      courts,
+      // Normalised here rather than left to the serializer: the two drivers
+      // this runs on (pg and PGlite) hand back timestamps in different shapes,
+      // and every reader of this downstream does `new Date(slot.start)`.
+      slots: slots.map<CatalogSlot>((r) => ({
+        court_id: r.court_id,
+        start: new Date(r.start_at).toISOString(),
+        end: new Date(r.end_at).toISOString(),
+        kind: r.kind,
+      })),
+    };
+  });
+
 export const getPublicCatalog = createServerFn({ method: "POST" }).handler(async () => {
   const { getSql } = await import("@/lib/db");
   const sql = await getSql();

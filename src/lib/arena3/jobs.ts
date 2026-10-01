@@ -96,37 +96,81 @@ export async function expiryReminders() {
          on conflict (dedupe_key) do nothing`,
         [t.user_id, JSON.stringify({ days, end_on: t.end_on }), key],
       );
-      if (await flagOn(sql, "SMS")) {
-        await sql.query(
-          `insert into outbox (channel, template, user_id, payload, dedupe_key)
-           values ('sms', 'sub_expiring', $1, $2::jsonb, $3)
-           on conflict (dedupe_key) do nothing`,
-          [t.user_id, JSON.stringify({ days, end_on: t.end_on }), `sms|${key}`],
-        );
-      }
     }
     return targets.length;
   });
 }
 
+/**
+ * Hand queued notifications to their transport.
+ *
+ * Two things were wrong here. Everything was marked `sent_at = now()`
+ * regardless — SMS was logged to the server console and email had no branch at
+ * all, so a notification the centre believed it had sent had in fact gone
+ * nowhere. And `attempts` was only incremented on the way past, which is to
+ * say only on success: a transport that kept failing never counted a single
+ * attempt, so the `attempts < 5` cap could not stop anything.
+ *
+ * Now a row is stamped sent only when the transport says it delivered;
+ * otherwise the attempt is counted and the row stays in the queue until it
+ * either goes out or hits the cap.
+ */
 export async function notifyFlush() {
+  const { deliver } = await import("./notify");
   return withTx(async (sql) => {
-    const rows = await sql.query<{ id: string; channel: string; template: string }>(
-      `select id, channel, template from outbox
-        where sent_at is null and attempts < 5
-        order by created_at
+    const rows = await sql.query<{
+      id: string;
+      channel: string;
+      template: string;
+      payload: Record<string, unknown> | null;
+      email: string | null;
+      phone: string | null;
+    }>(
+      `select o.id, o.channel, o.template, o.payload, u.email, u.phone
+         from outbox o
+         left join users u on u.id = o.user_id
+        where o.sent_at is null and o.attempts < 5
+        order by o.created_at
         limit 50`,
     );
+    let sent = 0;
     for (const r of rows) {
-      if (r.channel === "sms") {
-        console.info("[sms-stub]", r.template, r.id);
+      const to = r.channel === "email" ? r.email : null;
+      const result = await deliver({
+        channel: r.channel as "inapp" | "email",
+        template: r.template,
+        to,
+        payload: r.payload ?? {},
+      });
+      if (result.sent) {
+        await sql.query(`update outbox set sent_at = now(), attempts = attempts + 1 where id = $1`, [
+          r.id,
+        ]);
+        sent += 1;
+      } else {
+        // Leave sent_at null so it is retried, but count the try so a
+        // permanently failing message eventually stops.
+        await sql.query(`update outbox set attempts = attempts + 1 where id = $1`, [r.id]);
+        console.warn(`[notify] ${r.channel}/${r.template} not sent: ${result.detail ?? "unknown"}`);
       }
-      await sql.query(
-        `update outbox set sent_at = now(), attempts = attempts + 1 where id = $1`,
-        [r.id],
-      );
     }
-    return rows.length;
+    return sent;
+  });
+}
+
+/**
+ * Withdraw payOS links whose court hold has lapsed.
+ *
+ * A live link outliving its slot means a customer can still pay for a court
+ * somebody else now holds. Cancelling it at the gateway stops the money
+ * arriving, which is a great deal simpler than refunding it afterwards.
+ */
+export async function expireGatewayLinks() {
+  const { payosConfigured } = await import("./payos");
+  if (!payosConfigured()) return 0;
+  return withTx(async (sql) => {
+    const { expireOnlineLinks } = await import("./handlers/online");
+    return expireOnlineLinks(sql);
   });
 }
 
@@ -219,6 +263,10 @@ const DUE_PROBE = `
             where b.status = 'in_use' and b.end_at + interval '10 minutes' < now())     as complete_bookings,
     exists(select 1 from outbox
             where sent_at is null and attempts < 5)                                     as notify_flush,
+    exists(select 1 from payments p
+            left join court_bookings b on p.ref_type = 'booking' and b.id = p.ref_id
+            where p.status::text = 'pending' and p.provider = 'payos'
+              and (b.id is null or b.status <> 'hold' or b.hold_until < now()))          as expire_links,
     exists(select 1 from waitlist_offers
             where status = 'pending' and expires_at < now())                            as waitlist_expire,
     exists(select 1 from sessions
@@ -238,6 +286,7 @@ type DueFlags = {
   mark_noshow: boolean;
   complete_bookings: boolean;
   notify_flush: boolean;
+  expire_links: boolean;
   waitlist_expire: boolean;
   lock_attendance: boolean;
   subscription_status: boolean;
@@ -254,6 +303,7 @@ export async function runDueJobs() {
     if (due.mark_noshow) await markNoshow();
     if (due.complete_bookings) await completeBookings();
     if (due.notify_flush) await notifyFlush();
+    if (due.expire_links) await expireGatewayLinks();
     if (due.waitlist_expire) await waitlistExpire();
     if (due.lock_attendance) await lockAttendance();
     if (due.subscription_status) await subscriptionStatus();

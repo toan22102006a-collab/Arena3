@@ -12,6 +12,49 @@ import {
 } from "../session";
 import { one } from "../tx";
 
+/**
+ * Whether the OTP may be handed straight back to whoever asked for it.
+ *
+ * There is no SMS transport (see SRS §1.3), so registration and password reset
+ * returned the code in the response body to keep the demo usable. That makes
+ * the OTP no barrier at all: anyone can register — or reset the password of —
+ * any phone number they can type, because the challenge and its answer arrive
+ * in the same reply.
+ *
+ * It stays on for local work, where the alternative is an unusable sign-up
+ * form, and goes off the moment the app is running for real. `OTP_ECHO=1`
+ * forces it back on for a staged demo, deliberately and in writing, rather
+ * than by default.
+ */
+function mayEchoOtp(): boolean {
+  if (process.env.OTP_ECHO === "1") return true;
+  if (process.env.OTP_ECHO === "0") return false;
+  return process.env.NODE_ENV !== "production";
+}
+
+/**
+ * Get the code to the person asking for it.
+ *
+ * Email is the only channel this centre can actually reach somebody on: SMS to
+ * a Vietnamese number needs a registered sender ID, which needs a registered
+ * company (see `notify.ts`). Returning a masked address rather than a bare
+ * boolean lets the sign-up screen say "check nam@example.com" — the single most
+ * useful thing it can tell somebody staring at an empty code box — without
+ * echoing an address back to whoever typed it.
+ */
+async function deliverOtp(email: string | null | undefined, otp: string): Promise<{ sentTo: string | null }> {
+  if (!email) return { sentTo: null };
+  const { deliver } = await import("../notify");
+  const result = await deliver({ channel: "email", template: "otp", to: email, payload: { otp } });
+  if (!result.sent) {
+    console.warn(`[otp] could not email the code: ${result.detail ?? "unknown"}`);
+    return { sentTo: null };
+  }
+  const [name, domain] = email.split("@");
+  const masked = name && domain ? `${name.slice(0, 2)}${"*".repeat(Math.max(1, name.length - 2))}@${domain}` : null;
+  return { sentTo: masked };
+}
+
 async function loadUser(sql: Sql, id: string) {
   const u = await one<Record<string, unknown>>(
     sql,
@@ -72,10 +115,20 @@ export async function register(sql: Sql, request: Request) {
       }),
     ],
   );
-  console.info("[otp-stub] register", phone, otp);
+  // Sent, not queued. An OTP lives five minutes; waiting for the next pass of
+  // the outbox dispatcher would spend a meaningful part of that on nothing.
+  const delivery = await deliverOtp(email, otp);
+  const echo = mayEchoOtp();
   return {
     status: 202,
-    body: { challenge_id: row!.id, otp, staging: true, message: "OTP (demo environment) — enter it to verify." },
+    body: {
+      challenge_id: row!.id,
+      ...(echo ? { otp, staging: true } : {}),
+      sent_to: delivery.sentTo,
+      message: echo
+        ? "OTP (demo environment) — enter it to verify."
+        : "We have sent you a verification code.",
+    },
   };
 }
 
@@ -199,7 +252,11 @@ export async function forgot(sql: Sql, request: Request) {
   const body = await readJson(request);
   const phone = normalizePhone(str(body.phone) ?? "");
   if (!isValidVnPhone(phone)) throw err.validation("That phone number is not valid.");
-  const user = await one(sql, `select id from users where phone = $1`, [phone]);
+  const user = await one<{ id: string; email: string | null }>(
+    sql,
+    `select id, email from users where phone = $1`,
+    [phone],
+  );
   const otp = randomOtp();
   const row = await one<{ id: string }>(
     sql,
@@ -208,10 +265,17 @@ export async function forgot(sql: Sql, request: Request) {
      returning id`,
     [phone, hashOtp(otp)],
   );
-  console.info("[otp-stub] reset", phone, user ? otp : "(no user)");
+  // Only a real account gets a message; the response looks the same either
+  // way so this cannot be used to find out who has an account here.
+  const delivery = user ? await deliverOtp(user.email, otp) : { sentTo: null };
+  const echo = mayEchoOtp();
   return {
     status: 202,
-    body: { challenge_id: row!.id, otp: user ? otp : undefined, staging: true },
+    body: {
+      challenge_id: row!.id,
+      ...(echo && user ? { otp, staging: true } : {}),
+      sent_to: delivery.sentTo,
+    },
   };
 }
 

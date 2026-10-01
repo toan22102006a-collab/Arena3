@@ -1,6 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { toast } from "sonner";
 import { CourtGrid, type Court, type OccSlot } from "@/components/court-grid";
 import { Cover, MediaCaption, media } from "@/components/media";
@@ -21,6 +31,8 @@ type Rev = {
   totals: { revenue_vnd: number; gross_vnd?: number; refund_vnd: number; quota_hours: number };
   by_source: Record<string, number>;
   by_method: Record<string, number>;
+  /** One row per ICT day in the window, including days with no takings. */
+  by_day?: Array<{ day: string; revenue_vnd: number }>;
 };
 
 type Occ = { date: string; items: Array<{ court_code: string; minutes: number; pct: number }> };
@@ -54,6 +66,31 @@ function delta(cur: number, prev: number, upIsGood: boolean): Trend {
     good: pct === 0 ? null : pct > 0 === upIsGood,
   };
 }
+
+/**
+ * Axis ticks in the shortest form that is still unambiguous.
+ *
+ * Full VND on an axis is six to nine digits per tick, which crowds them into
+ * each other; the tooltip carries the exact figure.
+ */
+function compactVnd(v: number): string {
+  if (!v) return "0";
+  if (Math.abs(v) >= 1_000_000) return `${Math.round(v / 100_000) / 10}tr`;
+  if (Math.abs(v) >= 1_000) return `${Math.round(v / 1_000)}k`;
+  return String(v);
+}
+
+/** One tooltip skin for every chart on the page, in the app's own surface. */
+const TOOLTIP = {
+  formatter: (v: unknown) => money(Number(v ?? 0)),
+  contentStyle: {
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-line)",
+    borderRadius: 12,
+    fontSize: 12,
+  },
+  labelStyle: { color: "var(--color-muted)", fontSize: 11 },
+} as const;
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
   const body = rows
@@ -118,6 +155,17 @@ function Page() {
     name: methodLabel(k),
     vnd: v,
   }));
+  // Biggest first: a magnitude comparison is read down the list, and leaving it
+  // in map order makes the reader do the sorting themselves.
+  const sourceData = Object.entries(rev?.by_source ?? {})
+    .map(([k, v]) => ({ name: sourceLabel(k), vnd: v }))
+    .sort((a, b) => b.vnd - a.vnd);
+  const trendData = (rev?.by_day ?? []).map((d) => ({
+    day: d.day.slice(8) + "/" + d.day.slice(5, 7),
+    vnd: d.revenue_vnd,
+  }));
+  // One day is a point, not a trend — the tiles above already say that number.
+  const showTrend = trendData.length > 1;
 
   return (
     <Shell
@@ -232,6 +280,61 @@ function Page() {
         </Stagger>
       )}
 
+      {showTrend ? (
+        <Reveal className="mt-6">
+          <SpotlightCard className="rounded-[var(--radius-xl)]" size={520} strength={0.09}>
+            <Card className="relative z-[2]">
+              <p className="text-2xs font-medium uppercase tracking-wider text-muted">
+                Revenue per day
+              </p>
+              {chartReady ? (
+                <div className="mt-3 h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={trendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.28} />
+                          <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid vertical={false} stroke="var(--color-line)" strokeDasharray="2 4" />
+                      <XAxis
+                        dataKey="day"
+                        tick={{ fontSize: 11 }}
+                        stroke="var(--color-muted)"
+                        tickLine={false}
+                        minTickGap={16}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11 }}
+                        stroke="var(--color-muted)"
+                        tickLine={false}
+                        axisLine={false}
+                        width={44}
+                        tickFormatter={compactVnd}
+                      />
+                      <Tooltip {...TOOLTIP} labelFormatter={(l) => `Day ${l}`} />
+                      <Area
+                        type="monotone"
+                        dataKey="vnd"
+                        name="Revenue"
+                        stroke="var(--color-accent)"
+                        strokeWidth={2}
+                        fill="url(#revFill)"
+                        dot={false}
+                        activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--color-surface)" }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <Skeleton className="mt-3 h-56" />
+              )}
+            </Card>
+          </SpotlightCard>
+        </Reveal>
+      ) : null}
+
       <Reveal className="mt-6 grid gap-3 md:grid-cols-2">
         <SpotlightCard className="rounded-[var(--radius-xl)]" size={380} strength={0.09}>
         <Card className="relative z-[2] h-full">
@@ -240,17 +343,18 @@ function Page() {
             <div className="mt-3 h-52">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="var(--color-muted)" />
-                  <YAxis tick={{ fontSize: 11 }} stroke="var(--color-muted)" tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                  <Tooltip
-                    formatter={(v) => money(Number(v ?? 0))}
-                    contentStyle={{
-                      background: "var(--color-surface)",
-                      border: "1px solid var(--color-line)",
-                      borderRadius: 12,
-                    }}
+                  <CartesianGrid vertical={false} stroke="var(--color-line)" strokeDasharray="2 4" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="var(--color-muted)" tickLine={false} />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    stroke="var(--color-muted)"
+                    tickLine={false}
+                    axisLine={false}
+                    width={44}
+                    tickFormatter={compactVnd}
                   />
-                  <Bar dataKey="vnd" fill="var(--color-accent)" radius={[6, 6, 0, 0]} />
+                  <Tooltip {...TOOLTIP} cursor={{ fill: "var(--color-wood)", opacity: 0.5 }} />
+                  <Bar dataKey="vnd" name="Revenue" fill="var(--color-accent)" radius={[4, 4, 0, 0]} maxBarSize={44} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -262,17 +366,42 @@ function Page() {
         <SpotlightCard className="rounded-[var(--radius-xl)]" size={380} strength={0.09}>
         <Card className="relative z-[2] h-full">
           <p className="text-2xs font-medium uppercase tracking-wider text-muted">By source</p>
-          <ul className="mt-3 space-y-2 text-sm">
-            {Object.entries(rev?.by_source ?? {}).map(([k, v]) => (
-              <li key={k} className="flex justify-between gap-3">
-                <span className="text-muted">{sourceLabel(k)}</span>
-                <span className="tabular-nums">{money(v)}</span>
-              </li>
-            ))}
-            {!Object.keys(rev?.by_source ?? {}).length ? (
-              <li className="text-muted">Nothing recorded yet.</li>
-            ) : null}
-          </ul>
+          {chartReady && sourceData.length ? (
+            <div className="mt-3 h-52">
+              <ResponsiveContainer width="100%" height="100%">
+                {/* Horizontal: the category names are words, and sideways
+                    labels are the commonest reason a bar chart goes unread. */}
+                <BarChart
+                  layout="vertical"
+                  data={sourceData}
+                  margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid horizontal={false} stroke="var(--color-line)" strokeDasharray="2 4" />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 11 }}
+                    stroke="var(--color-muted)"
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={compactVnd}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    tick={{ fontSize: 11 }}
+                    stroke="var(--color-muted)"
+                    tickLine={false}
+                    axisLine={false}
+                    width={92}
+                  />
+                  <Tooltip {...TOOLTIP} cursor={{ fill: "var(--color-wood)", opacity: 0.5 }} />
+                  <Bar dataKey="vnd" name="Revenue" fill="var(--color-accent)" radius={[0, 4, 4, 0]} maxBarSize={22} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-muted">Nothing recorded yet.</p>
+          )}
         </Card>
         </SpotlightCard>
       </Reveal>

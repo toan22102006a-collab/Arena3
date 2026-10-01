@@ -15,7 +15,14 @@ import {
 } from "lucide-react";
 import { ArenaMark } from "@/components/mark";
 import { Cover, HeroVideo, MediaCaption, media, sportPhoto } from "@/components/media";
-import { Button, Card, Seg } from "@/components/ui";
+import { Button, Card, Modal, Seg, Skeleton } from "@/components/ui";
+import {
+  CourtGrid,
+  DateStrip,
+  freeHours,
+  useNowMinute,
+  type Court as GridCourt,
+} from "@/components/court-grid";
 import {
   CountUp,
   Lift,
@@ -24,7 +31,6 @@ import {
   ScrollProgress,
   Stagger,
   StaggerItem,
-  Tilt,
   WordReveal,
   AnimatePresence,
   motion,
@@ -45,13 +51,26 @@ import {
   StarBorder,
 } from "@/components/fx";
 import { getStoredUser, getToken, homeFor } from "@/lib/arena3/client";
-import { getPublicCatalog } from "@/lib/arena3/catalog";
-import { COACHES } from "@/lib/arena3/coaches";
-import { levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
+import {
+  getPublicAvailability,
+  getPublicCatalog,
+  type CatalogPrice,
+} from "@/lib/arena3/catalog";
+import { COACHES, type CoachCard } from "@/lib/arena3/coaches";
+import { addDaysISO, levelLabel, rruleLabel, sportLabel, weekdayShort } from "@/lib/arena3/labels";
 import { money } from "@/components/shell";
 
 export const Route = createFileRoute("/")({
-  loader: () => getPublicCatalog(),
+  // Today's schedule loads with the page rather than behind a sign-in wall:
+  // "is a court free tonight" is the question people arrive with, and making
+  // them register to find out is the funnel running backwards.
+  loader: async () => {
+    const [catalog, availability] = await Promise.all([
+      getPublicCatalog(),
+      getPublicAvailability({ data: {} }),
+    ]);
+    return { ...catalog, availability };
+  },
   component: Home,
 });
 
@@ -86,11 +105,20 @@ function useVenueHour() {
   return hour;
 }
 
+/**
+ * The public nav, in business order.
+ *
+ * Not everything on this page matters equally. Somebody arriving has one
+ * question — when can I get on a court — so the schedule is first and the
+ * things that only matter once they have played (coaches, plans) come after.
+ * Facilities and "how it works" moved to the footer: they are reassurance, and
+ * reassurance does not belong in front of the decision.
+ */
 const NAV: [string, string][] = [
-  ["#courts", "Courts"],
-  ["#how", "How it works"],
+  ["#schedule", "Today's schedule"],
+  ["#courts", "Courts & pricing"],
+  ["#classes", "Classes"],
   ["#coaches", "Coaches"],
-  ["#facilities", "Facilities"],
   ["#plans", "Plans"],
 ];
 
@@ -152,23 +180,33 @@ function SiteHeader({ reduced }: { reduced: boolean }) {
           </motion.span>
           <span className="font-display text-xl font-normal italic">Arena3</span>
         </Link>
-        <nav className="hidden items-center gap-7 md:flex">
+        {/* Same voice as the signed-in header: a row of quiet uppercase pills.
+            The landing used a wide-tracked display face that read as decoration
+            next to it, so the two halves of the same product looked like two
+            different products. */}
+        <nav className="hidden items-center gap-1 lg:flex">
           {NAV.map(([href, label]) => (
             <a
               key={href}
               href={href}
-              className="link-underline kicker text-2xs text-muted transition-colors duration-200 hover:text-fg"
+              className="flex h-9 items-center rounded-[var(--radius-pill)] px-3 text-xs font-semibold uppercase tracking-[0.1em] text-muted transition-colors duration-200 hover:bg-wood hover:text-fg"
             >
               {label}
             </a>
           ))}
         </nav>
-        <div className="hidden gap-2 md:flex">
+        {/* Two zones, not one row of five buttons: what the centre sells is on
+            the left of the rule, what belongs to a person is on the right. */}
+        <div className="hidden items-center gap-2 md:flex">
+          <a href="#schedule">
+            <Button>Book a court</Button>
+          </a>
+          <span aria-hidden className="mx-1 h-6 w-px bg-line-strong/70" />
           <Link to="/login">
             <Button variant="ghost">Sign in</Button>
           </Link>
           <Link to="/register">
-            <Button>Join</Button>
+            <Button variant="outline">Join</Button>
           </Link>
         </div>
         <button
@@ -176,7 +214,7 @@ function SiteHeader({ reduced }: { reduced: boolean }) {
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
           aria-label={open ? "Close menu" : "Open menu"}
-          className="grid size-10 place-items-center rounded-[var(--radius-md)] border border-line bg-surface/70 text-fg transition-colors duration-200 hover:border-accent hover:bg-wood md:hidden"
+          className="grid size-10 place-items-center rounded-[var(--radius-md)] border border-line bg-surface/70 text-fg transition-colors duration-200 hover:border-accent hover:bg-wood lg:hidden"
         >
           {open ? <X className="size-5" strokeWidth={1.75} /> : <Menu className="size-5" strokeWidth={1.75} />}
         </button>
@@ -190,10 +228,15 @@ function SiteHeader({ reduced }: { reduced: boolean }) {
             animate={{ height: "auto", opacity: 1 }}
             exit={reduced ? undefined : { height: 0, opacity: 0 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="overflow-hidden border-t border-line/70 bg-surface/95 backdrop-blur-sm md:hidden"
+            className="overflow-hidden border-t border-line/70 bg-surface/95 backdrop-blur-sm lg:hidden"
           >
             <nav className="mx-auto grid max-w-6xl gap-1 px-4 py-3">
-              {NAV.map(([href, label]) => (
+              {/* The first nav entry is the schedule, which is what this button
+                  does — so the sheet shows the action and then the rest. */}
+              <a href="#schedule" onClick={() => setOpen(false)} className="mb-1 block">
+                <Button className="w-full">Book a court</Button>
+              </a>
+              {NAV.slice(1).map(([href, label]) => (
                 <a
                   key={href}
                   href={href}
@@ -221,33 +264,114 @@ function SiteHeader({ reduced }: { reduced: boolean }) {
   );
 }
 
+/** Weekend pricing runs on Saturday and Sunday; everything else is a weekday. */
+function dayKindOf(iso: string) {
+  const wd = weekdayShort(iso);
+  return wd === "Sat" || wd === "Sun" ? "weekend" : "weekday";
+}
+
+/** What one hour on one sport costs on a given day, from the centre's own sheet. */
+function priceFor(prices: CatalogPrice[], sport: string, date: string, hour: number) {
+  const kind = dayKindOf(date);
+  const rule = prices.find(
+    (p) =>
+      p.sport === sport &&
+      p.day_kind === kind &&
+      !p.court_id &&
+      Number(p.start_local.slice(0, 2)) <= hour &&
+      hour < Number(p.end_local.slice(0, 2)),
+  );
+  return rule?.price_vnd ?? null;
+}
+
 function Landing() {
-  const { plans, classes, prices } = Route.useLoaderData();
+  const { plans, classes, prices, availability } = Route.useLoaderData();
   const [coachSport, setCoachSport] = useState("");
+  const [openCoach, setOpenCoach] = useState<CoachCard | null>(null);
   const reduced = useReducedMotion();
   const hour = useVenueHour();
   const isOpen = hour == null ? null : hour >= OPEN_HOUR && hour < CLOSE_HOUR;
+
+  // ── Today's schedule, live on the page ──────────────────────────────
+  const [schedSport, setSchedSport] = useState("badminton");
+  const [schedDate, setSchedDate] = useState(availability.date);
+  const [sched, setSched] = useState(availability);
+  const [schedBusy, setSchedBusy] = useState(false);
+  const [picked, setPicked] = useState<{ court: GridCourt; hour: number } | null>(null);
+  const now = useNowMinute();
+
+  useEffect(() => {
+    if (schedDate === sched.date) return;
+    let alive = true;
+    setSchedBusy(true);
+    setPicked(null);
+    getPublicAvailability({ data: { date: schedDate } })
+      .then((r) => {
+        if (alive) setSched(r);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (alive) setSchedBusy(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [schedDate, sched.date]);
+
+  const freeBySport = (s: string) =>
+    freeHours(sched.courts.filter((c) => c.sport === s), sched.slots, sched.date, now).length;
+  const schedFree = freeHours(sched.courts, sched.slots, sched.date, now).length;
+  const schedDay =
+    sched.date === availability.date
+      ? "today"
+      : `on ${weekdayShort(sched.date)} ${Number(sched.date.slice(8, 10))}`;
+  const cheapestHour = Math.min(...prices.filter((p) => !p.court_id).map((p) => p.price_vnd));
+
+  /*
+   * After close, show tomorrow.
+   *
+   * Open the site at half past ten at night and every hour on today's grid has
+   * already been played; a page whose headline offer is "0 free hours" and
+   * whose grid is a wall of strikethrough is telling the truth in the least
+   * useful way there is. The first day with hours left is the one worth
+   * showing. Deferred to an effect rather than decided during render because
+   * the clock is not available until the client has mounted — reading it
+   * earlier would make the server and browser render different pages.
+   */
+  useEffect(() => {
+    if (!now) return;
+    if (schedDate !== availability.date) return;
+    if (freeHours(availability.courts, availability.slots, availability.date, now).length > 0) return;
+    setSchedDate(addDaysISO(availability.date, 1));
+  }, [now, schedDate, availability]);
+
+  /** Jump to the schedule already filtered to the sport they tapped. */
+  const showTimes = (s: string) => {
+    setSchedSport(s);
+    setPicked(null);
+    document.getElementById("schedule")?.scrollIntoView({ behavior: reduced ? "auto" : "smooth" });
+  };
 
   const sports = [
     {
       id: "badminton",
       photo: media.badminton,
-      courts: "12 courts · CL-01…12",
-      peak: "140,000đ",
+      count: 12,
+      codes: "CL-01…12",
       note: "Feather-grade shuttles, 9m ceiling, wood sprung floor.",
     },
     {
       id: "basketball",
       photo: media.basketball,
-      courts: "2 courts · BR-01, BR-02",
-      peak: "500,000đ",
+      count: 2,
+      codes: "BR-01, BR-02",
       note: "Full-size hardwood, breakaway rims, convertible to four badminton bays.",
     },
     {
       id: "volleyball",
       photo: media.volleyball,
-      courts: "2 courts · BC-01, BC-02",
-      peak: "400,000đ",
+      count: 2,
+      codes: "BC-01, BC-02",
       note: "Competition net height, referee stand, ten-second reset between sets.",
     },
   ];
@@ -391,17 +515,22 @@ function Landing() {
               {/* Reversed out: a dark-green pill would disappear into the
                   footage, so the CTAs invert to cream and glass here. The
                   magnet is on the primary only — two competing magnets make a
-                  button row feel like it is sliding around. */}
+                  button row feel like it is sliding around.
+
+                  The primary used to be "Become a member", which asks a
+                  stranger to buy a subscription before they have seen the
+                  place. The order is the funnel: see a free hour, take it,
+                  come back — membership is what you buy on the third visit. */}
               <Magnet radius={150} pull={0.28}>
-                <Link to="/register">
+                <a href="#schedule">
                   <Button
                     size="lg"
                     className="group bg-on-media text-fg shadow-[var(--shadow-soft)] hover:bg-surface hover:shadow-[var(--shadow-soft)]"
                   >
-                    Become a member
+                    Book a court
                     <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-1" />
                   </Button>
-                </Link>
+                </a>
               </Magnet>
               <a href="#courts">
                 <Button
@@ -415,25 +544,52 @@ function Landing() {
                 </Button>
               </a>
             </motion.div>
+
+            {/* The live number is the argument for tapping the button above —
+                and the one thing a photograph of a sports hall cannot say. */}
+            <motion.p
+              initial={reduced ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 1.5, duration: 0.6 }}
+              className="mt-4 text-sm text-on-media-muted"
+            >
+              <span className="tabular-nums text-on-media">{schedFree}</span> court hours still free{" "}
+              {schedDay} · from{" "}
+              <span className="tabular-nums text-on-media">{money(cheapestHour)}</span>/hr · held
+              five minutes while you decide.
+              <span className="mt-1 block">
+                {/* Membership is the third-visit decision, so it stays a link
+                    under the fold of the offer rather than a third button. */}
+                <a href="#plans" className="link-underline text-on-media">
+                  Or see membership plans
+                </a>
+              </span>
+            </motion.p>
           </motion.div>
         </div>
 
-        {/* Scroll cue */}
+        {/* Scroll cue.
+            It used to be a lone outlined capsule floating beside the CTAs,
+            which everybody read as a third button nobody had labelled. A cue
+            has to say what it is: the word carries it, the rule underneath
+            does the pointing, and it sits in the corner where no real control
+            lives. */}
         {reduced ? null : (
           <motion.div
             aria-hidden
-            className="pointer-events-none absolute bottom-6 left-1/2 hidden -translate-x-1/2 md:block"
+            className="pointer-events-none absolute bottom-7 right-6 hidden flex-col items-center gap-2 lg:flex"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1.8 }}
           >
-            <motion.div
-              animate={{ y: [0, 9, 0] }}
-              transition={{ duration: 1.9, repeat: Infinity, ease: "easeInOut" }}
-              className="grid h-10 w-6 place-items-start rounded-full border border-on-media/45 pt-2"
-            >
-              <span className="size-1 rounded-full bg-on-media/80" />
-            </motion.div>
+            <span className="kicker text-2xs text-on-media-muted">Scroll</span>
+            <span className="relative block h-12 w-px overflow-hidden bg-on-media/25">
+              <motion.span
+                className="absolute inset-x-0 top-0 block h-5 bg-on-media/80"
+                animate={{ y: [-20, 48] }}
+                transition={{ duration: 2.1, repeat: Infinity, ease: "easeInOut" }}
+              />
+            </span>
           </motion.div>
         )}
       </section>
@@ -451,31 +607,81 @@ function Landing() {
           opacity={0.6}
           fallback={<div className="wash wash-accent -left-24 -top-32 size-80 opacity-70" />}
         />
-        {/* Cells are transparent so the aurora shows between them; the divider
-            grid is what keeps the four numbers reading as one band. */}
-        <div className="relative z-[1] mx-auto grid max-w-6xl grid-cols-2 gap-px bg-on-media/12 sm:grid-cols-4">
+        {/*
+          The band that has to earn the centre's credibility in three seconds.
+
+          Four bare numerals did the opposite: "16 · 3 · 4 · 16H" is a quiz. A
+          figure only builds trust when the reader can check it against
+          something, so each one now carries the line that makes it concrete —
+          and the first is not a boast at all but today's live count, which is
+          the number that decides whether they scroll on or leave.
+
+          Full-bleed rather than centred in a 6xl box: the cells used to stop
+          short of the edges with the aurora running past them, so the band read
+          as a floating card with two empty margins.
+        */}
+        <div className="relative z-[1] grid grid-cols-2 gap-px bg-on-media/12 lg:grid-cols-4">
           {[
-            { to: 16, label: "Courts & bays", suffix: "" },
-            { to: 3, label: "Indoor sports", suffix: "" },
-            { to: 4, label: "Head coaches", suffix: "" },
-            { to: 16, label: "Hours open daily", suffix: "h" },
+            {
+              to: schedFree,
+              suffix: "",
+              label: "Court hours free",
+              note: `Live from the booking grid · ${schedDay}`,
+              href: "#schedule",
+            },
+            {
+              to: 16,
+              suffix: "",
+              label: "Courts & bays",
+              note: "12 badminton · 2 basketball · 2 volleyball",
+              href: "#courts",
+            },
+            {
+              to: 16,
+              suffix: "h",
+              label: "Open every day",
+              note: "06:00–22:00, no closing day",
+              href: "#schedule",
+            },
+            {
+              to: 4,
+              suffix: "",
+              label: "Head coaches",
+              note: "One per sport, classes on the same calendar",
+              href: "#coaches",
+            },
           ].map((s) => (
-            <div key={s.label} className="bg-fg/72 px-4 py-9 text-center backdrop-blur-[2px] sm:py-12">
-              <p className="athletic text-5xl tabular-nums sm:text-6xl">
+            <a
+              key={s.label}
+              href={s.href}
+              className="group bg-fg/72 px-5 py-8 text-center backdrop-blur-[2px] transition-colors duration-200 hover:bg-fg/60 sm:py-11"
+            >
+              <p className="figure text-5xl tabular-nums sm:text-6xl">
                 <CountUp to={s.to} suffix={s.suffix} />
               </p>
-              <p className="kicker mt-3 text-2xs text-on-media-muted">{s.label}</p>
-            </div>
+              <p className="kicker mt-3 text-2xs text-on-media">{s.label}</p>
+              <p className="mx-auto mt-1.5 max-w-[16rem] text-xs leading-relaxed text-on-media-muted">
+                {s.note}
+              </p>
+            </a>
           ))}
         </div>
       </section>
 
-      {/* ── Courts ───────────────────────────────────────────────── */}
+      {/* ── Courts & pricing ─────────────────────────────────────── */}
+      {/*
+        This used to be one section doing two jobs badly. A member looking at a
+        sports centre asks four questions — what is there, what is free, when,
+        and how much — and a photograph with a price tucked under it answered
+        one and a half. So it is two sections now: what the hall contains, with
+        every number in the open instead of on hover, and then the live grid
+        below that answers "when".
+      */}
       <section id="courts" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20">
         <Reveal>
           <p className="kicker text-2xs text-muted">Three sports</p>
           <h2 className="mt-2 font-display text-4xl sm:text-5xl">
-            <SplitText text="Courts open today" />
+            <SplitText text="Courts & pricing" />
           </h2>
           <p className="mt-3 max-w-md text-muted">
             One hall, sixteen playing surfaces. Either basketball floor converts to four badminton
@@ -484,35 +690,165 @@ function Landing() {
         </Reveal>
 
         <Stagger className="mt-8 grid gap-4 md:grid-cols-3" gap={0.1}>
-          {sports.map((s) => (
-            <StaggerItem key={s.id}>
-              <Tilt>
+          {sports.map((s) => {
+            const off = weekday.find((p) => p.sport === s.id && !p.is_peak);
+            const peak = weekday.find((p) => p.sport === s.id && p.is_peak);
+            const openNow = freeBySport(s.id);
+            return (
+              <StaggerItem key={s.id} className="h-full">
                 <Lift className="h-full">
-                  <GlareHover className="rounded-[var(--radius-xl)]">
-                    <Cover
-                      src={s.photo}
-                      alt={sportLabel(s.id)}
-                      scrim="none"
-                      className="group aspect-[4/5] rounded-[var(--radius-xl)] shadow-[var(--shadow-border)]"
-                      imgClassName="transition-transform duration-[900ms] ease-[var(--ease-smooth)] group-hover:scale-[1.07]"
-                    >
-                      <MediaCaption className="transition-[padding] duration-300 group-hover:pb-5">
-                        <p className="athletic text-3xl sm:text-4xl">{sportLabel(s.id)}</p>
-                        <p className="mt-1 text-sm text-on-media-muted">
-                          {s.courts} · peak {s.peak}/hr
+                  <Card className="flex h-full flex-col overflow-hidden p-0">
+                    <GlareHover>
+                      <Cover
+                        src={s.photo}
+                        alt={sportLabel(s.id)}
+                        scrim="none"
+                        className="group aspect-[4/3]"
+                        imgClassName="transition-transform duration-[900ms] ease-[var(--ease-smooth)] group-hover:scale-[1.07]"
+                      >
+                        <MediaCaption>
+                          <p className="athletic text-3xl sm:text-4xl">{sportLabel(s.id)}</p>
+                          <p className="mt-1 text-sm text-on-media-muted">
+                            {s.count} {s.count === 1 ? "court" : "courts"} · {s.codes}
+                          </p>
+                        </MediaCaption>
+                      </Cover>
+                    </GlareHover>
+                    <div className="flex flex-1 flex-col p-5">
+                      <dl className="grid grid-cols-2 gap-3 border-b border-line pb-4">
+                        <div>
+                          <dt className="kicker text-2xs text-muted">Off-peak</dt>
+                          <dd className="font-display text-2xl tabular-nums">
+                            {off ? money(off.price_vnd) : "—"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="kicker text-2xs text-muted">Peak</dt>
+                          <dd className="font-display text-2xl tabular-nums text-accent-2">
+                            {peak ? money(peak.price_vnd) : "—"}
+                          </dd>
+                        </div>
+                      </dl>
+                      <p className="mt-4 flex-1 text-sm text-muted">{s.note}</p>
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <p className="text-xs tabular-nums text-muted">
+                          {openNow ? `${openNow} hours free` : "Fully booked"}
+                          <span className="text-subtle"> · {schedDay}</span>
                         </p>
-                        {/* Detail line unrolls on hover instead of crowding the card at rest. */}
-                        <p className="mt-0 max-h-0 overflow-hidden text-sm text-on-media-muted opacity-0 transition-all duration-500 ease-[var(--ease-smooth)] group-hover:mt-2 group-hover:max-h-24 group-hover:opacity-100">
-                          {s.note}
-                        </p>
-                      </MediaCaption>
-                    </Cover>
-                  </GlareHover>
+                        <Button size="sm" onClick={() => showTimes(s.id)}>
+                          See free times
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
                 </Lift>
-              </Tilt>
-            </StaggerItem>
-          ))}
+              </StaggerItem>
+            );
+          })}
         </Stagger>
+      </section>
+
+      {/* ── Today's schedule ─────────────────────────────────────── */}
+      <section id="schedule" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-20">
+        <Reveal>
+          <p className="kicker text-2xs text-muted">Live availability</p>
+          <h2 className="mt-2 font-display text-4xl sm:text-5xl">
+            <SplitText text="When is a court free?" splitBy="words" stagger={0.06} />
+          </h2>
+          <p className="mt-3 max-w-lg text-muted">
+            Every hour in the hall, exactly as it stands. Tap a free one and it is yours for five
+            minutes while you sign in — no card up front, no phone call.
+          </p>
+        </Reveal>
+
+        <div className="mt-7 grid gap-3">
+          <DateStrip value={schedDate} onChange={setSchedDate} />
+          <Seg
+            value={schedSport}
+            onChange={(v) => {
+              setSchedSport(v);
+              setPicked(null);
+            }}
+            options={[
+              { value: "", label: "All" },
+              { value: "badminton", label: sportLabel("badminton") },
+              { value: "basketball", label: sportLabel("basketball") },
+              { value: "volleyball", label: sportLabel("volleyball") },
+            ]}
+          />
+        </div>
+
+        {/* What a tap on a free hour gets you, before you are asked for
+            anything. The slot is named, priced and dated here so signing in is
+            a step towards something specific rather than a toll gate. */}
+        <AnimatePresence>
+          {picked ? (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <Card className="mt-4 flex flex-wrap items-center gap-4 border border-accent/30">
+                <div className="min-w-[13rem] flex-1">
+                  <p className="kicker text-2xs text-muted">
+                    {sportLabel(picked.court.sport)} · {picked.court.court_code}
+                  </p>
+                  <p className="mt-1 font-display text-2xl tabular-nums">
+                    {String(picked.hour).padStart(2, "0")}:00–
+                    {String(picked.hour + 1).padStart(2, "0")}:00
+                    <span className="ml-2 text-muted">
+                      {weekdayShort(schedDate)} {Number(schedDate.slice(8, 10))}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-sm text-muted">
+                    {(() => {
+                      const p = priceFor(prices, picked.court.sport, schedDate, picked.hour);
+                      return p ? `${money(p)} for the hour` : "Priced at the desk";
+                    })()}{" "}
+                    · held five minutes once you sign in
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link to="/login">
+                    <Button>Sign in &amp; hold it</Button>
+                  </Link>
+                  <Link to="/register">
+                    <Button variant="outline">Create an account</Button>
+                  </Link>
+                  <Button variant="ghost" onClick={() => setPicked(null)}>
+                    Pick another
+                  </Button>
+                </div>
+              </Card>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <div className="mt-4">
+          {schedBusy ? (
+            <div className="grid gap-2">
+              <Skeleton className="h-8" />
+              <Skeleton className="h-72" />
+            </div>
+          ) : (
+            <CourtGrid
+              date={sched.date}
+              courts={sched.courts}
+              slots={sched.slots}
+              sport={schedSport || undefined}
+              onPick={(court, hour) => setPicked({ court, hour })}
+              onPickSport={(s) => {
+                setSchedSport(s);
+                setPicked(null);
+              }}
+              onPickDate={setSchedDate}
+              canRelease={false}
+              legendCompact
+              selected={picked ? { courtId: picked.court.id, hour: picked.hour } : null}
+            />
+          )}
+        </div>
       </section>
 
       {/* ── Class marquee ────────────────────────────────────────── */}
@@ -615,7 +951,13 @@ function Landing() {
           />
         </Reveal>
 
-        {/* layout animation reflows the grid smoothly as the filter changes. */}
+        {/* layout animation reflows the grid smoothly as the filter changes.
+
+            A card that carries the photo, the title, three lines of prose and
+            a fixture list is a page, not a card: four of them side by side and
+            nothing stands out, least of all the coach. Face, sport, role — the
+            three things that decide whether you want to read more — and the
+            rest is one click away. */}
         <motion.div layout className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {coaches.map((c) => (
             <motion.div
@@ -627,7 +969,7 @@ function Landing() {
               transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
             >
               <SpotlightCard className="h-full rounded-[var(--radius-xl)]">
-                <Card interactive className="group h-full overflow-hidden p-0">
+                <Card interactive className="group flex h-full flex-col overflow-hidden p-0">
                   <GlareHover>
                     <Cover
                       src={c.photo}
@@ -644,23 +986,62 @@ function Landing() {
                       </MediaCaption>
                     </Cover>
                   </GlareHover>
-                  <div className="p-4">
-                    <p className="text-sm font-medium">{c.title}</p>
-                    <p className="mt-2 text-sm text-muted">{c.blurb}</p>
-                    <ul className="mt-3 grid gap-1 text-xs text-muted">
-                      {c.creds.map((x) => (
-                        <li key={x} className="flex gap-1.5">
-                          <span className="text-accent">·</span>
-                          {x}
-                        </li>
-                      ))}
-                    </ul>
+                  <div className="flex flex-1 flex-col p-4">
+                    <p className="flex-1 text-sm font-medium">{c.title}</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-3 w-full"
+                      onClick={() => setOpenCoach(c)}
+                    >
+                      View details
+                    </Button>
                   </div>
                 </Card>
               </SpotlightCard>
             </motion.div>
           ))}
         </motion.div>
+
+        <Modal
+          open={!!openCoach}
+          onClose={() => setOpenCoach(null)}
+          title={openCoach?.name ?? ""}
+          footer={
+            <>
+              <a href="#classes" onClick={() => setOpenCoach(null)}>
+                <Button>See open classes</Button>
+              </a>
+              <Button variant="ghost" onClick={() => setOpenCoach(null)}>
+                Close
+              </Button>
+            </>
+          }
+        >
+          {openCoach ? (
+            <div className="grid gap-4 sm:grid-cols-[9rem_1fr]">
+              <Cover
+                src={openCoach.photo}
+                alt={openCoach.name}
+                scrim="none"
+                className="aspect-[3/4] rounded-[var(--radius-lg)]"
+              />
+              <div>
+                <p className="kicker text-2xs text-muted">{sportLabel(openCoach.sport)}</p>
+                <p className="mt-1 text-sm font-medium">{openCoach.title}</p>
+                <p className="mt-3 text-sm text-muted">{openCoach.blurb}</p>
+                <ul className="mt-4 grid gap-1.5 text-sm text-muted">
+                  {openCoach.creds.map((x) => (
+                    <li key={x} className="flex gap-2">
+                      <span className="text-accent">·</span>
+                      {x}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
+        </Modal>
       </section>
 
       {/* ── Facilities ───────────────────────────────────────────── */}
@@ -868,25 +1249,37 @@ function Landing() {
       </section>
 
       {/* ── Open classes ─────────────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-4 pb-20">
+      {/*
+        Enrolling was a guess: the cards said what was running and left the
+        reader to hunt for the way in — clicking the card, then the sport, then
+        finding the class again inside the app. The button belongs where the
+        decision is made, next to the seat count that makes it.
+      */}
+      <section id="classes" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-20">
         <Reveal>
           <p className="kicker text-2xs text-muted">Open classes</p>
           <h2 className="mt-2 font-display text-4xl">Enrol while seats last</h2>
+          <p className="mt-3 max-w-lg text-muted">
+            Coached ladders run on the same calendar as the courts, so a class never sits on an hour
+            you have already bought. Seats are first come.
+          </p>
         </Reveal>
 
         <Stagger className="mt-8 grid gap-4 md:grid-cols-2" gap={0.08}>
           {classes.slice(0, 4).map((c) => {
             const pct = c.capacity ? Math.min(100, (c.enrolled_count / c.capacity) * 100) : 0;
             const nearlyFull = pct >= 80;
+            const full = c.enrolled_count >= c.capacity;
+            const left = Math.max(0, c.capacity - c.enrolled_count);
             return (
-              <StaggerItem key={c.id}>
-                <Card interactive className="flex gap-4 p-3">
+              <StaggerItem key={c.id} className="h-full">
+                <Card interactive className="flex h-full gap-4 p-3">
                   <Cover
                     src={sportPhoto(c.sport)}
                     alt=""
                     className="h-28 w-28 shrink-0 rounded-[var(--radius-lg)]"
                   />
-                  <div className="min-w-0 flex-1 py-1">
+                  <div className="flex min-w-0 flex-1 flex-col py-1">
                     <p className="kicker text-2xs text-muted">
                       {sportLabel(c.sport)}
                     </p>
@@ -910,6 +1303,16 @@ function Landing() {
                       <span className="shrink-0 text-xs tabular-nums text-subtle">
                         {c.enrolled_count}/{c.capacity}
                       </span>
+                    </div>
+                    <div className="mt-auto flex items-center justify-between gap-2 pt-3">
+                      <span className={`text-xs ${nearlyFull ? "text-hold" : "text-muted"}`}>
+                        {full ? "Full — waitlist open" : `${left} ${left === 1 ? "seat" : "seats"} left`}
+                      </span>
+                      <Link to="/register">
+                        <Button size="sm" variant={full ? "outline" : "primary"}>
+                          {full ? "Join the waitlist" : "Enrol"}
+                        </Button>
+                      </Link>
                     </div>
                   </div>
                 </Card>
@@ -1002,8 +1405,11 @@ function Landing() {
             <p className="kicker text-2xs text-muted">Explore</p>
             <ul className="mt-4 grid gap-2.5 text-sm">
               {[
+                ["#schedule", "Today's schedule"],
                 ["#courts", "Courts & pricing"],
+                ["#classes", "Open classes"],
                 ["#how", "How booking works"],
+                ["#facilities", "Facilities"],
                 ["#coaches", "Coaches"],
                 ["#plans", "Membership plans"],
               ].map(([href, label]) => (

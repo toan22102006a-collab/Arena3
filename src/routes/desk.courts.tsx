@@ -212,6 +212,10 @@ function Page() {
             }
             setPick({ court: c, hour: h });
           }}
+          // A full day is a question a walk-in asks at the counter, so the
+          // same two answers reception would give are on the grid itself.
+          onPickSport={setSport}
+          onPickDate={setDate}
         />
       ) : (
         <Skeleton className="h-72" />

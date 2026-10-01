@@ -14,6 +14,7 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as CoachRouteImport } from './routes/coach'
 import { Route as DeskRouteImport } from './routes/desk'
+import { Route as ForgotRouteImport } from './routes/forgot'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as RegisterRouteImport } from './routes/register'
@@ -28,10 +29,12 @@ import { Route as DeskCourtsRouteImport } from './routes/desk.courts'
 import { Route as DeskGearRouteImport } from './routes/desk.gear'
 import { Route as DeskPaymentsRouteImport } from './routes/desk.payments'
 import { Route as ManagerIndexRouteImport } from './routes/manager.index'
+import { Route as ManagerAuditRouteImport } from './routes/manager.audit'
 import { Route as ManagerClassesRouteImport } from './routes/manager.classes'
 import { Route as ManagerPlansRouteImport } from './routes/manager.plans'
 import { Route as ManagerPricesRouteImport } from './routes/manager.prices'
 import { Route as ManagerSettingsRouteImport } from './routes/manager.settings'
+import { Route as PayReturnRouteImport } from './routes/pay.return'
 import { Route as V1SplatRouteImport } from './routes/v1.$'
 import { Route as DeskMemberIdRouteImport } from './routes/desk.member.$id'
 
@@ -58,6 +61,11 @@ const CoachRoute = CoachRouteImport.update({
 const DeskRoute = DeskRouteImport.update({
   id: '/desk',
   path: '/desk',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForgotRoute = ForgotRouteImport.update({
+  id: '/forgot',
+  path: '/forgot',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -130,6 +138,11 @@ const ManagerIndexRoute = ManagerIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ManagerRoute,
 } as any)
+const ManagerAuditRoute = ManagerAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => ManagerRoute,
+} as any)
 const ManagerClassesRoute = ManagerClassesRouteImport.update({
   id: '/classes',
   path: '/classes',
@@ -150,6 +163,11 @@ const ManagerSettingsRoute = ManagerSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => ManagerRoute,
 } as any)
+const PayReturnRoute = PayReturnRouteImport.update({
+  id: '/pay/return',
+  path: '/pay/return',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const V1SplatRoute = V1SplatRouteImport.update({
   id: '/v1/$',
   path: '/v1/$',
@@ -167,6 +185,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/coach': typeof CoachRoute
   '/desk': typeof DeskRouteWithChildren
+  '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/manager': typeof ManagerRouteWithChildren
   '/register': typeof RegisterRoute
@@ -178,10 +197,12 @@ export interface FileRoutesByFullPath {
   '/desk/courts': typeof DeskCourtsRoute
   '/desk/gear': typeof DeskGearRoute
   '/desk/payments': typeof DeskPaymentsRoute
+  '/manager/audit': typeof ManagerAuditRoute
   '/manager/classes': typeof ManagerClassesRoute
   '/manager/plans': typeof ManagerPlansRoute
   '/manager/prices': typeof ManagerPricesRoute
   '/manager/settings': typeof ManagerSettingsRoute
+  '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
   '/app/': typeof AppIndexRoute
   '/desk/': typeof DeskIndexRoute
@@ -192,6 +213,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/coach': typeof CoachRoute
+  '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/app/assistant': typeof AppAssistantRoute
@@ -202,10 +224,12 @@ export interface FileRoutesByTo {
   '/desk/courts': typeof DeskCourtsRoute
   '/desk/gear': typeof DeskGearRoute
   '/desk/payments': typeof DeskPaymentsRoute
+  '/manager/audit': typeof ManagerAuditRoute
   '/manager/classes': typeof ManagerClassesRoute
   '/manager/plans': typeof ManagerPlansRoute
   '/manager/prices': typeof ManagerPricesRoute
   '/manager/settings': typeof ManagerSettingsRoute
+  '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
   '/app': typeof AppIndexRoute
   '/desk': typeof DeskIndexRoute
@@ -219,6 +243,7 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/coach': typeof CoachRoute
   '/desk': typeof DeskRouteWithChildren
+  '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/manager': typeof ManagerRouteWithChildren
   '/register': typeof RegisterRoute
@@ -230,10 +255,12 @@ export interface FileRoutesById {
   '/desk/courts': typeof DeskCourtsRoute
   '/desk/gear': typeof DeskGearRoute
   '/desk/payments': typeof DeskPaymentsRoute
+  '/manager/audit': typeof ManagerAuditRoute
   '/manager/classes': typeof ManagerClassesRoute
   '/manager/plans': typeof ManagerPlansRoute
   '/manager/prices': typeof ManagerPricesRoute
   '/manager/settings': typeof ManagerSettingsRoute
+  '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
   '/app/': typeof AppIndexRoute
   '/desk/': typeof DeskIndexRoute
@@ -248,6 +275,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/coach'
     | '/desk'
+    | '/forgot'
     | '/login'
     | '/manager'
     | '/register'
@@ -259,10 +287,12 @@ export interface FileRouteTypes {
     | '/desk/courts'
     | '/desk/gear'
     | '/desk/payments'
+    | '/manager/audit'
     | '/manager/classes'
     | '/manager/plans'
     | '/manager/prices'
     | '/manager/settings'
+    | '/pay/return'
     | '/v1/$'
     | '/app/'
     | '/desk/'
@@ -273,6 +303,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/coach'
+    | '/forgot'
     | '/login'
     | '/register'
     | '/app/assistant'
@@ -283,10 +314,12 @@ export interface FileRouteTypes {
     | '/desk/courts'
     | '/desk/gear'
     | '/desk/payments'
+    | '/manager/audit'
     | '/manager/classes'
     | '/manager/plans'
     | '/manager/prices'
     | '/manager/settings'
+    | '/pay/return'
     | '/v1/$'
     | '/app'
     | '/desk'
@@ -299,6 +332,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/coach'
     | '/desk'
+    | '/forgot'
     | '/login'
     | '/manager'
     | '/register'
@@ -310,10 +344,12 @@ export interface FileRouteTypes {
     | '/desk/courts'
     | '/desk/gear'
     | '/desk/payments'
+    | '/manager/audit'
     | '/manager/classes'
     | '/manager/plans'
     | '/manager/prices'
     | '/manager/settings'
+    | '/pay/return'
     | '/v1/$'
     | '/app/'
     | '/desk/'
@@ -327,9 +363,11 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   CoachRoute: typeof CoachRoute
   DeskRoute: typeof DeskRouteWithChildren
+  ForgotRoute: typeof ForgotRoute
   LoginRoute: typeof LoginRoute
   ManagerRoute: typeof ManagerRouteWithChildren
   RegisterRoute: typeof RegisterRoute
+  PayReturnRoute: typeof PayReturnRoute
   V1SplatRoute: typeof V1SplatRoute
 }
 
@@ -368,6 +406,13 @@ declare module '@tanstack/react-router' {
       path: '/desk'
       fullPath: '/desk'
       preLoaderRoute: typeof DeskRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forgot': {
+      id: '/forgot'
+      path: '/forgot'
+      fullPath: '/forgot'
+      preLoaderRoute: typeof ForgotRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -468,6 +513,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagerIndexRouteImport
       parentRoute: typeof ManagerRoute
     }
+    '/manager/audit': {
+      id: '/manager/audit'
+      path: '/audit'
+      fullPath: '/manager/audit'
+      preLoaderRoute: typeof ManagerAuditRouteImport
+      parentRoute: typeof ManagerRoute
+    }
     '/manager/classes': {
       id: '/manager/classes'
       path: '/classes'
@@ -495,6 +547,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/manager/settings'
       preLoaderRoute: typeof ManagerSettingsRouteImport
       parentRoute: typeof ManagerRoute
+    }
+    '/pay/return': {
+      id: '/pay/return'
+      path: '/pay/return'
+      fullPath: '/pay/return'
+      preLoaderRoute: typeof PayReturnRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/v1/$': {
       id: '/v1/$'
@@ -552,6 +611,7 @@ const DeskRouteChildren: DeskRouteChildren = {
 const DeskRouteWithChildren = DeskRoute._addFileChildren(DeskRouteChildren)
 
 interface ManagerRouteChildren {
+  ManagerAuditRoute: typeof ManagerAuditRoute
   ManagerClassesRoute: typeof ManagerClassesRoute
   ManagerPlansRoute: typeof ManagerPlansRoute
   ManagerPricesRoute: typeof ManagerPricesRoute
@@ -560,6 +620,7 @@ interface ManagerRouteChildren {
 }
 
 const ManagerRouteChildren: ManagerRouteChildren = {
+  ManagerAuditRoute: ManagerAuditRoute,
   ManagerClassesRoute: ManagerClassesRoute,
   ManagerPlansRoute: ManagerPlansRoute,
   ManagerPricesRoute: ManagerPricesRoute,
@@ -576,9 +637,11 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   CoachRoute: CoachRoute,
   DeskRoute: DeskRouteWithChildren,
+  ForgotRoute: ForgotRoute,
   LoginRoute: LoginRoute,
   ManagerRoute: ManagerRouteWithChildren,
   RegisterRoute: RegisterRoute,
+  PayReturnRoute: PayReturnRoute,
   V1SplatRoute: V1SplatRoute,
 }
 export const routeTree = rootRouteImport

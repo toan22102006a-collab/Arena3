@@ -7,17 +7,34 @@ import { requireRole, type PublicUser } from "../session";
 import { isValidVnPhone, normalizePhone } from "../phone";
 import { generateAssistantReply, type ChatTurn } from "../gemini";
 import { COACHES } from "../coaches";
+import { ticketBody } from "../rules";
 import { addDays, ictDateString } from "../time";
 import { one } from "../tx";
+import { payosConfigured } from "../payos";
 
 export async function flagsGet(sql: Sql) {
-  return { status: 200, body: { flags: await flagsMap(sql) } };
+  return {
+    status: 200,
+    body: {
+      flags: await flagsMap(sql),
+      /*
+       * Whether online payment can be offered at all.
+       *
+       * Not a feature flag a manager toggles — it is simply whether the centre
+       * has put payOS credentials in the environment. The screens need to know
+       * so they can leave the button out rather than offer one that fails, and
+       * only the answer crosses the wire; the keys themselves never leave the
+       * server.
+       */
+      capabilities: { online_payment: payosConfigured() },
+    },
+  };
 }
 
 export async function flagsPatch(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["manager"]);
   const b = await readJson(request);
-  for (const key of ["F4", "F5", "F6", "SMS"] as FlagKey[]) {
+  for (const key of ["F4", "F5", "F6"] as FlagKey[]) {
     if (typeof b[key] === "boolean") {
       await sql.query(`insert into feature_flags (key, enabled) values ($1,$2)
         on conflict (key) do update set enabled = excluded.enabled`, [key, b[key]]);
@@ -127,9 +144,6 @@ export async function inviteWaitlist(sql: Sql, classId: string) {
     [next.id, hours],
   );
   await enqueue(sql, "inapp", "waitlist_offer", next.user_id, { offer_id: offer!.id, class_id: classId }, `wl|${offer!.id}`);
-  if (await flagOn(sql, "SMS")) {
-    await enqueue(sql, "sms", "waitlist_offer", next.user_id, { offer_id: offer!.id }, `wl-sms|${offer!.id}`);
-  }
 }
 
 export async function convertSlot(sql: Sql, request: Request, user: PublicUser) {
@@ -355,27 +369,11 @@ export async function trainingSuggest(sql: Sql, request: Request, user: PublicUs
   return { status: 200, body: { payload } };
 }
 
-/** A `ticket:` marker at the very start of what is left of the message. */
-const TICKET_PREFIX = /^\s*ticket\s*:\s*/i;
-
-/**
- * The note a `ticket:` message actually leaves at the desk.
- *
- * People type "ticket: ticket: the lights in BC2 are out" — the second prefix is
- * what you write when the first one did not look like it was heard. The desk was
- * then reading the word "ticket" back to itself before getting to the lights.
- *
- * The first prefix is the instruction: it is the thing that routed this message
- * to the desk at all, so it is consumed rather than stored. Every repeat of it is
- * the same instruction given again, so it goes too. Only leading repeats are
- * removed — a "ticket:" in the middle of a sentence is the member writing prose
- * about a ticket, and cutting it there would edit their complaint.
- */
-export function ticketBody(message: string) {
-  let body = message;
-  while (TICKET_PREFIX.test(body)) body = body.replace(TICKET_PREFIX, "");
-  return body.trim();
-}
+// ticketBody() moved to ../rules — a Unicode-hardened version (zero-width
+// characters, the full-width "：" an IME can produce) that still collapses
+// repeated "ticket:" prefixes the same way. Re-exported here so nothing
+// importing it from this module has to change.
+export { ticketBody };
 
 export async function assistantChat(sql: Sql, request: Request, user: PublicUser) {
   await requireFlag(sql, "F6");

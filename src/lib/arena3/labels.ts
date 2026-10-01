@@ -55,6 +55,31 @@ export const KIND_LABEL: Record<string, string> = {
   convert: "Merged court",
 };
 
+/**
+ * What one hour on one court is doing, as the grid paints it.
+ *
+ * An occupancy row only says *what was sold*; this is what the centre needs to
+ * *run* the day. "Booked" and "In use" are the same booking an hour apart, and
+ * telling them apart is the difference between a court reception can prepare
+ * and a court someone is standing on. "Maintenance" and "Closed" are not sales
+ * states at all — they are the building saying no.
+ */
+export const SLOT_STATE_LABEL: Record<string, string> = {
+  free: "Free",
+  hold: "On hold",
+  booked: "Booked",
+  in_use: "In use",
+  class: "Class",
+  maintenance: "Maintenance",
+  merged: "Merged court",
+  closed: "Closed",
+  past: "Already passed",
+};
+
+export function slotStateLabel(s: string) {
+  return SLOT_STATE_LABEL[s] ?? s;
+}
+
 export const DAY_KIND_LABEL: Record<string, string> = {
   weekday: "Weekday",
   weekend: "Weekend",
@@ -102,8 +127,27 @@ export const METHOD_LABEL: Record<string, string> = {
   cash: "Cash",
   transfer: "Bank transfer",
   card: "Card",
+  gateway: "Online gateway",
   quota: "Plan hours",
 };
+
+/**
+ * Payment methods in Vietnamese, for the printed invoice only.
+ *
+ * The interface is in English; an invoice is a Vietnamese document that gets
+ * filed, so it does not borrow the UI's wording.
+ */
+export const METHOD_LABEL_VI: Record<string, string> = {
+  cash: "Tiền mặt",
+  transfer: "Chuyển khoản",
+  card: "Thẻ",
+  gateway: "Cổng thanh toán",
+  quota: "Trừ giờ trong gói",
+};
+
+export function methodLabelVi(s: string) {
+  return METHOD_LABEL_VI[s] ?? s;
+}
 
 export const SOURCE_LABEL: Record<string, string> = {
   court: "Court rental",

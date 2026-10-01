@@ -26,10 +26,15 @@ function Register() {
   const [form, setForm] = useState({
     full_name: "",
     phone: "",
+    // The verification code is emailed, so this is not an optional extra —
+    // without it there is no way to reach the person signing up.
+    email: "",
     password: "",
     dob: "1998-01-15",
     pii_consent: true,
   });
+  /** The masked address the code went to, e.g. `ng****@example.com`. */
+  const [sentTo, setSentTo] = useState<string | null>(null);
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
 
@@ -47,10 +52,13 @@ function Register() {
     }
     setBusy(true);
     try {
-      const res = await apiPost<{ otp?: string }>("/auth/register", form);
+      const res = await apiPost<{ otp?: string; sent_to?: string | null }>("/auth/register", form);
       setShown(res.otp ?? "");
+      setSentTo(res.sent_to ?? null);
       setStep("otp");
-      toast.message("OTP written to the staging log.");
+      toast.message(
+        res.sent_to ? `Code sent to ${res.sent_to}` : "Code generated — check with the front desk.",
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not create the account");
     } finally {
@@ -163,6 +171,20 @@ function Register() {
                   </button>
                 </div>
               </Field>
+              <Field
+                label="Email"
+                tone="muted"
+                hint="Where your verification code is sent, and how you recover the account."
+              >
+                <Input
+                  required
+                  type="email"
+                  autoComplete="email"
+                  placeholder="ban@example.com"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                />
+              </Field>
               <Field label="Confirm password" hint={mismatch ? "The two passwords do not match." : undefined}>
                 <Input
                   required
@@ -185,7 +207,7 @@ function Register() {
               <Magnet radius={140} pull={0.22} wrapperClassName="w-full" className="w-full">
                 <Button
                   type="submit"
-                  disabled={busy || mismatch || tooWeak || !form.password}
+                  disabled={busy || mismatch || tooWeak || !form.password || !form.email}
                   className="w-full"
                 >
                   {busy ? "Sending…" : "Send OTP"}
@@ -202,9 +224,23 @@ function Register() {
               className="mt-6 grid gap-4"
               onSubmit={verify}
             >
+              {/*
+                Say where the code went. Somebody staring at an empty code box
+                needs to know which inbox to open before anything else.
+              */}
+              <p className="rounded-[var(--radius-md)] bg-wood px-3 py-2 text-sm">
+                {sentTo ? (
+                  <>
+                    We emailed a code to <span className="font-medium">{sentTo}</span>. It expires in 5
+                    minutes.
+                  </>
+                ) : (
+                  <>We could not email the code. Ask the front desk to verify you in person.</>
+                )}
+              </p>
               {shown ? (
-                <p className="rounded-[var(--radius-md)] bg-wood px-3 py-2 text-sm">
-                  Test OTP: <span className="font-medium tabular-nums">{shown}</span>
+                <p className="rounded-[var(--radius-md)] border border-hold/40 px-3 py-2 text-sm text-hold">
+                  Demo build — the code is <span className="font-medium tabular-nums">{shown}</span>.
                 </p>
               ) : null}
               <Field label="6-digit OTP">

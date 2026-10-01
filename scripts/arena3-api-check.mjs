@@ -49,6 +49,30 @@ async function main() {
   const prices = await req("/price-rules");
   expect(prices.status === 200 && prices.data.items?.some((p) => p.day_kind === "weekday"), "GET /price-rules", prices);
 
+  // Pins the 2026-09-27 live-check P0: PUT /v1/price-rules had left the
+  // weekday badminton court quoted at 99,999,999đ (and other slots at
+  // 100,000,004đ / 0đ). Every price on the public list must sit in the real
+  // range now, and none may be the vandalized value directly.
+  for (const p of prices.data.items) {
+    expect(
+      p.price_vnd !== 99_999_999 && p.price_vnd !== 100_000_004,
+      `price-rules row is not vandalized (${p.sport} ${p.day_kind})`,
+      p,
+    );
+    expect(p.price_vnd > 0 && p.price_vnd <= 5_000_000, `price-rules row is within bounds (${p.sport} ${p.day_kind})`, p);
+  }
+  const weekdayBadminton = prices.data.items.find(
+    (p) => p.sport === "badminton" && p.day_kind === "weekday" && p.start_local?.startsWith("06:"),
+  );
+  expect(weekdayBadminton && weekdayBadminton.price_vnd !== 80_000_000, "weekday 11:00 badminton quote is not 8e7", weekdayBadminton);
+
+  // Pins P1 #3: the hidden trial plan must never reach a member-visible list.
+  expect(
+    !plans.data.items.some((p) => p.id === "20000000-0000-0000-0000-000000000008"),
+    "hidden trial plan is not in public GET /plans",
+    plans.data.items,
+  );
+
   const mgr = await login("0900000001");
   expect(mgr.user.role === "manager", "manager role");
   const desk = await login("0900000002");
@@ -65,6 +89,24 @@ async function main() {
 
   const occ = await req("/occupancy", { token: member.token });
   expect(occ.status === 200 && occ.data.courts?.length >= 10, "GET /occupancy", occ);
+
+  // Pins P1 #4: repeated "ticket:" prefixes collapse to the actual note,
+  // and a note that is empty after stripping is refused rather than opened
+  // blank (FR-S03).
+  const ticketDouble = await req("/tickets", {
+    method: "POST",
+    token: member.token,
+    idem: true,
+    body: { body: "ticket:ticket: hello" },
+  });
+  expect(ticketDouble.status === 201 && ticketDouble.data.body === "hello", '"ticket:ticket: hello" is stored as "hello"', ticketDouble);
+  const ticketEmpty = await req("/tickets", {
+    method: "POST",
+    token: member.token,
+    idem: true,
+    body: { body: "ticket:" },
+  });
+  expect(ticketEmpty.status === 422, 'empty "ticket:" returns 422', ticketEmpty);
 
   const reports = await req("/reports/revenue", { token: mgr.token });
   expect(reports.status === 200 && reports.data.totals, "GET /reports/revenue", reports);

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ArrowUpRight, Banknote, Clock3, CreditCard, Landmark, Ticket, Undo2 } from "lucide-react";
 import { HoldTimer } from "@/components/media";
+import { PayOnlineButton } from "@/components/pay-online";
 import { Shell, money, useSessionUser, when } from "@/components/shell";
 import { Badge, Button, Card, Empty, Seg, Select, Skeleton } from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
@@ -52,6 +53,9 @@ type Receipt = {
   member_code: string | null;
   taken_by: string | null;
   invoice_id: string | null;
+  /** 'manual' — a person asserted it. 'auto' — the gateway confirmed it. */
+  capture_mode: "manual" | "auto" | null;
+  provider: string | null;
 };
 
 /** A court held open against a promise to transfer, with nothing posted yet. */
@@ -80,16 +84,26 @@ type Queue = {
   capped: boolean;
 };
 
+// `gateway` is one of the five values `pay_method` allows, so a payment taken
+// online was reachable only under "All" — and reconciliation is exactly the job
+// where a method you cannot isolate is the one you need.
 const METHODS = [
   { value: "all", label: "All" },
   { value: "cash", label: "Cash" },
   { value: "card", label: "Card" },
   { value: "transfer", label: "Transfer" },
+  { value: "gateway", label: "Online" },
 ] as const;
 
 function methodLabel(m: string) {
   return (
-    { cash: "Cash", card: "Card", transfer: "Bank transfer", quota: "Plan hours" } as Record<string, string>
+    {
+      cash: "Cash",
+      card: "Card",
+      transfer: "Bank transfer",
+      gateway: "Online gateway",
+      quota: "Plan hours",
+    } as Record<string, string>
   )[m] ?? m;
 }
 
@@ -113,6 +127,14 @@ function Page() {
   const [data, setData] = useState<Queue | null>(null);
   const [days, setDays] = useState("7");
   const [payMethod, setPayMethod] = useState("all");
+  // Whether this centre has payOS set up at all. Read once: the button must be
+  // absent rather than present-and-broken when it has not been configured.
+  const [onlineOn, setOnlineOn] = useState(false);
+  useEffect(() => {
+    void apiGet<{ capabilities?: { online_payment?: boolean } }>("/flags")
+      .then((r) => setOnlineOn(Boolean(r.capabilities?.online_payment)))
+      .catch(() => setOnlineOn(false));
+  }, []);
   const [shift, setShift] = useState<{ shift: { id: string } } | null>(null);
   // Method and busy flag are per-order: the desk works one member at a time,
   // but a slow network should never grey out the whole queue.
@@ -289,8 +311,15 @@ function Page() {
           <Badge tone="hold">{awaiting.length} transfers to check</Badge>
         ) : null}
         {refunds.length ? <Badge tone="danger">{refunds.length} refunds to sign off</Badge> : null}
+        {/*
+          Point at the button rather than describing where it lives. The hint
+          used to say "open a shift at the desk" and then leave the reader to
+          find it.
+        */}
         {!canTake ? (
-          <span className="text-sm text-muted">Open a shift at the desk before taking payment.</span>
+          <Link to="/desk">
+            <Badge tone="hold">No shift open — open one to take payment</Badge>
+          </Link>
         ) : null}
         <Link to="/desk" className="ml-auto">
           <Button variant="ink">Back to the desk</Button>
@@ -429,6 +458,20 @@ function Page() {
                                 : "Open a shift first"}
                           </Button>
                         </StarBorder>
+                        {/*
+                          The counter case. The customer is standing here; this
+                          puts a QR on reception's screen for them to scan, and
+                          the payment posts when payOS confirms it — reception
+                          never asserts that the money arrived.
+                        */}
+                        {onlineOn && !settled && due > 0 ? (
+                          <PayOnlineButton
+                            refType="subscription"
+                            refId={o.id}
+                            label={`Online ${money(due)}`}
+                            onPaid={() => void load()}
+                          />
+                        ) : null}
                         <Link to="/desk/member/$id" params={{ id: o.user_id }}>
                           <Button variant="outline">
                             Profile <ArrowUpRight className="ml-1 size-4" />
@@ -534,6 +577,17 @@ function Page() {
                       {t.taken_by ? ` · ${t.taken_by}` : ""}
                     </p>
                   </div>
+                  {/*
+                    Who says this money arrived. "Manual" is a member of staff's
+                    word — cash counted, a card slip, a statement read by eye.
+                    "Auto" was confirmed by the payment provider's own API with
+                    nobody asserting anything. A till that cannot tell the two
+                    apart cannot be reconciled honestly, so the distinction is
+                    on the row rather than buried in the record.
+                  */}
+                  <Badge tone={t.capture_mode === "auto" ? "accent" : "muted"}>
+                    {t.capture_mode === "auto" ? "Auto" : "Manual"}
+                  </Badge>
                   <span className="ml-auto font-medium tabular-nums">{money(t.amount_vnd)}</span>
                   {t.invoice_id ? (
                     <Button size="sm" variant="ghost" onClick={() => void openInvoice(t.invoice_id!)}>

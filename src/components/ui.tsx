@@ -2,6 +2,7 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
   type InputHTMLAttributes,
@@ -9,6 +10,7 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
+import { createPortal } from "react-dom";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatDate, statusLabel, statusTone } from "@/lib/arena3/labels";
@@ -329,6 +331,10 @@ export function Modal({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  // Portals need a document, which the server render does not have.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // Escape closes the dialog, and the page behind it stops scrolling while open.
   useEffect(() => {
     if (!open) return;
@@ -344,10 +350,24 @@ export function Modal({
     };
   }, [open, onClose]);
 
-  return (
+  /*
+   * Portalled to <body>, not rendered where it is written.
+   *
+   * A `position: fixed` element inside an ancestor that has a transform is
+   * positioned against that ancestor instead of the viewport, and its stacking
+   * is trapped there too. Every card on this app is inside an animated
+   * wrapper, so a dialog opened from one was painted underneath the page
+   * furniture around it — the payments filter row sat on top of the QR code a
+   * customer was being asked to scan.
+   *
+   * `mounted` keeps this off the server render, where there is no document.
+   */
+  const body = mounted ? document.body : null;
+
+  const dialog = (
     <AnimatePresence>
       {open ? (
-        <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-labelledby="modal-title">
           <motion.button
             type="button"
             className="absolute inset-0 bg-fg/40 backdrop-blur-[2px]"
@@ -375,6 +395,8 @@ export function Modal({
       ) : null}
     </AnimatePresence>
   );
+
+  return body ? createPortal(dialog, body) : null;
 }
 
 /**

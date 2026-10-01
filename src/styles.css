@@ -312,6 +312,18 @@
   background: radial-gradient(circle, color-mix(in oklab, var(--color-hold) 45%, transparent), transparent 70%);
 }
 
+/* Hatching for an hour nobody can buy — maintenance or a closed court. Colour
+   alone was carrying that before, and on a grid of 9px cells two muted browns
+   are the same brown. Stripes read as "crossed off" at any size, and they
+   survive a colour-blind reader and a projector. */
+.stripes {
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklab, var(--color-fg) 12%, transparent) 0 3px,
+    transparent 3px 7px
+  );
+}
+
 /* ── Text treatments ─────────────────────────────────────────────── */
 
 /* Block-caps voice for the loud elements: scoreboard numerals, sport names,

@@ -143,9 +143,17 @@ function Login() {
               </Button>
             </Magnet>
           </form>
-          <div className="mt-4 text-sm">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
             <Link to="/register" className="text-accent-2 hover:underline">
               Create an account
+            </Link>
+            {/*
+              The reset flow existed on the server with nothing pointing at it,
+              so a member who forgot their password had to ask the desk to do
+              it for them.
+            */}
+            <Link to="/forgot" className="text-muted hover:underline">
+              Forgot your password?
             </Link>
           </div>
         </Card>

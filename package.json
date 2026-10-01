@@ -19,7 +19,8 @@
     "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/arena3/arena3.test.ts",
     "check:api": "node scripts/arena3-api-check.mjs",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "check:integrations": "node scripts/check-integrations.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
@@ -27,6 +28,8 @@
     "@hookform/resolvers": "^5.7.0",
     "@neon/config": "^1.4.2",
     "@neon/env": "^1.3.2",
+    "@payos/node": "^2.0.5",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.11",
@@ -64,8 +67,11 @@
     "kysely": "^0.28.5",
     "lucide-react": "^0.510.0",
     "motion": "^13.4.0",
+    "nodemailer": "^10.0.11",
     "ogl": "^1.0.11",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.16.3",
+    "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.0",
@@ -83,7 +89,9 @@
   "devDependencies": {
     "@eslint/js": "^9.20.0",
     "@types/node": "^22.16.5",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.11.10",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.2.0",

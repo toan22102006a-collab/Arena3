@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { PayOnlineButton } from "@/components/pay-online";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Shell, money, useSessionUser, when } from "@/components/shell";
@@ -52,6 +53,14 @@ function Page() {
       classes: unknown[];
     };
   } | null>(null);
+  // Leave the online button out when the centre has no payOS keys, rather
+  // than offering reception a button that errors in front of a customer.
+  const [onlineOn, setOnlineOn] = useState(false);
+  useEffect(() => {
+    void apiGet<{ capabilities?: { online_payment?: boolean } }>("/flags")
+      .then((r) => setOnlineOn(Boolean(r.capabilities?.online_payment)))
+      .catch(() => setOnlineOn(false));
+  }, []);
   const [plans, setPlans] = useState<Array<{ id: string; name: string; price_vnd: number }>>([]);
   // The payment a refund is being raised against, plus what the desk typed.
   const [refunding, setRefunding] = useState<Payment | null>(null);
@@ -161,6 +170,22 @@ function Page() {
               >
                 Take payment
               </Button>
+            ) : null}
+            {/*
+              The counter case for a plan: the customer is at the desk, this
+              puts a QR on reception's screen and the payment posts when payOS
+              confirms it. Sits beside "Take payment" — which is cash, and is
+              reception's word — so the two are never confused.
+            */}
+            {onlineOn && (s.status === "pending" || s.status === "active") ? (
+              <PayOnlineButton
+                refType="subscription"
+                refId={s.id}
+                label="Pay online"
+                size="md"
+                variant="outline"
+                onPaid={() => void load()}
+              />
             ) : null}
             {s.status === "active" ? (
               <Button

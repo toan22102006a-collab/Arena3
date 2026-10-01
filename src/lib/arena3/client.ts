@@ -135,8 +135,58 @@ export const apiPatch = <T>(path: string, body?: unknown) =>
 export const apiPut = <T>(path: string, body?: unknown) =>
   api<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined });
 export const apiDelete = <T>(path: string) => api<T>(path, { method: "DELETE" });
-export async function openInvoice(id: string) {
-  const blob = await api<Blob>(`/invoices/${id}.pdf`);
-  const url = URL.createObjectURL(blob as Blob);
-  window.open(url, "_blank");
+/**
+ * A binary GET that also surfaces the filename the server chose.
+ *
+ * `api()` throws the headers away, and the invoice code only exists in
+ * `content-disposition` — without it a saved receipt lands in Downloads named
+ * after a UUID.
+ */
+async function apiBlob(path: string): Promise<{ blob: Blob; filename: string | null }> {
+  const headers = new Headers();
+  const token = getToken();
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  const res = await fetch(`/v1${path}`, { headers });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new ApiClientError(res.status, text ? JSON.parse(text) : { code: "ERROR", message: "Request failed" });
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1];
+  return { blob: await res.blob(), filename: name ?? null };
+}
+
+/**
+ * Show a receipt, and actually show it.
+ *
+ * `window.open` after an `await` is no longer inside the click that caused it,
+ * so every browser treats it as an unsolicited popup and blocks it. It does
+ * not throw when that happens — it returns `null` — so the callers' `try/catch`
+ * never fired and pressing "Receipt" did nothing at all, with no error, on any
+ * of the eleven places that call this. The PDF had been fetched correctly the
+ * whole time.
+ *
+ * A programmatic download is not subject to the popup blocker, so it is the
+ * fallback: worst case the receipt lands in Downloads instead of a new tab,
+ * which is a far better outcome than silence at the till.
+ */
+export async function openInvoice(id: string): Promise<"opened" | "downloaded"> {
+  const { blob, filename } = await apiBlob(`/invoices/${id}.pdf`);
+  const url = URL.createObjectURL(blob);
+  try {
+    const win = window.open(url, "_blank");
+    if (win && !win.closed) return "opened";
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename ?? `receipt-${id}.pdf`;
+    a.rel = "noopener";
+    document.body.append(a);
+    a.click();
+    a.remove();
+    return "downloaded";
+  } finally {
+    // The blob is held alive by the object URL until it is revoked, and a till
+    // that prints all day would otherwise accumulate every receipt it issued.
+    // Long enough for the new tab or the download to have read it.
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
 }

@@ -1,24 +1,4 @@
 {
-  "java.configuration.runtimes": [
-    {
-      "name": "JavaSE-17",
-      "path": "C:\\Users\\ADMIN\\.jdks\\corretto-17.0.12",
-      "default": true
-    }
-  ],
-  "maven.terminal.customEnv": [
-    {
-      "environmentVariable": "JAVA_HOME",
-      "value": "C:\\Users\\ADMIN\\.jdks\\corretto-17.0.12"
-    },
-    {
-      "environmentVariable": "MAVEN_OPTS",
-      "value": "-Dfile.encoding=UTF-8"
-    }
-  ],
-  "java.test.config": {
-    "workingDirectory": "${workspaceFolder}/backend"
-  },
   "java.import.exclusions": [
     "**/node_modules/**",
     "**/.git/**",

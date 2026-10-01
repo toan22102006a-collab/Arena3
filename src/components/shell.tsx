@@ -3,9 +3,11 @@ import {
   CalendarDays,
   ChevronDown,
   ClipboardList,
+  Dumbbell,
   LayoutGrid,
   LogOut,
   Map,
+  ScrollText,
   Settings,
   Ticket,
   UserCog,
@@ -47,6 +49,9 @@ const NAV: Record<string, { to: string; label: string; icon: typeof Map }[]> = {
     { to: "/desk", label: "Desk", icon: Users },
     { to: "/desk/courts", label: "Courts", icon: Map },
     { to: "/desk/payments", label: "Payments", icon: Wallet },
+    // `/desk/gear` is a complete equipment-hire screen that nothing linked to,
+    // so reception could only reach it by typing the URL.
+    { to: "/desk/gear", label: "Gear", icon: Dumbbell },
   ],
   coach: [{ to: "/coach", label: "Teaching", icon: ClipboardList }],
   manager: [
@@ -54,6 +59,7 @@ const NAV: Record<string, { to: string; label: string; icon: typeof Map }[]> = {
     { to: "/manager/classes", label: "Classes", icon: Ticket },
     { to: "/manager/plans", label: "Plans", icon: Wallet },
     { to: "/manager/prices", label: "Pricing", icon: Settings },
+    { to: "/manager/audit", label: "Audit", icon: ScrollText },
     { to: "/manager/settings", label: "Settings", icon: Settings },
   ],
 };

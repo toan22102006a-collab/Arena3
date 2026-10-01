@@ -15,8 +15,6 @@ export default tseslint.config(
       ".nitro/**",
       "node_modules/**",
       "src/routeTree.gen.ts",
-      // Maven build output — generated JS in surefire/failsafe reports is not ours.
-      "backend/target/**",
     ],
   },
   js.configs.recommended,

@@ -10,6 +10,7 @@ import * as planH from "./handlers/plans";
 import * as bookH from "./handlers/bookings";
 import * as classH from "./handlers/classes";
 import * as deskH from "./handlers/desk";
+import * as onlineH from "./handlers/online";
 import * as opsH from "./handlers/ops";
 
 type Result = { status: number; body: unknown };
@@ -43,6 +44,23 @@ async function dispatch(request: Request): Promise<Response | Result> {
   }
   if (method === "POST" && p0 === "auth" && p1 === "login") {
     return withTx((sql) => authH.login(sql, request));
+  }
+  /*
+   * payOS calling to say a link was paid.
+   *
+   * Public because payOS carries no session, and deliberately NOT wrapped in
+   * `idem()`: that helper requires an `Idempotency-Key` header and throws
+   * without one, which payOS has no way to send. Replay safety comes from the
+   * unique index on `(provider, provider_txn_id)` and from the payment's own
+   * status, not from a header.
+   */
+  // The order-sequence high-water mark, readable without a session: whoever is
+  // migrating the database needs it precisely when nobody can sign in yet.
+  if (method === "GET" && p0 === "payments" && p1 === "online" && p2 === "sequence") {
+    return withTx((sql) => onlineH.onlineSequence(sql));
+  }
+  if (method === "POST" && p0 === "payments" && p1 === "online" && p2 === "webhook") {
+    return withTx((sql) => onlineH.payosWebhook(sql, request));
   }
   if (method === "POST" && p0 === "auth" && p1 === "password" && p2 === "forgot") {
     return withTx((sql) => authH.forgot(sql, request));
@@ -188,6 +206,17 @@ async function dispatch(request: Request): Promise<Response | Result> {
 
   if (method === "GET" && p0 === "payments" && p1 === "pending") {
     return authedRead((sql, user) => deskH.paymentsPending(sql, request, user));
+  }
+  // Raise a payOS link — the member on their phone, or reception showing the
+  // QR to a customer standing at the counter.
+  if (method === "POST" && p0 === "payments" && p1 === "online" && !p2) {
+    return authed((sql, user) => onlineH.onlineCreate(sql, request, user));
+  }
+  // Ask payOS whether it has been paid. Deliberately idempotent rather than
+  // idempotency-keyed: the return page, reception's screen and the job loop all
+  // poll the same link, and none of them can supply a shared key.
+  if (method === "POST" && p0 === "payments" && p1 === "online" && p2 && parts[3] === "verify") {
+    return authed((sql, user) => onlineH.onlineVerify(sql, p2, user));
   }
   if (method === "POST" && p0 === "payments" && !p1) {
     return authed((sql, user) =>

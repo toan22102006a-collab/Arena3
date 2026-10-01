@@ -23,6 +23,34 @@ export function ictHour(d: Date): number {
   return Math.floor(ictMinutes(d) / 60);
 }
 
+/**
+ * An instant as a Vietnamese reader expects to see it: `27/09/2026 19:00`.
+ *
+ * For invoice goods lines and anything else a member reads on paper. Takes the
+ * raw timestamptz string the database hands back, so callers do not each parse
+ * it their own way.
+ */
+export function ictStamp(at: string | Date): string {
+  const d = at instanceof Date ? at : new Date(at);
+  if (Number.isNaN(d.getTime())) return String(at);
+  const p = new Intl.DateTimeFormat("en-GB", {
+    timeZone: ICT,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(d);
+  const get = (t: string) => p.find((x) => x.type === t)?.value ?? "";
+  return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
+}
+
+/** Just the `HH:mm` half of {@link ictStamp}. */
+export function ictClock(at: string | Date): string {
+  return ictStamp(at).slice(-5);
+}
+
 /** Minutes since midnight in ICT (0–1439). */
 export function ictMinutes(d: Date): number {
   const parts = new Intl.DateTimeFormat("en-GB", {

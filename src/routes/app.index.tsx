@@ -4,6 +4,7 @@ import { AssistantMark } from "@/components/mark";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PassCard } from "@/components/media";
+import { PayOnlineButton } from "@/components/pay-online";
 import { Shell, hhmm, money, when } from "@/components/shell";
 import { Button, Card, Empty, Skeleton, StatusBadge } from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
@@ -51,6 +52,13 @@ type Me = {
 
 function Page() {
   const [me, setMe] = useState<Me | null>(null);
+  // Whether the centre takes payment online at all.
+  const [onlineOn, setOnlineOn] = useState(false);
+  useEffect(() => {
+    void apiGet<{ capabilities?: { online_payment?: boolean } }>("/flags")
+      .then((r) => setOnlineOn(Boolean(r.capabilities?.online_payment)))
+      .catch(() => setOnlineOn(false));
+  }, []);
   useEffect(() => {
     void apiGet<Me>("/me")
       .then(setMe)
@@ -251,6 +259,22 @@ function Page() {
                             can be cancelled. */}
                         <div className="mt-1 flex min-h-8 items-center justify-between gap-2">
                           <p className="font-mono text-xs text-muted">{ev.meta}</p>
+                          {/*
+                            A held court can be paid for from here, not only
+                            from the screen it was booked on. The booking page
+                            keeps the hold in component state, so refreshing or
+                            walking away left the member with a court they
+                            could see, could cancel, and had no way to pay for
+                            — it simply sat blocking the slot until it expired.
+                          */}
+                          {onlineOn && ev.bookingId && ev.status === "hold" ? (
+                            <PayOnlineButton
+                              refType="booking"
+                              refId={ev.bookingId}
+                              label="Pay online"
+                              onPaid={async () => setMe(await apiGet("/me"))}
+                            />
+                          ) : null}
                           {ev.bookingId && (ev.status === "hold" || ev.status === "confirmed") ? (
                             <Button
                               size="sm"

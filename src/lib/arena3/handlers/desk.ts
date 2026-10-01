@@ -4,13 +4,16 @@ import {
   audit,
   enqueueReceipt,
   getSettings,
+  issueInvoice,
   nextCode,
   num,
   readJson,
   str,
   subscriptionDebt,
 } from "../helpers";
-import { invoicePdfLines, simplePdf } from "../pdf";
+import { methodLabelVi } from "../labels";
+import { renderInvoicePdf } from "../pdf";
+import { validatePriceRules } from "../rules";
 import { requireRole, type PublicUser } from "../session";
 import { addDays, ictDateString } from "../time";
 import { one } from "../tx";
@@ -128,6 +131,47 @@ async function activateSubscription(sql: Sql, subId: string) {
   }
 }
 
+/**
+ * What the money actually bought, as it should read on the invoice.
+ *
+ * The goods line used to be the literal string "Thu ngan" for everything that
+ * was not a plan, so a member who paid for a court got an invoice saying
+ * "1 x Thu ngan". The payment already knows its `ref_type`/`ref_id`; this looks
+ * through to the thing itself so the line names the court and the hour.
+ */
+async function describePayment(
+  sql: Sql,
+  refType: string,
+  refId: string,
+): Promise<{ description: string; unit: string }> {
+  if (refType === "subscription") {
+    const row = await one<{ name: string }>(
+      sql,
+      `select p.name from subscriptions s join membership_plans p on p.id = s.plan_id where s.id = $1`,
+      [refId],
+    );
+    return { description: row ? `Gói hội viên — ${row.name}` : "Gói hội viên", unit: "gói" };
+  }
+  if (refType === "booking") {
+    const row = await one<{ court_code: string; window: string }>(
+      sql,
+      `select c.court_code,
+              to_char(b.start_at at time zone 'Asia/Ho_Chi_Minh', 'DD/MM/YYYY HH24:MI')
+                || '–' || to_char(b.end_at at time zone 'Asia/Ho_Chi_Minh', 'HH24:MI') as window
+         from court_bookings b join courts c on c.id = b.court_id
+        where b.id = $1`,
+      [refId],
+    );
+    return {
+      description: row ? `Thuê sân ${row.court_code} — ${row.window}` : "Thuê sân",
+      unit: "giờ",
+    };
+  }
+  if (refType === "walkin") return { description: "Vé lẻ vào cửa", unit: "lượt" };
+  if (refType === "equipment") return { description: "Thuê thiết bị", unit: "lượt" };
+  return { description: "Dịch vụ tại trung tâm", unit: "lượt" };
+}
+
 export async function paymentsCreate(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["receptionist", "manager"]);
   const b = await readJson(request);
@@ -183,25 +227,24 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
         : debt <= 0;
     if (paidEnough) await activateSubscription(sql, ref_id);
   }
-  const invCode = await nextCode(sql, "INV");
-  const inv = await one<{ id: string }>(
-    sql,
-    `insert into invoices (code, payment_id, buyer_name) values ($1,$2,$3) returning id`,
-    [invCode, pay!.id, buyer],
-  );
-  await sql.query(
-    `insert into invoice_lines (invoice_id, description, qty, unit_vnd, amount_vnd)
-     values ($1,$2,1,$3,$3)`,
-    [inv!.id, ref_type === "subscription" ? "Goi thanh vien" : "Thu ngan", amount],
-  );
+  const item = await describePayment(sql, ref_type, ref_id);
+  const invoiceId = await issueInvoice(sql, {
+    paymentId: pay!.id,
+    buyerName: buyer,
+    amountVnd: amount,
+    vatRate: Number(settings.vat_rate ?? 0),
+    description: item.description,
+    unit: item.unit,
+    settings,
+  });
   await enqueueReceipt(sql, userId, {
     payment_id: pay!.id,
-    invoice_id: inv!.id,
+    invoice_id: invoiceId,
     amount_vnd: amount,
     method,
   });
   const payment = await one(sql, `select * from payments where id = $1`, [pay!.id]);
-  const invoice = await one(sql, `select * from invoices where id = $1`, [inv!.id]);
+  const invoice = await one(sql, `select * from invoices where id = $1`, [invoiceId]);
   await audit(sql, user.id, "create_payment", "payment", pay!.id);
   return { status: 201, body: { payment, invoice } };
 }
@@ -410,6 +453,7 @@ export async function paymentsPending(sql: Sql, request: Request, user: PublicUs
    */
   const receipts = await sql.query(
     `select p.id, p.code, p.method, p.amount_vnd, p.created_at, p.ref_type, p.ref_id,
+            p.capture_mode, p.provider,
             u.full_name as member_name, u.member_code,
             s.full_name as taken_by,
             i.id as invoice_id
@@ -493,17 +537,32 @@ export async function invoicesMine(sql: Sql, request: Request, user: PublicUser)
 
 export async function invoicePdf(sql: Sql, id: string, request: Request, user: PublicUser) {
   requireRole(user, ["manager", "receptionist", "member"]);
-  const format = new URL(request.url).searchParams.get("format") ?? "a5";
+  const format = new URL(request.url).searchParams.get("format") === "80mm" ? "80mm" : "a5";
   const inv = await one<{
     id: string;
     code: string;
     payment_id: string;
     buyer_name: string;
     buyer_tax_code: string | null;
+    buyer_address: string | null;
+    form_no: string | null;
+    serial_no: string | null;
+    seller_legal_name: string | null;
+    seller_tax_code: string | null;
+    seller_address: string | null;
+    subtotal_vnd: number | null;
+    vat_rate: string | number | null;
+    vat_vnd: number | null;
+    total_vnd: number | null;
     issued_at: string;
-  }>(sql, `select id, code, payment_id, buyer_name, buyer_tax_code, issued_at::text from invoices where id = $1`, [
-    id,
-  ]);
+  }>(
+    sql,
+    `select id, code, payment_id, buyer_name, buyer_tax_code, buyer_address,
+            form_no, serial_no, seller_legal_name, seller_tax_code, seller_address,
+            subtotal_vnd, vat_rate, vat_vnd, total_vnd, issued_at::text
+       from invoices where id = $1`,
+    [id],
+  );
   if (!inv) throw err.notFound();
   const pay = await one<{ code: string; method: string; amount_vnd: number; user_id: string | null }>(
     sql,
@@ -516,26 +575,41 @@ export async function invoicePdf(sql: Sql, id: string, request: Request, user: P
   if (user.role === "member" && pay?.user_id !== user.id) throw err.notFound();
   const lines = await sql.query<{
     description: string;
+    unit: string | null;
     qty: number;
     unit_vnd: number;
     amount_vnd: number;
-  }>(`select description, qty, unit_vnd, amount_vnd from invoice_lines where invoice_id = $1`, [id]);
+  }>(`select description, unit, qty, unit_vnd, amount_vnd from invoice_lines where invoice_id = $1`, [id]);
+
+  // The seller block and the tax split are read off the invoice, not off
+  // today's settings: an invoice states what was true when it was issued.
+  // `settings` is only the fallback for a row written before 0014.
   const settings = await getSettings(sql);
-  const bytes = simplePdf(
-    invoicePdfLines({
+  const total = inv.total_vnd ?? pay?.amount_vnd ?? 0;
+  const vatRate = Number(inv.vat_rate ?? 0);
+  const subtotal = inv.subtotal_vnd ?? Math.floor(total / (1 + vatRate / 100));
+
+  const bytes = await renderInvoicePdf(
+    {
       code: inv.code,
+      form_no: inv.form_no,
+      serial_no: inv.serial_no,
       issued_at: inv.issued_at,
-      buyer_name: inv.buyer_name,
-      buyer_tax_code: inv.buyer_tax_code,
-      legal_name: settings.legal_name,
-      tax_code: settings.tax_code,
-      address: settings.address,
+      seller: {
+        legal_name: inv.seller_legal_name ?? settings.legal_name ?? "Arena3 Sports Center",
+        tax_code: inv.seller_tax_code ?? settings.tax_code,
+        address: inv.seller_address ?? settings.address,
+      },
+      buyer: { name: inv.buyer_name, tax_code: inv.buyer_tax_code, address: inv.buyer_address },
       pay_code: pay?.code ?? "",
-      method: pay?.method ?? "",
+      method_label: methodLabelVi(pay?.method ?? ""),
       lines,
-      total: pay?.amount_vnd ?? 0,
-    }),
-    format === "80mm" ? { width: 226, height: 600 } : { width: 420, height: 595 },
+      subtotal_vnd: subtotal,
+      vat_rate: vatRate,
+      vat_vnd: inv.vat_vnd ?? total - subtotal,
+      total_vnd: total,
+    },
+    format,
   );
   return new Response(Buffer.from(bytes), {
     status: 200,
@@ -587,6 +661,24 @@ export async function reportsRevenue(sql: Sql, request: Request, user: PublicUse
         and status in ('confirmed','in_use','completed','no_show')`,
     [from, to],
   );
+  // Revenue per ICT day, gapless across the whole window.
+  //
+  // The report could only ever be sliced by method and source, so the manager
+  // screen had no way to draw a trend — the one question a revenue report is
+  // usually opened to answer. generate_series supplies the days with no
+  // takings too: dropping them would make a quiet Tuesday vanish and join
+  // Monday straight to Wednesday, which reads as steady trade.
+  const by_day = await sql.query<{ day: string; revenue_vnd: number }>(
+    `select to_char(d.day, 'YYYY-MM-DD') as day,
+            coalesce(sum(p.amount_vnd) filter (where p.method <> 'quota'), 0)::int as revenue_vnd
+       from generate_series($1::date, $2::date, interval '1 day') as d(day)
+       left join payments p
+              on p.status = 'posted'
+             and (p.created_at at time zone 'Asia/Ho_Chi_Minh')::date = d.day::date
+      group by d.day
+      order by d.day`,
+    [from, to],
+  );
   return {
     status: 200,
     body: {
@@ -595,6 +687,7 @@ export async function reportsRevenue(sql: Sql, request: Request, user: PublicUse
       totals: { revenue_vnd: gross - refund, gross_vnd: gross, refund_vnd: refund, quota_hours: Number(quotaHours?.hours ?? 0) },
       by_source,
       by_method,
+      by_day,
       quota_payments: quota,
       lines: money,
     },
@@ -689,36 +782,43 @@ export async function priceRulesPut(sql: Sql, request: Request, user: PublicUser
   const b = await readJson(request);
   const items = Array.isArray(b.items) ? b.items : Array.isArray(b) ? b : null;
   if (!items) throw err.validation("items[] is required.");
+  // The one thing standing between a fat-fingered (or malicious) PUT and a
+  // court quoted at 99,999,999đ. Validate the whole table before touching a
+  // row — `delete from price_rules` is not the place to discover row 9 was bad.
+  const checked = validatePriceRules(items);
+  if (!checked.ok) throw err.validation(checked.message, { index: checked.index });
+  const before = await priceRulesGet(sql);
   await sql.query(`delete from price_rules`);
-  for (const it of items as Record<string, unknown>[]) {
+  for (const it of checked.rules) {
     await sql.query(
       `insert into price_rules (sport, court_id, day_kind, start_local, end_local, price_vnd, is_peak)
        values ($1,$2,$3,$4,$5,$6,$7)`,
-      [
-        str(it.sport),
-        str(it.court_id) ?? null,
-        str(it.day_kind),
-        str(it.start_local),
-        str(it.end_local),
-        num(it.price_vnd),
-        Boolean(it.is_peak),
-      ],
+      [it.sport, it.court_id, it.day_kind, it.start_local, it.end_local, it.price_vnd, it.is_peak],
     );
   }
-  await audit(sql, user.id, "replace_prices", "price_rules", null);
+  await audit(sql, user.id, "replace_prices", "price_rules", null, before.body, { items: checked.rules });
   return priceRulesGet(sql);
 }
 
 export async function auditList(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["manager"]);
   const sp = new URL(request.url).searchParams;
+  // The actor's name, not just their id. An audit log answers "who did this",
+  // and a column of UUIDs cannot be read by the person the log is for.
   const items = await sql.query(
-    `select id, at, actor_id, action, entity, entity_id, before, after
-       from audit_logs
-      where ($1::text is null or action = $1)
-      order by at desc
-      limit 100`,
+    `select a.id, a.at, a.actor_id, u.full_name as actor_name, u.role as actor_role,
+            a.action, a.entity, a.entity_id, a.before, a.after
+       from audit_logs a
+       left join users u on u.id = a.actor_id
+      where ($1::text is null or a.action = $1)
+      order by a.at desc
+      limit 200`,
     [sp.get("action")],
   );
-  return { status: 200, body: { items } };
+  // The distinct actions present, so the filter offers what actually exists
+  // rather than a hard-coded list that drifts from the handlers.
+  const actions = await sql.query<{ action: string }>(
+    `select distinct action from audit_logs order by action`,
+  );
+  return { status: 200, body: { items, actions: actions.map((a) => a.action) } };
 }

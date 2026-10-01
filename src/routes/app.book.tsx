@@ -3,8 +3,9 @@ import { AnimatePresence, motion } from "motion/react";
 import { Landmark, Receipt as ReceiptIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { CourtGrid, DateStrip, type Court, type OccSlot } from "@/components/court-grid";
-import { Cover, HoldTimer, MediaCaption, media, sportPhoto } from "@/components/media";
+import { CourtGrid, DateStrip, freeHours, type Court, type OccSlot } from "@/components/court-grid";
+import { Cover, HoldProgress, HoldTimer, MediaCaption, media, sportPhoto } from "@/components/media";
+import { PayOnlineButton } from "@/components/pay-online";
 import { Shell, money } from "@/components/shell";
 import { Button, Card, DateField, Seg, Skeleton } from "@/components/ui";
 import { GlareHover, StarBorder } from "@/components/fx";
@@ -15,10 +16,39 @@ export const Route = createFileRoute("/app/book")({
   component: Page,
 });
 
+/** The closest still-free hours on the same sport, nearest to what they wanted. */
+function nearestFree(
+  data: { courts: Court[]; slots: OccSlot[] },
+  wanted: Court,
+  hour: number,
+  date: string,
+) {
+  const sameSport = data.courts.filter((c) => c.sport === wanted.sport);
+  return freeHours(sameSport, data.slots, date, Date.now())
+    .sort(
+      (a, b) =>
+        Math.abs(a.hour - hour) - Math.abs(b.hour - hour) ||
+        Number(b.court.court_code === wanted.court_code) -
+          Number(a.court.court_code === wanted.court_code),
+    )
+    .slice(0, 3);
+}
+
 type Hold = {
   booking: { id: string; code: string; hold_until?: string };
   price: number;
   hold_until: string;
+  /** Which slot this is, carried from the tap so the card can name it. */
+  court_code?: string;
+  hour?: number;
+};
+
+/** A hold that was refused, and — when another hour would help — where to go instead. */
+type Taken = {
+  message: string;
+  alts: { court: Court; hour: number }[];
+  /** False when the refusal was about the member, not the slot. */
+  canRetry: boolean;
 };
 
 function Page() {
@@ -27,7 +57,16 @@ function Page() {
   const [data, setData] = useState<{ courts: Court[]; slots: OccSlot[] } | null>(null);
   const [hold, setHold] = useState<Hold | null>(null);
   const [overlap, setOverlap] = useState<{ court: Court; hour: number; message: string } | null>(null);
+  const [taken, setTaken] = useState<Taken | null>(null);
   const [busy, setBusy] = useState(false);
+  // Leave the online button out entirely when the centre has no payOS set up,
+  // rather than offering one that errors.
+  const [onlineOn, setOnlineOn] = useState(false);
+  useEffect(() => {
+    void apiGet<{ capabilities?: { online_payment?: boolean } }>("/flags")
+      .then((r) => setOnlineOn(Boolean(r.capabilities?.online_payment)))
+      .catch(() => setOnlineOn(false));
+  }, []);
   // Sticks around after the toast has gone. A receipt people paid for should
   // not be something you have four seconds to notice.
   const [receipt, setReceipt] = useState<string | null>(null);
@@ -53,15 +92,42 @@ function Page() {
         { court_id: court.id, start_at: start, ...(confirmOverlap ? { confirm_overlap: true } : {}) },
         true,
       );
-      setHold(res);
+      setHold({ ...res, court_code: court.court_code, hour });
       setOverlap(null);
+      setTaken(null);
       toast.success(`Holding ${court.court_code} · ${res.booking.code}`);
       await load();
     } catch (e) {
       if (e instanceof ApiClientError && e.body.requires_confirm && !confirmOverlap) {
         setOverlap({ court, hour, message: e.body.message });
       } else {
-        toast.error(e instanceof Error ? e.message : "Could not hold that slot");
+        // Two people reaching for the same 19:00 on a Saturday is the system
+        // working, not breaking — but a red toast saying "slot unavailable"
+        // leaves the member to start the search again from nothing. Offer the
+        // nearest hours that are still open instead, closest first.
+        const message = e instanceof Error ? e.message : "Could not hold that slot";
+        // Only when another hour would actually help. A member who has used up
+        // their two holds for the day, or whose balance is over the limit, is
+        // not going to get anywhere by tapping a different court — offering
+        // three of them would just be three more refusals.
+        const aboutTheSlot =
+          !(e instanceof ApiClientError) ||
+          e.body.code === "CONFLICT_SLOT" ||
+          e.body.br === "BR-35" ||
+          e.body.br === "BR-66";
+        // Re-read the day before suggesting anything: the grid on screen is
+        // the one that just turned out to be wrong.
+        const fresh = aboutTheSlot
+          ? await apiGet<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${date}`).catch(
+              () => null,
+            )
+          : null;
+        if (fresh) setData(fresh);
+        setTaken({
+          message,
+          alts: fresh ? nearestFree(fresh, court, hour, date) : [],
+          canRetry: aboutTheSlot,
+        });
       }
     } finally {
       setBusy(false);
@@ -199,6 +265,65 @@ function Page() {
             </Card>
           </motion.div>
         ) : null}
+        {taken ? (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <Card className="mb-4 border border-hold/30 bg-hold/5">
+              <p className="text-sm font-medium">{taken.message}</p>
+              {!taken.canRetry ? (
+                <>
+                  <p className="mt-1 text-xs text-muted">
+                    Another court will not get past this one — the desk can sort it out while you
+                    are here.
+                  </p>
+                  <div className="mt-3">
+                    <Button size="sm" variant="ghost" onClick={() => setTaken(null)}>
+                      Dismiss
+                    </Button>
+                  </div>
+                </>
+              ) : taken.alts.length ? (
+                <>
+                  <p className="mt-1 text-xs text-muted">
+                    Nearest hours still open on this sport — tap one to hold it.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {taken.alts.map((a) => (
+                      <Button
+                        key={`${a.court.id}-${a.hour}`}
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => void holdSlot(a.court, a.hour)}
+                      >
+                        {a.court.court_code} · {String(a.hour).padStart(2, "0")}:00
+                      </Button>
+                    ))}
+                    <Button size="sm" variant="ghost" onClick={() => setTaken(null)}>
+                      Dismiss
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="mt-1 text-xs text-muted">
+                    Nothing else is free for this sport today. Try another date above, or another
+                    sport.
+                  </p>
+                  <div className="mt-3">
+                    <Button size="sm" variant="ghost" onClick={() => setTaken(null)}>
+                      Dismiss
+                    </Button>
+                  </div>
+                </>
+              )}
+            </Card>
+          </motion.div>
+        ) : null}
         {overlap ? (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
@@ -231,13 +356,23 @@ function Page() {
             exit={{ opacity: 0, y: -8, height: 0 }}
             className="overflow-hidden"
           >
-            <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-accent/30">
-              <div>
-                <p className="text-sm text-muted">
-                  On hold ·{" "}
-                  <HoldTimer until={hold.hold_until} onExpire={() => setHold(null)} /> left
+            {/* Sticky: the countdown is the one thing on this page that stops
+                being true while you look away from it, and scrolling the grid
+                for another court used to push it off screen. */}
+            <Card className="sticky top-2 z-20 mb-4 flex flex-wrap items-center justify-between gap-4 border border-accent/30 bg-surface">
+              <div className="min-w-[13rem] flex-1">
+                <HoldProgress until={hold.hold_until} onExpire={() => setHold(null)} />
+                <p className="mt-2 text-sm text-muted">
+                  {hold.court_code ? (
+                    <span className="font-medium text-fg">
+                      {hold.court_code}
+                      {hold.hour != null ? ` · ${String(hold.hour).padStart(2, "0")}:00` : ""}
+                    </span>
+                  ) : (
+                    <span className="font-medium text-fg">{hold.booking.code}</span>
+                  )}{" "}
+                  · <span className="font-display text-lg tabular-nums text-fg">{money(hold.price)}</span>
                 </p>
-                <p className="font-display text-2xl tabular-nums">{money(hold.price)}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <StarBorder speed={4}>
@@ -245,6 +380,26 @@ function Page() {
                     Use plan hours
                   </Button>
                 </StarBorder>
+                {/*
+                  Paying online settles the slot immediately, because payOS
+                  confirms the money before the booking is confirmed. Bank
+                  transfer below only promises it: the court stays on hold and
+                  reception has to find the money on a statement first.
+                */}
+                {onlineOn ? (
+                  <PayOnlineButton
+                    refType="booking"
+                    refId={hold.booking.id}
+                    label="Pay online"
+                    size="md"
+                    variant="outline"
+                    onPaid={() => {
+                      setHold(null);
+                      void load();
+                      toast.success("Paid — your court is confirmed and the receipt is in your account.");
+                    }}
+                  />
+                ) : null}
                 <Button variant="outline" disabled={busy} onClick={() => void confirmPay("transfer")}>
                   Bank transfer
                 </Button>
@@ -260,6 +415,10 @@ function Page() {
           slots={data.slots}
           sport={sport || undefined}
           onPick={(c, h) => void holdSlot(c, h)}
+          // A sold-out sport should hand back the two controls at the top of
+          // this page rather than make the member go and find them again.
+          onPickSport={setSport}
+          onPickDate={setDate}
         />
       ) : (
         <div className="grid gap-2">

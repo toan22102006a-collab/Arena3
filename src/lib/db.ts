@@ -105,13 +105,36 @@ function createNeonSql(): Promise<Sql> {
   return globalRef.__pgSqlPromise__;
 }
 
+/**
+ * Where the embedded database keeps itself between runs.
+ *
+ * Empty means in memory, which is what this used to be unconditionally — and
+ * it meant every dev-server restart threw away every booking, payment, receipt
+ * and account anybody had made. That is tolerable while the app is a sketch
+ * and expensive once it is being demonstrated.
+ *
+ * It also broke online payment outright. Document codes come from a counter in
+ * this database; payOS remembers the order codes it has seen forever. Wiping
+ * the counter sent the sequence back over ground payOS had already covered, and
+ * it rejected every link with "order already exists".
+ *
+ * `PGLITE_DATA_DIR=memory` restores the old behaviour for a throwaway run.
+ */
+const PGLITE_DIR = (() => {
+  const configured = process.env.PGLITE_DATA_DIR?.trim();
+  if (configured === "memory") return undefined;
+  return configured || ".pglite";
+})();
+
 async function createPgliteSql(): Promise<Sql> {
   // Embedded Postgres, imported on demand so it never loads on the Neon path.
-  // One in-memory instance per process, shared across HMR module instances, so
-  // data survives source edits (it resets on dev-server restart).
+  // One instance per process, shared across HMR module instances.
   globalRef.__pgliteInstance__ ??= (async () => {
     const { PGlite } = await import("@electric-sql/pglite");
+    if (PGLITE_DIR) console.info(`[db] PGLite persisting to ${PGLITE_DIR}`);
+    else console.info("[db] PGLite running in memory — data resets on restart");
     const pg = new PGlite({
+      ...(PGLITE_DIR ? { dataDir: PGLITE_DIR } : {}),
       parsers: {
         [OID_INT8]: Number,
         [OID_DATE]: identity,

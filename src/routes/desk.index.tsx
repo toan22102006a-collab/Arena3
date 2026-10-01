@@ -135,7 +135,14 @@ function Page() {
               }
             }}
           >
-            Shift open
+            {/*
+              An imperative, because this is the thing to press. Labelled
+              "Shift open" it read as a status line, so reception saw the
+              words "shift open" on screen, believed one was, and then met
+              "Open a shift first" on the payment button with no idea where
+              to go.
+            */}
+            Open shift
           </Button>
         )}
         {shift ? (

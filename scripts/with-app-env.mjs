@@ -104,12 +104,36 @@ export function isMainModule(moduleUrl) {
   }
 }
 
+/**
+ * Merge a `.env` at the project root into this process's environment.
+ *
+ * `.grok/app-env.json` above only carries `VITE_`-prefixed build flags, and
+ * nothing else in the workspace read `.env` at all — so a server-side secret
+ * (`GEMINI_API_KEY`, and anything a payment or mail provider needs later) had
+ * no way in on a developer machine except exporting it in the shell by hand.
+ * The one fallback that did exist, `/workspace/.secrets/`, is a path from the
+ * Linux build sandbox that does not exist on a Windows or macOS checkout.
+ *
+ * `process.loadEnvFile` is built into Node 22, so this costs no dependency. It
+ * throws when the file is absent, which is the normal case and not an error.
+ * Values already in the real environment win, matching `mergeAppEnv` below and
+ * letting a deploy platform's own configuration override the file.
+ */
+function loadDotEnv(root) {
+  try {
+    process.loadEnvFile(join(root, ".env"));
+  } catch {
+    // No .env, or unreadable — the app runs on real environment variables.
+  }
+}
+
 function main(argv) {
   const [command, ...args] = argv;
   if (!command) {
     console.error("usage: node scripts/with-app-env.mjs <command> [args…]");
     process.exit(2);
   }
+  loadDotEnv(projectRoot());
   const env = mergeAppEnv(readAppEnv(projectRoot()), process.env);
   const child = spawn(command, args, { stdio: "inherit", env, shell: true });
   // The dev server is long-running and is stopped by signalling this wrapper.

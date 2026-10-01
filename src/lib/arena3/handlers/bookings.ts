@@ -5,6 +5,7 @@ import {
   enqueue,
   enqueueReceipt,
   getSettings,
+  issueInvoice,
   nextCode,
   readJson,
   str,
@@ -13,7 +14,7 @@ import {
 import { isValidVnPhone, normalizePhone } from "../phone";
 import { applyDiscount, lookupPrice, memberDiscount } from "../pricing";
 import { requireRole, type PublicUser } from "../session";
-import { ictDateString, ictDateTime, ictHour, pad2, roundVnd } from "../time";
+import { ictClock, ictDateString, ictDateTime, ictStamp, roundVnd } from "../time";
 import { one } from "../tx";
 
 async function courtById(sql: Sql, id: string) {
@@ -254,7 +255,7 @@ type HeldBooking = {
  * produce the same payment row and the same receipt as any other booking, or
  * the member ends up with a court and no proof they paid for it.
  */
-async function settleHeldBooking(
+export async function settleHeldBooking(
   sql: Sql,
   booking: HeldBooking,
   court: { court_code: string },
@@ -266,23 +267,33 @@ async function settleHeldBooking(
     buyerName: string;
     /** Who pressed the button — the member, or the receptionist. */
     actorId: string;
+    /**
+     * Settle against a payment row that already exists, instead of writing one.
+     * Set by the payOS path, where the row was created as `pending` when the
+     * link was issued.
+     */
+    existingPaymentId?: string;
   },
 ) {
-  const payCode = await nextCode(sql, "PAY");
-  const pay = await one<{ id: string }>(
-    sql,
-    `insert into payments (code, user_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by)
-     values ($1,$2,$3,$4,$5,'posted','booking',$6,$7) returning id`,
-    [
-      payCode,
-      booking.user_id,
-      opts.method,
-      opts.payAmount,
-      Number(booking.vat_rate),
-      booking.id,
-      opts.actorId,
-    ],
-  );
+  // An online payment already has its row: it was written as `pending` when the
+  // payOS link was issued, and the gateway's confirmation flipped it to
+  // `posted`. Writing a second one here would double the day's takings.
+  const pay = opts.existingPaymentId
+    ? { id: opts.existingPaymentId }
+    : await one<{ id: string }>(
+        sql,
+        `insert into payments (code, user_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by, capture_mode)
+         values ($1,$2,$3,$4,$5,'posted','booking',$6,$7,'manual') returning id`,
+        [
+          await nextCode(sql, "PAY"),
+          booking.user_id,
+          opts.method,
+          opts.payAmount,
+          Number(booking.vat_rate),
+          booking.id,
+          opts.actorId,
+        ],
+      );
   try {
     await sql.query(`select occupancy_confirm_hold($1::uuid)`, [booking.occupancy_id]);
   } catch {
@@ -295,17 +306,18 @@ async function settleHeldBooking(
       where id = $1`,
     [booking.id, opts.quotaHours, opts.payAmount],
   );
-  const invCode = await nextCode(sql, "INV");
-  const inv = await one<{ id: string }>(
-    sql,
-    `insert into invoices (code, payment_id, buyer_name) values ($1,$2,$3) returning id`,
-    [invCode, pay!.id, opts.buyerName],
-  );
-  await sql.query(
-    `insert into invoice_lines (invoice_id, description, qty, unit_vnd, amount_vnd)
-     values ($1,$2,1,$3,$3)`,
-    [inv!.id, `Thue san ${court.court_code}`, opts.payAmount],
-  );
+  const settings = await getSettings(sql);
+  const invoiceId = await issueInvoice(sql, {
+    paymentId: pay!.id,
+    buyerName: opts.buyerName,
+    amountVnd: opts.payAmount,
+    vatRate: Number(booking.vat_rate ?? 0),
+    description:
+      `Thuê sân ${court.court_code} — ` +
+      `${ictStamp(booking.start_at)}–${ictClock(booking.end_at)}`,
+    unit: "giờ",
+    settings,
+  });
   await enqueue(
     sql,
     "inapp",
@@ -319,20 +331,41 @@ async function settleHeldBooking(
   if (opts.payAmount > 0) {
     await enqueueReceipt(sql, booking.user_id, {
       payment_id: pay!.id,
-      invoice_id: inv!.id,
+      invoice_id: invoiceId,
       amount_vnd: opts.payAmount,
       method: opts.method,
     });
   }
   const fresh = await one(sql, `select * from court_bookings where id = $1`, [booking.id]);
   const payment = await one(sql, `select * from payments where id = $1`, [pay!.id]);
-  return { booking: fresh, payment, invoice_id: inv!.id };
+  return { booking: fresh, payment, invoice_id: invoiceId };
 }
+
+/**
+ * What a member is allowed to settle their own booking with.
+ *
+ * `quota` spends hours they already bought, and `transfer` only asks reception
+ * to go and look at the bank — neither one posts money. Everything else means
+ * "cash/card changed hands", which is a claim only somebody standing at the
+ * till can make.
+ *
+ * Without this list `method` went from the request body straight into the
+ * payment row, so a member could POST `{"method":"cash"}` and mark their own
+ * booking paid for money nobody had collected. `gateway` is absent on purpose:
+ * an online payment becomes real when payOS confirms it, never because a
+ * client said so.
+ */
+const MEMBER_SETTLE_METHODS = new Set(["quota", "transfer"]);
 
 export async function bookingsConfirm(sql: Sql, id: string, request: Request, user: PublicUser) {
   requireRole(user, ["member"]);
   const b = await readJson(request);
   const method = str(b.method) ?? "transfer";
+  if (!MEMBER_SETTLE_METHODS.has(method)) {
+    throw err.forbidden(
+      "Pay online, or pay at the front desk — a booking cannot be marked paid from the app.",
+    );
+  }
   const settings = await getSettings(sql);
   const booking = await one<HeldBooking>(
     sql,
@@ -653,20 +686,19 @@ export async function walkIn(sql: Sql, request: Request, user: PublicUser) {
       user.id,
     ],
   );
-  const invCode = await nextCode(sql, "INV");
-  const inv = await one<{ id: string }>(
-    sql,
-    `insert into invoices (code, payment_id, buyer_name) values ($1,$2,$3) returning id`,
-    [invCode, pay!.id, guest_name],
-  );
-  await sql.query(
-    `insert into invoice_lines (invoice_id, description, qty, unit_vnd, amount_vnd) values ($1,$2,1,$3,$3)`,
-    [inv!.id, `Khach vang lai ${court.court_code} ${pad2(ictHour(start))}:00`, price],
-  );
+  const invoiceId = await issueInvoice(sql, {
+    paymentId: pay!.id,
+    buyerName: guest_name,
+    amountVnd: price,
+    vatRate: Number(settings.vat_rate ?? 0),
+    description: `Khách vãng lai — sân ${court.court_code} ${ictStamp(start)}`,
+    unit: "lượt",
+    settings,
+  });
   await audit(sql, user.id, "walk_in", "booking", bookingId);
   const booking = await one(sql, `select * from court_bookings where id = $1`, [bookingId]);
   const payment = await one(sql, `select * from payments where id = $1`, [pay!.id]);
-  return { status: 201, body: { booking, payment, invoice_id: inv!.id } };
+  return { status: 201, body: { booking, payment, invoice_id: invoiceId } };
 }
 
 export async function bookingGet(sql: Sql, id: string, user: PublicUser) {
