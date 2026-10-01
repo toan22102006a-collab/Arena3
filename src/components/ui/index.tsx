@@ -15,7 +15,7 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatDate, statusLabel, statusTone } from "@/lib/arena3/labels";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { EASE_SMOOTH } from "./motion";
+import { EASE_SMOOTH } from "../motion";
 
 export function Button({
   variant = "primary",
@@ -254,7 +254,7 @@ export function Skeleton({ className }: { className?: string }) {
   );
 }
 
-export function Empty({
+export function EmptyState({
   title,
   hint,
   children,

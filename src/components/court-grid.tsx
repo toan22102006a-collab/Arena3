@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { availLabel, type AvailMap } from "@/components/availability-calendar";
 import { cn } from "@/lib/cn";
 import {
   addDaysISO,
@@ -78,16 +79,27 @@ export type SlotState =
 const STATE_CLASS: Record<SlotState, string> = {
   free: "bg-wood/70 text-muted",
   // Dashed, because a hold is the one state that undoes itself.
-  hold: "border border-dashed border-hold/70 bg-hold/20 text-hold",
-  booked: "bg-accent/30 text-accent-2",
-  // Solid: the only state where someone is on the court as you read this.
-  in_use: "bg-accent text-accent-fg",
+  hold: "stripes border-2 border-dashed border-hold bg-hold/40 text-hold",
+  // Mid green, solid: clearly sold, and unmistakably not the amber of a hold.
+  booked: "bg-accent/80 text-accent-fg",
+  // The darkest green: the only state where someone is on the court as you read this.
+  in_use: "bg-accent-2 text-accent-fg ring-2 ring-accent-2/40",
   class: "bg-fg text-bg",
   maintenance: "stripes bg-wood text-muted",
   merged: "bg-line-strong/30 text-subtle",
   closed: "stripes bg-line-strong/45 text-subtle",
-  past: "bg-wood/30 text-subtle/60 line-through decoration-subtle/40",
+  past: "bg-wood/30 text-subtle/80 line-through decoration-subtle/40",
 };
+
+/**
+ * An occupied hour whose owner the desk can look up (B-07). Court-level
+ * closures have no occupancy behind them, so there is nothing to open.
+ */
+function canInspect(occ: OccSlot | undefined): occ is OccSlot & { ref: string } {
+  return (
+    !!occ?.ref && (occ.kind === "booking" || occ.kind === "hold" || occ.kind === "session" || occ.kind === "maintenance")
+  );
+}
 
 /** Which states a member can act on. Everything else is information only. */
 function isBookable(s: SlotState) {
@@ -192,10 +204,13 @@ export function DateStrip({
   value,
   onChange,
   days = 7,
+  avail,
 }: {
   value: string;
   onChange: (v: string) => void;
   days?: number;
+  /** Free-slot counts per day; a day with none left says so before it is opened. */
+  avail?: AvailMap | null;
 }) {
   const today = todayISO();
   const items = Array.from({ length: days }, (_, i) => {
@@ -222,6 +237,7 @@ export function DateStrip({
               {it.isToday ? "Today" : it.wd}
             </span>
             <span className="font-display text-xl tabular-nums leading-none">{it.day}</span>
+            {avail ? <span className="mt-0.5 text-2xs leading-none opacity-80">{availLabel(avail[it.iso])}</span> : null}
           </button>
         );
       })}
@@ -327,6 +343,7 @@ export function CourtGrid({
   slots,
   sport,
   onPick,
+  onInspect,
   onPickSport,
   onPickDate,
   canRelease = true,
@@ -338,6 +355,8 @@ export function CourtGrid({
   slots: OccSlot[];
   sport?: string;
   onPick?: (court: Court, hour: number) => void;
+  /** Staff only: tapping a taken hour opens whose it is. */
+  onInspect?: (court: Court, hour: number, occ: OccSlot & { ref: string }) => void;
   /** Offered when this sport is sold out and another one is not. */
   onPickSport?: (sport: string) => void;
   /** Offered when the whole day is sold out. */
@@ -421,6 +440,7 @@ export function CourtGrid({
                 // Past hours are shown, never offered — seeing the whole day is
                 // the point of the grid, but nothing can be sold backwards.
                 const clickable = onPick && (isBookable(state) || (canRelease && state === "merged"));
+                const inspect = !clickable && onInspect && canInspect(occ) ? occ : null;
                 const cls = cn(
                   "grid min-h-11 place-items-center rounded-[var(--radius-xs)] text-2xs font-medium tabular-nums",
                   STATE_CLASS[state],
@@ -429,6 +449,20 @@ export function CourtGrid({
                     selected.hour === h &&
                     "ring-2 ring-accent ring-offset-1 ring-offset-surface",
                 );
+                if (inspect) {
+                  return (
+                    <button
+                      key={h}
+                      type="button"
+                      title={title}
+                      aria-label={`${slotStateLabel(state)} · ${c.court_code} at ${label}:00 — show details`}
+                      onClick={() => onInspect!(c, h, inspect)}
+                      className={cn(cls, "transition-transform duration-150 active:scale-95")}
+                    >
+                      {label}
+                    </button>
+                  );
+                }
                 if (!clickable) {
                   return (
                     <div key={h} title={title} className={cls}>
@@ -499,6 +533,7 @@ export function CourtGrid({
               slots={slots}
               date={date}
               onPick={onPick}
+              onInspect={onInspect}
               canRelease={canRelease}
               selected={selected}
               now={now}
@@ -523,6 +558,7 @@ function HourRow({
   slots,
   date,
   onPick,
+  onInspect,
   canRelease,
   selected,
   now,
@@ -532,6 +568,7 @@ function HourRow({
   slots: OccSlot[];
   date: string;
   onPick?: (court: Court, hour: number) => void;
+  onInspect?: (court: Court, hour: number, occ: OccSlot & { ref: string }) => void;
   canRelease: boolean;
   selected?: { courtId: string; hour: number } | null;
   now: number;
@@ -543,7 +580,7 @@ function HourRow({
       <div
         className={cn(
           "sticky left-0 z-10 flex items-center gap-1 border-t border-line/70 bg-surface px-2 py-1 text-xs tabular-nums",
-          past ? "text-subtle/60 line-through" : live ? "font-medium text-accent-2" : "text-muted",
+          past ? "text-subtle/80 line-through" : live ? "font-medium text-accent-2" : "text-muted",
         )}
       >
         {live ? <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-accent" /> : null}
@@ -562,6 +599,20 @@ function HourRow({
             selected.hour === hour &&
             "ring-2 ring-accent ring-offset-1 ring-offset-surface",
         );
+        const inspect = !clickable && onInspect && canInspect(occ) ? occ : null;
+        if (inspect) {
+          return (
+            <div key={c.id} className="border-l border-t border-line/70 p-1">
+              <button
+                type="button"
+                title={title}
+                aria-label={`${slotStateLabel(state)} · ${c.court_code} at ${String(hour).padStart(2, "0")}:00 — show details`}
+                onClick={() => onInspect!(c, hour, inspect)}
+                className={cn(cls, "block transition-transform duration-150 active:scale-95")}
+              />
+            </div>
+          );
+        }
         if (!clickable) {
           return (
             <div key={c.id} className="border-l border-t border-line/70 p-1">
@@ -583,7 +634,7 @@ function HourRow({
               className={cn(
                 cls,
                 isBookable(state) &&
-                  "block transition-[background-color,transform] duration-150 hover:scale-[1.04] hover:bg-accent active:scale-95",
+                  "block transition-[background-color,transform] duration-150 hover:bg-accent active:scale-95",
               )}
             />
           </div>

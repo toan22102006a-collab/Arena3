@@ -5,18 +5,35 @@ import { Shell, money } from "@/components/shell";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { SplitText, SpotlightCard } from "@/components/fx";
-import { apiGet, apiPost } from "@/lib/arena3/client";
+import { ApiClientError, apiGet, apiPost } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
 
 export const Route = createFileRoute("/desk/gear")({ component: Page });
 
 type Item = { id: string; sku: string; name: string; sport: string | null; stock: number; rent_vnd: number };
-type Loan = { id: string; name: string; sku: string; phone: string; qty: number; due_at: string };
+type Loan = {
+  id: string;
+  name: string;
+  sku: string;
+  phone: string;
+  qty: number;
+  due_at: string;
+  member_name: string | null;
+  member_code: string | null;
+};
+type Hit = { id: string; member_code: string | null; full_name: string; phone: string };
 
 function Page() {
   const [items, setItems] = useState<Item[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
-  const [form, setForm] = useState({ item_id: "", phone: "0901230101", qty: "1" });
+  const [itemId, setItemId] = useState("");
+  const [qty, setQty] = useState(1);
+  const [who, setWho] = useState<"member" | "guest">("member");
+  const [phone, setPhone] = useState("");
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<Hit[]>([]);
+  const [member, setMember] = useState<Hit | null>(null);
+  const [fieldError, setFieldError] = useState<{ field: string; message: string } | null>(null);
 
   async function load() {
     const [eq, ln] = await Promise.all([
@@ -25,68 +42,196 @@ function Page() {
     ]);
     setItems(eq.items);
     setLoans(ln.items);
-    if (!form.item_id && eq.items[0]) setForm((f) => ({ ...f, item_id: eq.items[0]!.id }));
+    setItemId((cur) => cur || eq.items[0]?.id || "");
   }
   useEffect(() => {
     void load().catch((e) => toast.error(e.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (who !== "member" || member || q.trim().length < 3) {
+      setHits([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      void apiGet<{ items: Hit[] }>(`/members?q=${encodeURIComponent(q)}`)
+        .then((r) => setHits(r.items))
+        .catch((e) => toast.error(e.message));
+    }, 180);
+    return () => clearTimeout(t);
+  }, [q, who, member]);
+
+  const item = items.find((i) => i.id === itemId);
+  const max = item?.stock ?? 0;
+  // Keep the count inside what is on the shelf when the item (or its stock) changes.
+  const shown = Math.max(1, Math.min(qty, Math.max(max, 1)));
+  const canRent = !!item && max > 0 && (who === "member" ? !!member : phone.trim().length > 0);
+
+  async function rent() {
+    setFieldError(null);
+    try {
+      const r = await apiPost<{ rent_vnd: number }>("/equipment/loans", {
+        item_id: itemId,
+        qty: shown,
+        ...(who === "member" ? { user_id: member?.id } : { phone }),
+      });
+      toast.success(`Rented out · ${money(r.rent_vnd)}`);
+      setQty(1);
+      setPhone("");
+      setMember(null);
+      setQ("");
+      await load();
+    } catch (e) {
+      if (e instanceof ApiClientError && e.body.field) setFieldError({ field: e.body.field, message: e.message });
+      else toast.error(e instanceof Error ? e.message : "Something went wrong");
+      void load().catch(() => {});
+    }
+  }
+
   return (
-    <Shell role="receptionist" title="Gear" subtitle="Rent against a phone number — stock comes down on the way out, back up on return.">
+    <Shell
+      role="receptionist"
+      title="Gear"
+      subtitle="Rent to a member's account or to a guest by phone — stock comes down on the way out, back up on return."
+    >
       <Reveal from="down">
-      <Card className="mb-4 grid gap-3 md:grid-cols-4">
-        <Field label="Item">
-          <Select value={form.item_id} onChange={(e) => setForm({ ...form, item_id: e.target.value })}>
-            {items.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name} · {i.stock} left · {money(i.rent_vnd)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Guest phone">
-          <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-        </Field>
-        <Field label="Qty">
-          <Input value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
-        </Field>
-        <div className="flex items-end">
-          <Button
-            className="w-full"
-            onClick={async () => {
-              try {
-                const r = await apiPost<{ rent_vnd: number }>("/equipment/loans", {
-                  item_id: form.item_id,
-                  phone: form.phone,
-                  qty: Number(form.qty),
-                });
-                toast.success(`Rented out · ${money(r.rent_vnd)}`);
-                await load();
-              } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Something went wrong");
-              }
-            }}
-          >
-            Rent out
-          </Button>
-        </div>
-      </Card>
+        <Card className="mb-4 grid gap-3 md:grid-cols-[1.2fr_1.6fr_auto_auto]">
+          <Field label="Item">
+            <Select
+              value={itemId}
+              onChange={(e) => {
+                setItemId(e.target.value);
+                setQty(1);
+              }}
+            >
+              {items.map((i) => (
+                <option key={i.id} value={i.id} disabled={i.stock < 1}>
+                  {i.name} · {i.stock ? `${i.stock} left` : "none left"} · {money(i.rent_vnd)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <div className="grid content-start gap-2">
+            <div className="flex gap-1 text-sm" role="tablist" aria-label="Who is renting">
+              {(["member", "guest"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="tab"
+                  aria-selected={who === k}
+                  onClick={() => {
+                    setWho(k);
+                    setFieldError(null);
+                  }}
+                  className={`rounded-full px-3 py-1 ${who === k ? "bg-accent text-white" : "bg-wood text-muted"}`}
+                >
+                  {k === "member" ? "Member" : "Guest"}
+                </button>
+              ))}
+            </div>
+            {who === "member" ? (
+              member ? (
+                <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] bg-wood/60 px-3 py-2 text-sm">
+                  <span>
+                    <span className="font-medium">{member.full_name}</span>{" "}
+                    <span className="tabular-nums text-muted">
+                      {member.member_code ?? ""} · {member.phone}
+                    </span>
+                  </span>
+                  <button type="button" className="text-muted underline" onClick={() => setMember(null)}>
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Input
+                    aria-label="Find a member"
+                    placeholder="Search name, phone or member code"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                  />
+                  {hits.length ? (
+                    <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-[var(--radius-md)] border border-line bg-surface text-sm shadow-lg">
+                      {hits.map((h) => (
+                        <li key={h.id}>
+                          <button
+                            type="button"
+                            className="flex w-full justify-between gap-2 px-3 py-2 text-left hover:bg-wood"
+                            onClick={() => {
+                              setMember(h);
+                              setHits([]);
+                            }}
+                          >
+                            <span className="font-medium">{h.full_name}</span>
+                            <span className="tabular-nums text-muted">
+                              {h.member_code ?? ""} · {h.phone}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              )
+            ) : (
+              <Input
+                aria-label="Guest phone"
+                inputMode="tel"
+                placeholder="Guest phone, e.g. 09xx xxx xxx"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+            )}
+            {fieldError && (fieldError.field === "phone" || fieldError.field === "user_id") ? (
+              <p className="text-xs text-danger">{fieldError.message}</p>
+            ) : null}
+          </div>
+          <Field label="Qty">
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label="One fewer"
+                disabled={shown <= 1}
+                onClick={() => setQty(shown - 1)}
+              >
+                −
+              </Button>
+              <span className="w-8 text-center tabular-nums" aria-live="polite">
+                {shown}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label="One more"
+                disabled={shown >= max}
+                onClick={() => setQty(shown + 1)}
+              >
+                +
+              </Button>
+            </div>
+          </Field>
+          <div className="flex items-end">
+            <Button className="w-full" disabled={!canRent} onClick={() => void rent()}>
+              Rent out
+            </Button>
+          </div>
+        </Card>
       </Reveal>
       <Stagger className="grid gap-3 md:grid-cols-2" gap={0.05}>
         {items.map((i) => (
           <StaggerItem key={i.id} className="h-full">
-          <Lift className="h-full">
-          <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={280} strength={0.1}>
-          <Card interactive className="relative z-[2] h-full p-4">
-            <p className="text-2xs uppercase tracking-wider text-muted">{i.sport ? sportLabel(i.sport) : "General"}</p>
-            <p className="font-medium">{i.name}</p>
-            <p className="text-sm text-muted">
-              {i.stock} in stock · {money(i.rent_vnd)} each
-            </p>
-          </Card>
-          </SpotlightCard>
-          </Lift>
+            <Lift className="h-full">
+              <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={280} strength={0.1}>
+                <Card interactive className="relative z-[2] h-full p-4">
+                  <p className="text-2xs uppercase tracking-wider text-muted">{i.sport ? sportLabel(i.sport) : "General"}</p>
+                  <p className="font-medium">{i.name}</p>
+                  <p className="text-sm text-muted">
+                    {i.stock} in stock · {money(i.rent_vnd)} each
+                  </p>
+                </Card>
+              </SpotlightCard>
+            </Lift>
           </StaggerItem>
         ))}
       </Stagger>
@@ -94,29 +239,33 @@ function Page() {
       <Stagger className="mt-3 grid gap-2" gap={0.05}>
         {loans.map((l) => (
           <StaggerItem key={l.id}>
-          <Card className="flex items-center justify-between p-4">
-            <div>
-              <p className="font-medium">
-                {l.name} × {l.qty}
-              </p>
-              <p className="text-xs text-muted">{l.phone}</p>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={async () => {
-                try {
-                  await apiPost(`/equipment/loans/${l.id}/return`);
-                  toast.success("Returned");
-                  await load();
-                } catch (e) {
-                  toast.error(e instanceof Error ? e.message : "Something went wrong");
-                }
-              }}
-            >
-              Take it back
-            </Button>
-          </Card>
+            <Card className="flex items-center justify-between p-4">
+              <div>
+                <p className="font-medium">
+                  {l.name} × {l.qty}
+                </p>
+                <p className="text-xs text-muted">
+                  {l.member_name ? `${l.member_name}${l.member_code ? ` · ${l.member_code}` : ""} · ` : "Guest · "}
+                  {l.phone}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    await apiPost(`/equipment/loans/${l.id}/return`);
+                    toast.success("Returned");
+                    await load();
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Something went wrong");
+                    void load().catch(() => {});
+                  }
+                }}
+              >
+                Take it back
+              </Button>
+            </Card>
           </StaggerItem>
         ))}
         {!loans.length ? <p className="text-sm text-muted">Nothing is out right now.</p> : null}

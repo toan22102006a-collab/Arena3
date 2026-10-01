@@ -43,13 +43,14 @@ export function PassCard({
   plan,
   sport,
   endOn,
-  hours,
+  benefits,
   code,
 }: {
   plan: string;
   sport: string;
   endOn: string;
-  hours: number;
+  /** What this plan actually grants — never a court-hours figure for a plan without court hours. */
+  benefits: string[];
   code?: string | null;
 }) {
   return (
@@ -83,8 +84,12 @@ export function PassCard({
             <p className="mt-0.5 text-sm font-semibold">{sport}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-pass-muted">Court hours</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums">{hours} left</p>
+            <p className="text-[11px] uppercase tracking-wider text-pass-muted">Includes</p>
+            {benefits.map((b) => (
+              <p key={b} className="mt-0.5 text-sm font-semibold tabular-nums">
+                {b}
+              </p>
+            ))}
           </div>
           <div className="text-right">
             <p className="text-[11px] uppercase tracking-wider text-pass-muted">Valid through</p>

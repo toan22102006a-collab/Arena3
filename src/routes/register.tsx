@@ -84,7 +84,7 @@ function Register() {
   }
 
   return (
-    <main className="min-h-dvh lg:grid lg:grid-cols-2">
+    <main id="main-content" tabIndex={-1} className="min-h-dvh lg:grid lg:grid-cols-2">
       <div className="grain relative hidden overflow-hidden lg:block">
         <Cover src={media.athlete} alt="" className="h-full min-h-dvh" scrim="hero">
           <GLBackground
@@ -256,7 +256,7 @@ function Register() {
           </AnimatePresence>
           <p className="mt-4 text-sm text-muted">
             Already have an account?{" "}
-            <Link to="/login" className="text-accent-2 hover:underline">
+            <Link to="/login" className="text-accent-2 underline underline-offset-2">
               Sign in
             </Link>
           </p>

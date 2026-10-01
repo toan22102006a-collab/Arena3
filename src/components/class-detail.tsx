@@ -1,0 +1,549 @@
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Badge, Button, Field, Input, Modal, Select, Skeleton, StatusBadge } from "@/components/ui";
+import { hhmm, money, when } from "@/components/shell";
+import { apiGet, apiPatch, apiPost } from "@/lib/arena3/client";
+import { formatDate, kindLabel, levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
+
+/** "Tue 21 Oct" in the centre's timezone. */
+export function sessionDay(iso: string) {
+  return new Date(iso).toLocaleDateString("en-GB", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
+type ClassDetail = {
+  class: {
+    id: string;
+    code: string;
+    sport: string;
+    level: string;
+    status: string;
+    capacity: number;
+    enrolled_count: number;
+    rrule: string;
+    start_on: string;
+    end_on: string;
+    court_code: string;
+    coach_id: string;
+    coach_name: string;
+    assistant_name: string | null;
+  };
+  sessions: Array<{
+    id: string;
+    start_at: string;
+    end_at: string;
+    status: string;
+    court_code: string;
+    headcount: number;
+  }>;
+  roster: Array<{ id: string; full_name: string; member_code: string | null; phone: string; status: string }>;
+};
+
+/** What the manager is in the middle of doing to the class. */
+type Action =
+  | { kind: "cancel-session" | "move-session"; sessionId: string; label: string; startAt: string }
+  | { kind: "coach" | "capacity" | "cancel-class" };
+
+/** A `datetime-local` value is the centre's wall clock, which is always UTC+7. */
+const toIctIso = (local: string) => `${local}:00+07:00`;
+const toLocalInput = (iso: string) => new Date(new Date(iso).getTime() + 7 * 3600000).toISOString().slice(0, 16);
+
+/**
+ * One class opened up: when it meets, where, who teaches it and who is in it.
+ * Shared by the manager's class list and the desk, which see the same thing.
+ * With `manage` (the manager only) it also cancels or moves a session, changes
+ * the coach, edits the capacity or cancels the class.
+ */
+export function ClassDetailModal({
+  classId,
+  onClose,
+  manage = false,
+  onChanged,
+}: {
+  classId: string | null;
+  onClose: () => void;
+  manage?: boolean;
+  onChanged?: () => void;
+}) {
+  const [data, setData] = useState<ClassDetail | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [action, setAction] = useState<Action | null>(null);
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    setData(null);
+    setFailed(null);
+    setAction(null);
+    if (!classId) return;
+    let live = true;
+    apiGet<ClassDetail>(`/classes/${classId}`)
+      .then((r) => live && setData(r))
+      .catch((e) => live && setFailed(e instanceof Error ? e.message : "Could not load this class"));
+    return () => {
+      live = false;
+    };
+  }, [classId, version]);
+
+  const changed = useCallback(() => {
+    setAction(null);
+    setVersion((v) => v + 1);
+    onChanged?.();
+  }, [onChanged]);
+
+  const c = data?.class;
+  const confirmed = data?.roster.filter((r) => r.status === "confirmed") ?? [];
+  const waiting = data?.roster.filter((r) => r.status === "waitlisted") ?? [];
+  const upcoming = data?.sessions.filter((s) => s.status === "scheduled") ?? [];
+  const past = data?.sessions.filter((s) => s.status !== "scheduled") ?? [];
+
+  return (
+    <Modal
+      open={!!classId}
+      onClose={onClose}
+      title={c ? `${sportLabel(c.sport)} · ${levelLabel(c.level)}` : "Class"}
+      footer={
+        <div className="flex justify-end">
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      }
+    >
+      {failed ? (
+        <p className="text-sm text-danger">{failed}</p>
+      ) : !c || !data ? (
+        <Skeleton className="h-40" />
+      ) : (
+        <div className="grid gap-5">
+          <div className="grid gap-1 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium tabular-nums">{c.code}</span>
+              <StatusBadge status={c.status} />
+              <Badge tone="muted">
+                {c.enrolled_count}/{c.capacity} enrolled
+              </Badge>
+            </div>
+            <p className="text-muted">
+              Coach {c.coach_name}
+              {c.assistant_name ? ` · assisted by ${c.assistant_name}` : ""} · {c.court_code}
+            </p>
+            <p className="text-muted">
+              {rruleLabel(c.rrule)} · {formatDate(c.start_on)} – {formatDate(c.end_on)}
+            </p>
+          </div>
+
+          <section>
+            <h3 className="text-2xs font-medium uppercase tracking-wider text-muted">
+              Sessions · {upcoming.length} to come
+            </h3>
+            {data.sessions.length ? (
+              <ul className="mt-2 grid max-h-56 gap-1 overflow-y-auto text-sm">
+                {[...upcoming, ...past].map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] bg-wood/60 px-3 py-2"
+                  >
+                    <span className="tabular-nums">
+                      {sessionDay(s.start_at)} · {hhmm(s.start_at)}–{hhmm(s.end_at)}
+                    </span>
+                    <span className="flex items-center gap-2 text-muted">
+                      {s.court_code} · <span className="tabular-nums">{s.headcount}</span>/{c.capacity}
+                      {s.status !== "scheduled" ? <StatusBadge status={s.status} /> : null}
+                      {manage && s.status === "scheduled" && new Date(s.start_at) > new Date() && c.status !== "cancelled" ? (
+                        <>
+                          {(["move-session", "cancel-session"] as const).map((kind) => (
+                            <Button
+                              key={kind}
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                setAction({
+                                  kind,
+                                  sessionId: s.id,
+                                  startAt: s.start_at,
+                                  label: `${sessionDay(s.start_at)} · ${hhmm(s.start_at)}`,
+                                })
+                              }
+                            >
+                              {kind === "move-session" ? "Move" : "Cancel"}
+                            </Button>
+                          ))}
+                        </>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-muted">
+                {c.status === "draft"
+                  ? "No sessions yet — they are created when the class is published."
+                  : "No sessions on the calendar."}
+              </p>
+            )}
+          </section>
+
+          <section>
+            <h3 className="text-2xs font-medium uppercase tracking-wider text-muted">
+              Students · {confirmed.length}
+            </h3>
+            {confirmed.length ? (
+              <ul className="mt-2 grid max-h-48 gap-1 overflow-y-auto text-sm">
+                {confirmed.map((r) => (
+                  <li key={r.id} className="flex flex-wrap justify-between gap-2 px-1">
+                    <span className="font-medium">{r.full_name}</span>
+                    <span className="tabular-nums text-muted">
+                      {r.member_code ?? "—"} · {r.phone}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-muted">Nobody has enrolled yet.</p>
+            )}
+            {waiting.length ? (
+              <p className="mt-2 text-sm text-muted">Waiting list: {waiting.map((r) => r.full_name).join(", ")}</p>
+            ) : null}
+          </section>
+
+          {manage && c.status !== "cancelled" ? (
+            <section className="grid gap-3 border-t border-line pt-4">
+              <h3 className="text-2xs font-medium uppercase tracking-wider text-muted">Manage this class</h3>
+              {action ? (
+                <ActionForm classData={c} action={action} onDone={changed} onBack={() => setAction(null)} />
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {c.status !== "draft" ? (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => setAction({ kind: "coach" })}>
+                        Change coach
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setAction({ kind: "capacity" })}>
+                        Edit capacity
+                      </Button>
+                    </>
+                  ) : null}
+                  <Button size="sm" variant="outline" onClick={() => setAction({ kind: "cancel-class" })}>
+                    Cancel class
+                  </Button>
+                </div>
+              )}
+            </section>
+          ) : null}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+const ACTION_COPY = {
+  "cancel-session": { title: "Cancel this session", go: "Cancel session", needsReason: true },
+  "move-session": { title: "Move this session", go: "Move session", needsReason: false },
+  coach: { title: "Change the coach for every session still to come", go: "Change coach", needsReason: false },
+  capacity: { title: "Edit capacity", go: "Save capacity", needsReason: false },
+  "cancel-class": { title: "Cancel the whole class", go: "Cancel class", needsReason: true },
+} as const;
+
+/** The one form behind every manager action on a class: it asks only for what that action needs. */
+function ActionForm({
+  classData,
+  action,
+  onDone,
+  onBack,
+}: {
+  classData: ClassDetail["class"];
+  action: Action;
+  onDone: () => void;
+  onBack: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [start, setStart] = useState(action.kind === "move-session" ? toLocalInput(action.startAt) : "");
+  const [coaches, setCoaches] = useState<Array<{ id: string; full_name: string }>>([]);
+  const [coachId, setCoachId] = useState("");
+  const [capacity, setCapacity] = useState(String(classData.capacity));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<{ field?: string; message: string } | null>(null);
+
+  useEffect(() => {
+    if (action.kind !== "coach") return;
+    void apiGet<{ items: Array<{ id: string; full_name: string }> }>("/staff?role=coach&status=active")
+      .then((r) => setCoaches(r.items.filter((x) => x.id !== classData.coach_id)))
+      .catch((e) => setError({ message: e instanceof Error ? e.message : "Could not load coaches" }));
+  }, [action.kind, classData.coach_id]);
+
+  const copy = ACTION_COPY[action.kind];
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      if (action.kind === "cancel-session") {
+        const r = await apiPost<{ notified: number; refunded: number }>(`/sessions/${action.sessionId}/cancel`, { reason });
+        toast.success(`Session cancelled — ${r.notified} told, ${r.refunded} given a session back`);
+      } else if (action.kind === "move-session") {
+        if (!start) throw Object.assign(new Error("Pick the new start time."), { field: "start_at" });
+        await apiPost(`/sessions/${action.sessionId}/reschedule`, {
+          start_at: toIctIso(start),
+          ...(reason ? { reason } : {}),
+        });
+        toast.success("Session moved — members and coaches were told");
+      } else if (action.kind === "coach") {
+        if (!coachId) throw Object.assign(new Error("Choose the new coach."), { field: "coach_id" });
+        await apiPost(`/classes/${classData.id}/coach`, { coach_id: coachId, ...(reason ? { reason } : {}) });
+        toast.success("Coach changed");
+      } else if (action.kind === "capacity") {
+        await apiPatch(`/classes/${classData.id}`, { capacity: Number(capacity) });
+        toast.success("Capacity saved");
+      } else {
+        await apiPatch(`/classes/${classData.id}`, { status: "cancelled", reason });
+        toast.success("Class cancelled — everyone enrolled was told");
+      }
+      onDone();
+    } catch (e) {
+      const x = e as { message?: string; field?: string; body?: { field?: string } };
+      setError({ field: x.body?.field ?? x.field, message: x.message ?? "That did not work" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const reasonLabel =
+    action.kind === "move-session"
+      ? "Reason (needed if it starts within 12 hours)"
+      : action.kind === "coach"
+        ? "Reason (optional)"
+        : "Reason";
+  const at = (field: string) => (error?.field === field ? error.message : undefined);
+  return (
+    <div
+      className="grid gap-3 rounded-[var(--radius-sm)] bg-wood/60 p-3"
+      ref={(el) => el?.scrollIntoView({ block: "nearest", behavior: "smooth" })}
+    >
+      <p className="text-sm font-medium">
+        {copy.title}
+        {"label" in action ? <span className="text-muted"> · {action.label}</span> : null}
+      </p>
+      {action.kind === "move-session" ? (
+        <Field label="New start" hint={at("start_at")}>
+          <Input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+        </Field>
+      ) : null}
+      {action.kind === "coach" ? (
+        <Field label="New coach" hint={at("coach_id")}>
+          <Select value={coachId} onChange={(e) => setCoachId(e.target.value)}>
+            <option value="">Choose…</option>
+            {coaches.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.full_name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : null}
+      {action.kind === "capacity" ? (
+        <Field label={`Capacity (${classData.enrolled_count} enrolled)`} hint={at("capacity")}>
+          <Input type="number" min={1} max={200} value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+        </Field>
+      ) : (
+        <Field label={reasonLabel} hint={at("reason")}>
+          <Input value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+      )}
+      {error && !["start_at", "coach_id", "capacity", "reason"].includes(error.field ?? "") ? (
+        <p className="text-sm text-danger">{error.message}</p>
+      ) : null}
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="ghost" onClick={onBack} disabled={busy}>
+          Back
+        </Button>
+        <Button
+          size="sm"
+          variant={action.kind.startsWith("cancel") ? "danger" : "primary"}
+          onClick={submit}
+          disabled={busy || (copy.needsReason && !reason.trim())}
+        >
+          {copy.go}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+type OccDetail =
+  | {
+      kind: "booking";
+      booking: {
+        id: string;
+        code: string;
+        status: string;
+        channel: string;
+        start_at: string;
+        end_at: string;
+        price_vnd: number;
+        discount_pct: number;
+        paid_vnd: number;
+        hold_until: string | null;
+        awaiting_transfer: boolean;
+        court_code: string;
+        sport: string;
+      };
+      customer: { type: "member" | "guest"; name: string | null; phone: string | null; member_code: string | null };
+    }
+  | {
+      kind: "session";
+      session: {
+        id: string;
+        class_id: string;
+        start_at: string;
+        end_at: string;
+        status: string;
+        court_code: string;
+        sport: string;
+        level: string;
+        capacity: number;
+        enrolled_count: number;
+        coach_name: string;
+      };
+    }
+  | { kind: "maintenance"; maintenance: { reason: string | null; court_code: string; start_at: string; end_at: string } };
+
+/**
+ * Whose hour is this? Opened from a taken cell on the court map.
+ */
+export function OccupancyDetailModal({
+  target,
+  onClose,
+  onOpenClass,
+}: {
+  target: { kind: string; ref: string } | null;
+  onClose: () => void;
+  onOpenClass?: (classId: string) => void;
+}) {
+  const [data, setData] = useState<OccDetail | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    setData(null);
+    setFailed(null);
+    if (!target) return;
+    let live = true;
+    apiGet<OccDetail>(`/occupancy/detail?kind=${encodeURIComponent(target.kind)}&ref=${encodeURIComponent(target.ref)}`)
+      .then((r) => live && setData(r))
+      .catch((e) => live && setFailed(e instanceof Error ? e.message : "Could not load the details"));
+    return () => {
+      live = false;
+    };
+  }, [target]);
+
+  const title =
+    data?.kind === "booking"
+      ? `Booking ${data.booking.code}`
+      : data?.kind === "session"
+        ? "Class session"
+        : data?.kind === "maintenance"
+          ? "Court out of service"
+          : target
+            ? kindLabel(target.kind)
+            : "Details";
+
+  return (
+    <Modal
+      open={!!target}
+      onClose={onClose}
+      title={title}
+      footer={
+        <div className="flex justify-end gap-2">
+          {data?.kind === "session" && onOpenClass ? (
+            <Button variant="outline" onClick={() => onOpenClass(data.session.class_id)}>
+              Open the class
+            </Button>
+          ) : null}
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      }
+    >
+      {failed ? (
+        <p className="text-sm text-danger">{failed}</p>
+      ) : !data ? (
+        <Skeleton className="h-32" />
+      ) : data.kind === "booking" ? (
+        <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-sm">
+          <dt className="text-muted">Customer</dt>
+          <dd className="font-medium">
+            {data.customer.name ?? "—"}{" "}
+            <Badge tone={data.customer.type === "member" ? "accent" : "muted"}>
+              {data.customer.type === "member" ? "Member" : "Walk-in"}
+            </Badge>
+          </dd>
+          <dt className="text-muted">Phone</dt>
+          <dd className="tabular-nums">
+            {data.customer.phone ?? "—"}
+            {data.customer.member_code ? ` · ${data.customer.member_code}` : ""}
+          </dd>
+          <dt className="text-muted">Court</dt>
+          <dd>
+            {data.booking.court_code} · {sportLabel(data.booking.sport)}
+          </dd>
+          <dt className="text-muted">Time</dt>
+          <dd className="tabular-nums">
+            {sessionDay(data.booking.start_at)} · {hhmm(data.booking.start_at)}–{hhmm(data.booking.end_at)}
+          </dd>
+          <dt className="text-muted">Amount</dt>
+          <dd className="tabular-nums">
+            {money(data.booking.price_vnd)}
+            {data.booking.discount_pct ? ` (−${data.booking.discount_pct}%)` : ""} · paid{" "}
+            {money(data.booking.paid_vnd)}
+          </dd>
+          <dt className="text-muted">Status</dt>
+          <dd>
+            <StatusBadge status={data.booking.status} />
+            {data.booking.status === "hold" && data.booking.hold_until ? (
+              <span className="ml-2 text-muted">
+                {data.booking.awaiting_transfer ? "waiting for the bank transfer · " : ""}held until{" "}
+                {hhmm(data.booking.hold_until)}
+              </span>
+            ) : null}
+          </dd>
+          <dt className="text-muted">Booked via</dt>
+          <dd className="capitalize">{data.booking.channel}</dd>
+        </dl>
+      ) : data.kind === "session" ? (
+        <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-sm">
+          <dt className="text-muted">Class</dt>
+          <dd className="font-medium">
+            {sportLabel(data.session.sport)} · {levelLabel(data.session.level)}
+          </dd>
+          <dt className="text-muted">Coach</dt>
+          <dd>{data.session.coach_name}</dd>
+          <dt className="text-muted">Court</dt>
+          <dd>{data.session.court_code}</dd>
+          <dt className="text-muted">Time</dt>
+          <dd className="tabular-nums">
+            {sessionDay(data.session.start_at)} · {hhmm(data.session.start_at)}–{hhmm(data.session.end_at)}
+          </dd>
+          <dt className="text-muted">Students</dt>
+          <dd className="tabular-nums">
+            {data.session.enrolled_count}/{data.session.capacity}
+          </dd>
+        </dl>
+      ) : (
+        <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-sm">
+          <dt className="text-muted">Court</dt>
+          <dd>{data.maintenance.court_code}</dd>
+          <dt className="text-muted">Time</dt>
+          <dd className="tabular-nums">
+            {when(data.maintenance.start_at)} – {hhmm(data.maintenance.end_at)}
+          </dd>
+          <dt className="text-muted">Reason</dt>
+          <dd>{data.maintenance.reason ?? "No reason recorded."}</dd>
+        </dl>
+      )}
+    </Modal>
+  );
+}

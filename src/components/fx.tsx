@@ -377,7 +377,6 @@ export function SplitText({
     <Tag
       ref={ref}
       className={cn("inline-block", className)}
-      aria-label={text}
       data-split-shown={shown ? "true" : undefined}
       style={
         {
@@ -386,6 +385,9 @@ export function SplitText({
         } as CSSProperties
       }
     >
+      {/* aria-label is not allowed on a generic span/p; the real string is read
+          from this hidden copy while the animated units stay aria-hidden. */}
+      <span className="sr-only">{text}</span>
       {units.map((u, i) =>
         // Whitespace stays outside the clipping mask, otherwise `overflow-hidden`
         // on a space collapses the gap between words.
@@ -461,7 +463,8 @@ export function ScrollReveal({
   if (reduced) return <p className={className}>{children}</p>;
 
   return (
-    <p ref={ref} className={className} aria-label={children}>
+    <p ref={ref} className={className}>
+      <span className="sr-only">{children}</span>
       {children.split(" ").map((w, i) => (
         <span key={i} data-reveal-word aria-hidden className="inline-block will-change-[filter,opacity]">
           {w}
@@ -532,7 +535,8 @@ export function DecryptedText({
   }, [text, speed, charset, reduced]);
 
   return (
-    <span ref={ref} className={className} aria-label={text}>
+    <span ref={ref} className={className}>
+      <span className="sr-only">{text}</span>
       <span aria-hidden>{reduced ? text : shown}</span>
     </span>
   );

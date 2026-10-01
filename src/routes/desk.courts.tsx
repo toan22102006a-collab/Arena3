@@ -6,6 +6,7 @@ import { Shell, money } from "@/components/shell";
 import { Button, Card, DateField, Field, Input, Select, Seg, Skeleton } from "@/components/ui";
 import { AnimatePresence, motion } from "motion/react";
 import { SpotlightCard, StarBorder } from "@/components/fx";
+import { ClassDetailModal, OccupancyDetailModal } from "@/components/class-detail";
 import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
 import { todayISO } from "@/lib/arena3/labels";
 
@@ -20,6 +21,9 @@ function Page() {
   const [data, setData] = useState<{ courts: Court[]; slots: OccSlot[] } | null>(null);
   const [pick, setPick] = useState<{ court: Court; hour: number } | null>(null);
   const [form, setForm] = useState({ guest_name: "", guest_phone: "", method: "cash" });
+  // The taken hour whose owner the desk is looking up, and the class it may lead to.
+  const [look, setLook] = useState<{ kind: string; ref: string } | null>(null);
+  const [lookClass, setLookClass] = useState<string | null>(null);
 
   async function load() {
     setData(await apiGet(`/occupancy?date=${date}`));
@@ -192,6 +196,7 @@ function Page() {
           courts={data.courts}
           slots={data.slots}
           sport={sport || undefined}
+          onInspect={(_c, _h, occ) => setLook({ kind: occ.kind, ref: occ.ref })}
           onPick={async (c, h) => {
             const occ = data.slots.find((s) => {
               if (s.court_id !== c.id) return false;
@@ -220,6 +225,15 @@ function Page() {
       ) : (
         <Skeleton className="h-72" />
       )}
+      <OccupancyDetailModal
+        target={look}
+        onClose={() => setLook(null)}
+        onOpenClass={(id) => {
+          setLook(null);
+          setLookClass(id);
+        }}
+      />
+      <ClassDetailModal classId={lookClass} onClose={() => setLookClass(null)} />
     </Shell>
   );
 }

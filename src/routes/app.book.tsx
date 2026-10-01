@@ -3,16 +3,20 @@ import { AnimatePresence, motion } from "motion/react";
 import { Landmark, Receipt as ReceiptIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { MonthCalendar, useAvailability } from "@/components/availability-calendar";
 import { CourtGrid, DateStrip, freeHours, type Court, type OccSlot } from "@/components/court-grid";
 import { Cover, HoldProgress, HoldTimer, MediaCaption, media, sportPhoto } from "@/components/media";
 import { PayOnlineButton } from "@/components/pay-online";
-import { Shell, money } from "@/components/shell";
-import { Button, Card, DateField, Seg, Skeleton } from "@/components/ui";
+import { Shell, money, when } from "@/components/shell";
+import { Badge, Button, Card, DateField, Seg, Skeleton, StatusBadge } from "@/components/ui";
 import { GlareHover, StarBorder } from "@/components/fx";
 import { apiGet, apiPost, openInvoice, ApiClientError } from "@/lib/arena3/client";
 import { todayISO, sportLabel } from "@/lib/arena3/labels";
 
 export const Route = createFileRoute("/app/book")({
+  validateSearch: (s: Record<string, unknown>): { sport?: string } => ({
+    sport: s.sport === "badminton" || s.sport === "basketball" || s.sport === "volleyball" ? s.sport : undefined,
+  }),
   component: Page,
 });
 
@@ -34,6 +38,19 @@ function nearestFree(
     .slice(0, 3);
 }
 
+/** One of the member's own upcoming court bookings (M-04). */
+type MyBooking = {
+  id: string;
+  code: string;
+  status: string;
+  start_at: string;
+  end_at: string;
+  court_id: string;
+  court_code: string;
+  sport: string;
+  can_move: boolean;
+};
+
 type Hold = {
   booking: { id: string; code: string; hold_until?: string };
   price: number;
@@ -53,10 +70,29 @@ type Taken = {
 
 function Page() {
   const [date, setDate] = useState(todayISO);
-  const [sport, setSport] = useState("badminton");
+  const [sport, setSport] = useState(Route.useSearch().sport ?? "badminton");
   const [data, setData] = useState<{ courts: Court[]; slots: OccSlot[] } | null>(null);
   const [hold, setHold] = useState<Hold | null>(null);
   const [overlap, setOverlap] = useState<{ court: Court; hour: number; message: string } | null>(null);
+  // Week strip or whole month — both show how many slots each day has left.
+  const [view, setView] = useState<"week" | "month">("week");
+  const [refresh, setRefresh] = useState(0);
+  const avail = useAvailability(sport, refresh);
+  const [mine, setMine] = useState<MyBooking[] | null>(null);
+  const [windowHours, setWindowHours] = useState(2);
+  const [showAllMine, setShowAllMine] = useState(false);
+  // The booking being moved: the grid's next tap lands on it instead of making a new hold.
+  const [moving, setMoving] = useState<MyBooking | null>(null);
+  const [moveError, setMoveError] = useState("");
+  async function loadMine() {
+    try {
+      const r = await apiGet<{ items: MyBooking[]; window_hours: number }>("/me/bookings");
+      setMine(r.items);
+      setWindowHours(r.window_hours);
+    } catch {
+      setMine([]);
+    }
+  }
   const [taken, setTaken] = useState<Taken | null>(null);
   const [busy, setBusy] = useState(false);
   // Leave the online button out entirely when the centre has no payOS set up,
@@ -76,6 +112,46 @@ function Page() {
   async function load(d = date) {
     const occ = await apiGet<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${d}`);
     setData(occ);
+    setRefresh((n) => n + 1);
+    void loadMine();
+  }
+
+  async function moveTo(court: Court, hour: number, confirmOverlap = false) {
+    if (!moving) return;
+    const start = `${date}T${String(hour).padStart(2, "0")}:00:00+07:00`;
+    setBusy(true);
+    setMoveError("");
+    try {
+      await apiPost(
+        `/bookings/${moving.id}/reschedule`,
+        { start_at: start, court_id: court.id, ...(confirmOverlap ? { confirm_overlap: true } : {}) },
+      );
+      toast.success(`Moved ${moving.code} to ${court.court_code} · ${String(hour).padStart(2, "0")}:00`);
+      setMoving(null);
+      setOverlap(null);
+      await load();
+    } catch (e) {
+      if (e instanceof ApiClientError && e.body.requires_confirm && !confirmOverlap) {
+        setOverlap({ court, hour, message: e.body.message });
+      } else {
+        setMoveError(e instanceof Error ? e.message : "Could not move that booking");
+        await load().catch(() => {});
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startMove(b: MyBooking) {
+    setMoving(b);
+    setMoveError("");
+    setHold(null);
+    setTaken(null);
+    setSport(b.sport);
+    // Open the booking's own day: most changes are another hour the same day.
+    setDate(
+      new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date(b.start_at)),
+    );
   }
   useEffect(() => {
     setData(null);
@@ -198,8 +274,20 @@ function Page() {
         </Cover>
       </GlareHover>
       <div className="mb-4 grid gap-3">
-        <DateStrip value={date} onChange={setDate} />
+        {view === "week" ? (
+          <DateStrip value={date} onChange={setDate} avail={avail} />
+        ) : (
+          <MonthCalendar value={date} onChange={setDate} avail={avail} />
+        )}
         <div className="flex flex-wrap items-center gap-2">
+          <Seg
+            value={view}
+            onChange={(v) => setView(v === "month" ? "month" : "week")}
+            options={[
+              { value: "week", label: "Week" },
+              { value: "month", label: "Month" },
+            ]}
+          />
           <Seg
             value={sport}
             onChange={setSport}
@@ -213,6 +301,64 @@ function Page() {
           <DateField value={date} onChange={setDate} aria-label="Pick another date" />
         </div>
       </div>
+      {moving ? (
+        <Card className="mb-4 border border-accent/30 bg-accent/5">
+          <p className="text-sm font-medium">
+            Moving {moving.code} — now {moving.court_code}, {when(moving.start_at)}
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            Tap a free slot below. You keep the same sport and price; the old hour is freed the moment the new one is
+            yours.
+          </p>
+          {moveError ? (
+            <p role="alert" className="mt-2 text-sm text-danger">
+              {moveError}
+            </p>
+          ) : null}
+          <div className="mt-3">
+            <Button size="sm" variant="outline" onClick={() => (setMoving(null), setMoveError(""))}>
+              Keep it where it is
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+      {mine?.length && !moving ? (
+        <Card className="mb-4">
+          <p className="mb-2 font-display text-lg">Your upcoming courts</p>
+          <div className="grid gap-2">
+            {(showAllMine ? mine : mine.slice(0, 3)).map((b) => (
+              <div
+                key={b.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] bg-wood/50 px-3 py-2"
+              >
+                <span className="text-sm">
+                  <span className="font-medium">{b.court_code}</span> · {when(b.start_at)}{" "}
+                  <span className="font-mono text-xs text-muted">{b.code}</span>
+                </span>
+                <span className="flex items-center gap-2">
+                  <StatusBadge status={b.status} />
+                  {b.can_move ? (
+                    <Button size="sm" variant="outline" onClick={() => startMove(b)}>
+                      Change time
+                    </Button>
+                  ) : b.status === "confirmed" ? (
+                    <Badge tone="muted">Within {windowHours}h — can&apos;t move</Badge>
+                  ) : null}
+                </span>
+              </div>
+            ))}
+          </div>
+          {mine.length > 3 ? (
+            <button
+              type="button"
+              onClick={() => setShowAllMine((v) => !v)}
+              className="mt-2 text-sm text-accent-2 underline-offset-2 hover:underline"
+            >
+              {showAllMine ? "Show fewer" : `Show all ${mine.length}`}
+            </button>
+          ) : null}
+        </Card>
+      ) : null}
       <AnimatePresence>
         {pending ? (
           <motion.div
@@ -337,8 +483,15 @@ function Page() {
                 Your class enrolment stays put — this is only a clash warning.
               </p>
               <div className="mt-3 flex gap-2">
-                <Button disabled={busy} onClick={() => void holdSlot(overlap.court, overlap.hour, true)}>
-                  Hold it anyway
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    void (moving
+                      ? moveTo(overlap.court, overlap.hour, true)
+                      : holdSlot(overlap.court, overlap.hour, true))
+                  }
+                >
+                  {moving ? "Move it anyway" : "Hold it anyway"}
                 </Button>
                 <Button variant="outline" onClick={() => setOverlap(null)}>
                   Never mind
@@ -414,7 +567,7 @@ function Page() {
           courts={data.courts}
           slots={data.slots}
           sport={sport || undefined}
-          onPick={(c, h) => void holdSlot(c, h)}
+          onPick={(c, h) => void (moving ? moveTo(c, h) : holdSlot(c, h))}
           // A sold-out sport should hand back the two controls at the top of
           // this page rather than make the member go and find them again.
           onPickSport={setSport}

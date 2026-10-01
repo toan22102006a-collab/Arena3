@@ -47,6 +47,9 @@ export const Route = createRootRoute({
       </head>
       <body className="bg-bg text-fg">
         <PreviewHostBridge />
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
         <AuthProvider>
           {/* One shared canvas for click feedback across every route; it parks
               its rAF loop whenever there is nothing left to draw. */}

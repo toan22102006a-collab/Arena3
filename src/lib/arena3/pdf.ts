@@ -51,7 +51,7 @@ export type InvoiceDoc = {
   serial_no: string | null;
   issued_at: string;
   seller: { legal_name: string; tax_code: string | null; address: string | null };
-  buyer: { name: string; tax_code: string | null; address: string | null };
+  buyer: { name: string; phone?: string | null; tax_code: string | null; address: string | null };
   pay_code: string;
   method_label: string;
   lines: InvoiceLine[];
@@ -206,6 +206,7 @@ function drawHead(c: Cursor, doc: InvoiceDoc, wide: boolean) {
 /** Buyer identity and how the money arrived. */
 function drawBuyer(c: Cursor, doc: InvoiceDoc) {
   c.line(`Họ tên người mua: ${doc.buyer.name}`, { size: 8.5 });
+  if (doc.buyer.phone) c.line(`Điện thoại: ${doc.buyer.phone}`, { size: 8 });
   if (doc.buyer.address) c.line(`Địa chỉ: ${doc.buyer.address}`, { size: 8 });
   c.line(`MST người mua: ${doc.buyer.tax_code ?? "—"}`, { size: 8 });
   c.line(`Hình thức thanh toán: ${doc.method_label}    Chứng từ: ${doc.pay_code}`, { size: 8 });

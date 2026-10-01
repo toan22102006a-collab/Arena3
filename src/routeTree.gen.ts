@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
+import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as CoachRouteImport } from './routes/coach'
 import { Route as DeskRouteImport } from './routes/desk'
@@ -22,20 +23,28 @@ import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppAssistantRouteImport } from './routes/app.assistant'
 import { Route as AppBookRouteImport } from './routes/app.book'
 import { Route as AppClassesRouteImport } from './routes/app.classes'
+import { Route as AppNotificationsRouteImport } from './routes/app.notifications'
 import { Route as AppPlansRouteImport } from './routes/app.plans'
 import { Route as AppTrainRouteImport } from './routes/app.train'
+import { Route as CoachIndexRouteImport } from './routes/coach.index'
+import { Route as CoachAttendanceRouteImport } from './routes/coach.attendance'
 import { Route as DeskIndexRouteImport } from './routes/desk.index'
+import { Route as DeskClassesRouteImport } from './routes/desk.classes'
 import { Route as DeskCourtsRouteImport } from './routes/desk.courts'
+import { Route as DeskGateRouteImport } from './routes/desk.gate'
 import { Route as DeskGearRouteImport } from './routes/desk.gear'
 import { Route as DeskPaymentsRouteImport } from './routes/desk.payments'
 import { Route as ManagerIndexRouteImport } from './routes/manager.index'
 import { Route as ManagerAuditRouteImport } from './routes/manager.audit'
 import { Route as ManagerClassesRouteImport } from './routes/manager.classes'
+import { Route as ManagerMembersRouteImport } from './routes/manager.members'
 import { Route as ManagerPlansRouteImport } from './routes/manager.plans'
 import { Route as ManagerPricesRouteImport } from './routes/manager.prices'
 import { Route as ManagerSettingsRouteImport } from './routes/manager.settings'
+import { Route as ManagerStaffRouteImport } from './routes/manager.staff'
 import { Route as PayReturnRouteImport } from './routes/pay.return'
 import { Route as V1SplatRouteImport } from './routes/v1.$'
+import { Route as CoachStudentIdRouteImport } from './routes/coach.student.$id'
 import { Route as DeskMemberIdRouteImport } from './routes/desk.member.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -46,6 +55,11 @@ const IndexRoute = IndexRouteImport.update({
 const AccountRoute = AccountRouteImport.update({
   id: '/account',
   path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlertsRoute = AlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -103,6 +117,11 @@ const AppClassesRoute = AppClassesRouteImport.update({
   path: '/classes',
   getParentRoute: () => AppRoute,
 } as any)
+const AppNotificationsRoute = AppNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPlansRoute = AppPlansRouteImport.update({
   id: '/plans',
   path: '/plans',
@@ -113,14 +132,34 @@ const AppTrainRoute = AppTrainRouteImport.update({
   path: '/train',
   getParentRoute: () => AppRoute,
 } as any)
+const CoachIndexRoute = CoachIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CoachRoute,
+} as any)
+const CoachAttendanceRoute = CoachAttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
+  getParentRoute: () => CoachRoute,
+} as any)
 const DeskIndexRoute = DeskIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => DeskRoute,
 } as any)
+const DeskClassesRoute = DeskClassesRouteImport.update({
+  id: '/classes',
+  path: '/classes',
+  getParentRoute: () => DeskRoute,
+} as any)
 const DeskCourtsRoute = DeskCourtsRouteImport.update({
   id: '/courts',
   path: '/courts',
+  getParentRoute: () => DeskRoute,
+} as any)
+const DeskGateRoute = DeskGateRouteImport.update({
+  id: '/gate',
+  path: '/gate',
   getParentRoute: () => DeskRoute,
 } as any)
 const DeskGearRoute = DeskGearRouteImport.update({
@@ -148,6 +187,11 @@ const ManagerClassesRoute = ManagerClassesRouteImport.update({
   path: '/classes',
   getParentRoute: () => ManagerRoute,
 } as any)
+const ManagerMembersRoute = ManagerMembersRouteImport.update({
+  id: '/members',
+  path: '/members',
+  getParentRoute: () => ManagerRoute,
+} as any)
 const ManagerPlansRoute = ManagerPlansRouteImport.update({
   id: '/plans',
   path: '/plans',
@@ -163,6 +207,11 @@ const ManagerSettingsRoute = ManagerSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => ManagerRoute,
 } as any)
+const ManagerStaffRoute = ManagerStaffRouteImport.update({
+  id: '/staff',
+  path: '/staff',
+  getParentRoute: () => ManagerRoute,
+} as any)
 const PayReturnRoute = PayReturnRouteImport.update({
   id: '/pay/return',
   path: '/pay/return',
@@ -173,6 +222,11 @@ const V1SplatRoute = V1SplatRouteImport.update({
   path: '/v1/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CoachStudentIdRoute = CoachStudentIdRouteImport.update({
+  id: '/student/$id',
+  path: '/student/$id',
+  getParentRoute: () => CoachRoute,
+} as any)
 const DeskMemberIdRoute = DeskMemberIdRouteImport.update({
   id: '/member/$id',
   path: '/member/$id',
@@ -182,8 +236,9 @@ const DeskMemberIdRoute = DeskMemberIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/alerts': typeof AlertsRoute
   '/app': typeof AppRouteWithChildren
-  '/coach': typeof CoachRoute
+  '/coach': typeof CoachRouteWithChildren
   '/desk': typeof DeskRouteWithChildren
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
@@ -192,56 +247,73 @@ export interface FileRoutesByFullPath {
   '/app/assistant': typeof AppAssistantRoute
   '/app/book': typeof AppBookRoute
   '/app/classes': typeof AppClassesRoute
+  '/app/notifications': typeof AppNotificationsRoute
   '/app/plans': typeof AppPlansRoute
   '/app/train': typeof AppTrainRoute
+  '/coach/attendance': typeof CoachAttendanceRoute
+  '/desk/classes': typeof DeskClassesRoute
   '/desk/courts': typeof DeskCourtsRoute
+  '/desk/gate': typeof DeskGateRoute
   '/desk/gear': typeof DeskGearRoute
   '/desk/payments': typeof DeskPaymentsRoute
   '/manager/audit': typeof ManagerAuditRoute
   '/manager/classes': typeof ManagerClassesRoute
+  '/manager/members': typeof ManagerMembersRoute
   '/manager/plans': typeof ManagerPlansRoute
   '/manager/prices': typeof ManagerPricesRoute
   '/manager/settings': typeof ManagerSettingsRoute
+  '/manager/staff': typeof ManagerStaffRoute
   '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
   '/app/': typeof AppIndexRoute
+  '/coach/': typeof CoachIndexRoute
   '/desk/': typeof DeskIndexRoute
   '/manager/': typeof ManagerIndexRoute
+  '/coach/student/$id': typeof CoachStudentIdRoute
   '/desk/member/$id': typeof DeskMemberIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
-  '/coach': typeof CoachRoute
+  '/alerts': typeof AlertsRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/app/assistant': typeof AppAssistantRoute
   '/app/book': typeof AppBookRoute
   '/app/classes': typeof AppClassesRoute
+  '/app/notifications': typeof AppNotificationsRoute
   '/app/plans': typeof AppPlansRoute
   '/app/train': typeof AppTrainRoute
+  '/coach/attendance': typeof CoachAttendanceRoute
+  '/desk/classes': typeof DeskClassesRoute
   '/desk/courts': typeof DeskCourtsRoute
+  '/desk/gate': typeof DeskGateRoute
   '/desk/gear': typeof DeskGearRoute
   '/desk/payments': typeof DeskPaymentsRoute
   '/manager/audit': typeof ManagerAuditRoute
   '/manager/classes': typeof ManagerClassesRoute
+  '/manager/members': typeof ManagerMembersRoute
   '/manager/plans': typeof ManagerPlansRoute
   '/manager/prices': typeof ManagerPricesRoute
   '/manager/settings': typeof ManagerSettingsRoute
+  '/manager/staff': typeof ManagerStaffRoute
   '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
   '/app': typeof AppIndexRoute
+  '/coach': typeof CoachIndexRoute
   '/desk': typeof DeskIndexRoute
   '/manager': typeof ManagerIndexRoute
+  '/coach/student/$id': typeof CoachStudentIdRoute
   '/desk/member/$id': typeof DeskMemberIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/alerts': typeof AlertsRoute
   '/app': typeof AppRouteWithChildren
-  '/coach': typeof CoachRoute
+  '/coach': typeof CoachRouteWithChildren
   '/desk': typeof DeskRouteWithChildren
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
@@ -250,21 +322,29 @@ export interface FileRoutesById {
   '/app/assistant': typeof AppAssistantRoute
   '/app/book': typeof AppBookRoute
   '/app/classes': typeof AppClassesRoute
+  '/app/notifications': typeof AppNotificationsRoute
   '/app/plans': typeof AppPlansRoute
   '/app/train': typeof AppTrainRoute
+  '/coach/attendance': typeof CoachAttendanceRoute
+  '/desk/classes': typeof DeskClassesRoute
   '/desk/courts': typeof DeskCourtsRoute
+  '/desk/gate': typeof DeskGateRoute
   '/desk/gear': typeof DeskGearRoute
   '/desk/payments': typeof DeskPaymentsRoute
   '/manager/audit': typeof ManagerAuditRoute
   '/manager/classes': typeof ManagerClassesRoute
+  '/manager/members': typeof ManagerMembersRoute
   '/manager/plans': typeof ManagerPlansRoute
   '/manager/prices': typeof ManagerPricesRoute
   '/manager/settings': typeof ManagerSettingsRoute
+  '/manager/staff': typeof ManagerStaffRoute
   '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
   '/app/': typeof AppIndexRoute
+  '/coach/': typeof CoachIndexRoute
   '/desk/': typeof DeskIndexRoute
   '/manager/': typeof ManagerIndexRoute
+  '/coach/student/$id': typeof CoachStudentIdRoute
   '/desk/member/$id': typeof DeskMemberIdRoute
 }
 export interface FileRouteTypes {
@@ -272,6 +352,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/account'
+    | '/alerts'
     | '/app'
     | '/coach'
     | '/desk'
@@ -282,53 +363,70 @@ export interface FileRouteTypes {
     | '/app/assistant'
     | '/app/book'
     | '/app/classes'
+    | '/app/notifications'
     | '/app/plans'
     | '/app/train'
+    | '/coach/attendance'
+    | '/desk/classes'
     | '/desk/courts'
+    | '/desk/gate'
     | '/desk/gear'
     | '/desk/payments'
     | '/manager/audit'
     | '/manager/classes'
+    | '/manager/members'
     | '/manager/plans'
     | '/manager/prices'
     | '/manager/settings'
+    | '/manager/staff'
     | '/pay/return'
     | '/v1/$'
     | '/app/'
+    | '/coach/'
     | '/desk/'
     | '/manager/'
+    | '/coach/student/$id'
     | '/desk/member/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/account'
-    | '/coach'
+    | '/alerts'
     | '/forgot'
     | '/login'
     | '/register'
     | '/app/assistant'
     | '/app/book'
     | '/app/classes'
+    | '/app/notifications'
     | '/app/plans'
     | '/app/train'
+    | '/coach/attendance'
+    | '/desk/classes'
     | '/desk/courts'
+    | '/desk/gate'
     | '/desk/gear'
     | '/desk/payments'
     | '/manager/audit'
     | '/manager/classes'
+    | '/manager/members'
     | '/manager/plans'
     | '/manager/prices'
     | '/manager/settings'
+    | '/manager/staff'
     | '/pay/return'
     | '/v1/$'
     | '/app'
+    | '/coach'
     | '/desk'
     | '/manager'
+    | '/coach/student/$id'
     | '/desk/member/$id'
   id:
     | '__root__'
     | '/'
     | '/account'
+    | '/alerts'
     | '/app'
     | '/coach'
     | '/desk'
@@ -339,29 +437,38 @@ export interface FileRouteTypes {
     | '/app/assistant'
     | '/app/book'
     | '/app/classes'
+    | '/app/notifications'
     | '/app/plans'
     | '/app/train'
+    | '/coach/attendance'
+    | '/desk/classes'
     | '/desk/courts'
+    | '/desk/gate'
     | '/desk/gear'
     | '/desk/payments'
     | '/manager/audit'
     | '/manager/classes'
+    | '/manager/members'
     | '/manager/plans'
     | '/manager/prices'
     | '/manager/settings'
+    | '/manager/staff'
     | '/pay/return'
     | '/v1/$'
     | '/app/'
+    | '/coach/'
     | '/desk/'
     | '/manager/'
+    | '/coach/student/$id'
     | '/desk/member/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
+  AlertsRoute: typeof AlertsRoute
   AppRoute: typeof AppRouteWithChildren
-  CoachRoute: typeof CoachRoute
+  CoachRoute: typeof CoachRouteWithChildren
   DeskRoute: typeof DeskRouteWithChildren
   ForgotRoute: typeof ForgotRoute
   LoginRoute: typeof LoginRoute
@@ -385,6 +492,13 @@ declare module '@tanstack/react-router' {
       path: '/account'
       fullPath: '/account'
       preLoaderRoute: typeof AccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts': {
+      id: '/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app': {
@@ -464,6 +578,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClassesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/notifications': {
+      id: '/app/notifications'
+      path: '/notifications'
+      fullPath: '/app/notifications'
+      preLoaderRoute: typeof AppNotificationsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/plans': {
       id: '/app/plans'
       path: '/plans'
@@ -478,6 +599,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTrainRouteImport
       parentRoute: typeof AppRoute
     }
+    '/coach/': {
+      id: '/coach/'
+      path: '/'
+      fullPath: '/coach/'
+      preLoaderRoute: typeof CoachIndexRouteImport
+      parentRoute: typeof CoachRoute
+    }
+    '/coach/attendance': {
+      id: '/coach/attendance'
+      path: '/attendance'
+      fullPath: '/coach/attendance'
+      preLoaderRoute: typeof CoachAttendanceRouteImport
+      parentRoute: typeof CoachRoute
+    }
     '/desk/': {
       id: '/desk/'
       path: '/'
@@ -485,11 +620,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DeskIndexRouteImport
       parentRoute: typeof DeskRoute
     }
+    '/desk/classes': {
+      id: '/desk/classes'
+      path: '/classes'
+      fullPath: '/desk/classes'
+      preLoaderRoute: typeof DeskClassesRouteImport
+      parentRoute: typeof DeskRoute
+    }
     '/desk/courts': {
       id: '/desk/courts'
       path: '/courts'
       fullPath: '/desk/courts'
       preLoaderRoute: typeof DeskCourtsRouteImport
+      parentRoute: typeof DeskRoute
+    }
+    '/desk/gate': {
+      id: '/desk/gate'
+      path: '/gate'
+      fullPath: '/desk/gate'
+      preLoaderRoute: typeof DeskGateRouteImport
       parentRoute: typeof DeskRoute
     }
     '/desk/gear': {
@@ -527,6 +676,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagerClassesRouteImport
       parentRoute: typeof ManagerRoute
     }
+    '/manager/members': {
+      id: '/manager/members'
+      path: '/members'
+      fullPath: '/manager/members'
+      preLoaderRoute: typeof ManagerMembersRouteImport
+      parentRoute: typeof ManagerRoute
+    }
     '/manager/plans': {
       id: '/manager/plans'
       path: '/plans'
@@ -548,6 +704,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagerSettingsRouteImport
       parentRoute: typeof ManagerRoute
     }
+    '/manager/staff': {
+      id: '/manager/staff'
+      path: '/staff'
+      fullPath: '/manager/staff'
+      preLoaderRoute: typeof ManagerStaffRouteImport
+      parentRoute: typeof ManagerRoute
+    }
     '/pay/return': {
       id: '/pay/return'
       path: '/pay/return'
@@ -561,6 +724,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/v1/$'
       preLoaderRoute: typeof V1SplatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/coach/student/$id': {
+      id: '/coach/student/$id'
+      path: '/student/$id'
+      fullPath: '/coach/student/$id'
+      preLoaderRoute: typeof CoachStudentIdRouteImport
+      parentRoute: typeof CoachRoute
     }
     '/desk/member/$id': {
       id: '/desk/member/$id'
@@ -576,6 +746,7 @@ interface AppRouteChildren {
   AppAssistantRoute: typeof AppAssistantRoute
   AppBookRoute: typeof AppBookRoute
   AppClassesRoute: typeof AppClassesRoute
+  AppNotificationsRoute: typeof AppNotificationsRoute
   AppPlansRoute: typeof AppPlansRoute
   AppTrainRoute: typeof AppTrainRoute
   AppIndexRoute: typeof AppIndexRoute
@@ -585,6 +756,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAssistantRoute: AppAssistantRoute,
   AppBookRoute: AppBookRoute,
   AppClassesRoute: AppClassesRoute,
+  AppNotificationsRoute: AppNotificationsRoute,
   AppPlansRoute: AppPlansRoute,
   AppTrainRoute: AppTrainRoute,
   AppIndexRoute: AppIndexRoute,
@@ -592,8 +764,24 @@ const AppRouteChildren: AppRouteChildren = {
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
+interface CoachRouteChildren {
+  CoachAttendanceRoute: typeof CoachAttendanceRoute
+  CoachIndexRoute: typeof CoachIndexRoute
+  CoachStudentIdRoute: typeof CoachStudentIdRoute
+}
+
+const CoachRouteChildren: CoachRouteChildren = {
+  CoachAttendanceRoute: CoachAttendanceRoute,
+  CoachIndexRoute: CoachIndexRoute,
+  CoachStudentIdRoute: CoachStudentIdRoute,
+}
+
+const CoachRouteWithChildren = CoachRoute._addFileChildren(CoachRouteChildren)
+
 interface DeskRouteChildren {
+  DeskClassesRoute: typeof DeskClassesRoute
   DeskCourtsRoute: typeof DeskCourtsRoute
+  DeskGateRoute: typeof DeskGateRoute
   DeskGearRoute: typeof DeskGearRoute
   DeskPaymentsRoute: typeof DeskPaymentsRoute
   DeskIndexRoute: typeof DeskIndexRoute
@@ -601,7 +789,9 @@ interface DeskRouteChildren {
 }
 
 const DeskRouteChildren: DeskRouteChildren = {
+  DeskClassesRoute: DeskClassesRoute,
   DeskCourtsRoute: DeskCourtsRoute,
+  DeskGateRoute: DeskGateRoute,
   DeskGearRoute: DeskGearRoute,
   DeskPaymentsRoute: DeskPaymentsRoute,
   DeskIndexRoute: DeskIndexRoute,
@@ -613,18 +803,22 @@ const DeskRouteWithChildren = DeskRoute._addFileChildren(DeskRouteChildren)
 interface ManagerRouteChildren {
   ManagerAuditRoute: typeof ManagerAuditRoute
   ManagerClassesRoute: typeof ManagerClassesRoute
+  ManagerMembersRoute: typeof ManagerMembersRoute
   ManagerPlansRoute: typeof ManagerPlansRoute
   ManagerPricesRoute: typeof ManagerPricesRoute
   ManagerSettingsRoute: typeof ManagerSettingsRoute
+  ManagerStaffRoute: typeof ManagerStaffRoute
   ManagerIndexRoute: typeof ManagerIndexRoute
 }
 
 const ManagerRouteChildren: ManagerRouteChildren = {
   ManagerAuditRoute: ManagerAuditRoute,
   ManagerClassesRoute: ManagerClassesRoute,
+  ManagerMembersRoute: ManagerMembersRoute,
   ManagerPlansRoute: ManagerPlansRoute,
   ManagerPricesRoute: ManagerPricesRoute,
   ManagerSettingsRoute: ManagerSettingsRoute,
+  ManagerStaffRoute: ManagerStaffRoute,
   ManagerIndexRoute: ManagerIndexRoute,
 }
 
@@ -634,8 +828,9 @@ const ManagerRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
+  AlertsRoute: AlertsRoute,
   AppRoute: AppRouteWithChildren,
-  CoachRoute: CoachRoute,
+  CoachRoute: CoachRouteWithChildren,
   DeskRoute: DeskRouteWithChildren,
   ForgotRoute: ForgotRoute,
   LoginRoute: LoginRoute,

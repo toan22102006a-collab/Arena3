@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Cover, MediaCaption, sportPhoto } from "@/components/media";
 import { Shell, money } from "@/components/shell";
-import { Button, Card, Empty, Skeleton } from "@/components/ui";
+import { Button, Card, EmptyState, Skeleton } from "@/components/ui";
 import { Lift, Stagger, StaggerItem } from "@/components/motion";
 import { GlareHover, SpotlightCard } from "@/components/fx";
 import { apiGet, apiPost } from "@/lib/arena3/client";
@@ -132,7 +132,7 @@ function Page() {
             </Lift>
             </StaggerItem>
           ))}
-          {!items.length ? <Empty title="No plans on sale right now" /> : null}
+          {!items.length ? <EmptyState title="No plans on sale right now" /> : null}
         </Stagger>
       )}
     </Shell>

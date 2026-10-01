@@ -64,6 +64,10 @@ export type ApiErrorBody = {
   code: string;
   message: string;
   br?: string;
+  /** Set on a 400: the form input the message is about. */
+  field?: string;
+  /** Set when a bulk save names the row that was refused. */
+  index?: number;
   requires_confirm?: boolean;
 };
 
@@ -153,6 +157,27 @@ async function apiBlob(path: string): Promise<{ blob: Blob; filename: string | n
   }
   const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1];
   return { blob: await res.blob(), filename: name ?? null };
+}
+
+/**
+ * Save a server-built report (xlsx / pdf) to Downloads.
+ *
+ * A plain link cannot carry the bearer token, so the file is fetched with it and
+ * handed to the browser as a blob.
+ */
+export async function downloadReport(path: string, fallbackName: string): Promise<string> {
+  const { blob, filename } = await apiBlob(path);
+  const name = filename ?? fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.rel = "noopener";
+  document.body.append(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return name;
 }
 
 /**

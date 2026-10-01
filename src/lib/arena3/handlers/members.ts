@@ -114,6 +114,13 @@ export async function memberGet(sql: Sql, id: string, user: PublicUser) {
     [id],
   );
   const debt = await userDebt(sql, id);
+  // Guardian details are not part of the public user shape, but the desk needs
+  // them to correct a profile that was filled in wrongly.
+  const guardian = await one<{ guardian_name: string | null; guardian_phone: string | null }>(
+    sql,
+    `select guardian_name, guardian_phone from users where id = $1`,
+    [id],
+  );
   const bookings = await sql.query(
     `select b.id, b.code, b.start_at, b.end_at, b.status, c.court_code
        from court_bookings b join courts c on c.id = b.court_id
@@ -165,10 +172,217 @@ export async function memberGet(sql: Sql, id: string, user: PublicUser) {
     status: 200,
     body: {
       user: toPublic(m),
+      guardian: { name: guardian?.guardian_name ?? null, phone: guardian?.guardian_phone ?? null },
       subscriptions: subs,
       debt_vnd: debt,
       payments,
       today: { bookings, classes },
+    },
+  };
+}
+
+/**
+ * Correct a member's profile (B-11 / D-06).
+ *
+ * Members get their name, phone or date of birth wrong at sign-up and the desk
+ * had no way to put it right. Reception and the manager may edit those four
+ * things plus the guardian; anything else on the account is left alone.
+ *
+ * - A phone that already belongs to another account is refused with BR-01, the
+ *   same rule registration enforces — never silently merged.
+ * - A date of birth that makes the member a minor needs guardian details
+ *   (BR-07), checked against the values the row will hold after the edit.
+ * - The audit entry keeps the before and after of only what changed.
+ */
+export async function membersUpdate(sql: Sql, id: string, request: Request, user: PublicUser) {
+  requireRole(user, ["receptionist", "manager"]);
+  const body = await readJson(request);
+  const cur = await one<{
+    id: string;
+    full_name: string;
+    phone: string;
+    date_of_birth: string | null;
+    guardian_name: string | null;
+    guardian_phone: string | null;
+    role: string;
+  }>(
+    sql,
+    `select id, full_name, phone, date_of_birth::text as date_of_birth, guardian_name, guardian_phone, role::text as role
+       from users where id = $1 for update`,
+    [id],
+  );
+  if (!cur || cur.role !== "member") throw err.notFound("No such member.");
+
+  const next = {
+    full_name: cur.full_name,
+    phone: cur.phone,
+    date_of_birth: cur.date_of_birth,
+    guardian_name: cur.guardian_name,
+    guardian_phone: cur.guardian_phone,
+  };
+
+  if (body.full_name !== undefined) {
+    const name = typeof body.full_name === "string" ? body.full_name.trim() : "";
+    if (!name) throw err.field("full_name", "Full name is required.");
+    if (name.length > 120) throw err.field("full_name", "Full name must be at most 120 characters.");
+    next.full_name = name;
+  }
+  if (body.phone !== undefined) {
+    const raw = typeof body.phone === "string" ? body.phone : "";
+    if (!isValidVnPhone(raw)) throw err.field("phone", "That phone number is not valid.");
+    next.phone = normalizePhone(raw);
+  }
+  const dobIn = body.date_of_birth !== undefined ? body.date_of_birth : body.dob;
+  if (dobIn !== undefined) {
+    if (dobIn === null || dobIn === "") {
+      next.date_of_birth = null;
+    } else {
+      const d = typeof dobIn === "string" ? dobIn.trim() : "";
+      const ok = /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+      if (!ok) throw err.field("date_of_birth", "Date of birth must be a real date (YYYY-MM-DD).");
+      if (new Date(`${d}T00:00:00+07:00`).getTime() > Date.now()) {
+        throw err.field("date_of_birth", "Date of birth cannot be in the future.");
+      }
+      next.date_of_birth = d;
+    }
+  }
+  if (body.guardian_name !== undefined) {
+    const g = typeof body.guardian_name === "string" ? body.guardian_name.trim() : "";
+    if (g.length > 120) throw err.field("guardian_name", "Guardian name must be at most 120 characters.");
+    next.guardian_name = g || null;
+  }
+  if (body.guardian_phone !== undefined) {
+    const raw = typeof body.guardian_phone === "string" ? body.guardian_phone.trim() : "";
+    if (raw && !isValidVnPhone(raw)) throw err.field("guardian_phone", "That guardian phone number is not valid.");
+    next.guardian_phone = raw ? normalizePhone(raw) : null;
+  }
+
+  if (next.phone !== cur.phone) {
+    const taken = await one(sql, `select 1 as x from users where phone = $1 and id <> $2`, [next.phone, id]);
+    if (taken) throw err.br("BR-01", "That phone number already has an account.", { field: "phone" });
+  }
+  const settings = await getSettings(sql);
+  if (next.date_of_birth && ageYears(next.date_of_birth) < settings.minor_age) {
+    if (!next.guardian_name || !next.guardian_phone) {
+      throw err.br("BR-07", "A minor needs guardian details.", { field: "guardian_name" });
+    }
+  }
+
+  const keys = Object.keys(next) as Array<keyof typeof next>;
+  const changed = keys.filter((k) => next[k] !== cur[k]);
+  if (changed.length) {
+    await sql.query(
+      `update users
+          set full_name = $2, name_normalized = $3, phone = $4,
+              date_of_birth = $5, guardian_name = $6, guardian_phone = $7
+        where id = $1`,
+      [
+        id,
+        next.full_name,
+        unaccentVi(next.full_name),
+        next.phone,
+        next.date_of_birth,
+        next.guardian_name,
+        next.guardian_phone,
+      ],
+    );
+    await audit(
+      sql,
+      user.id,
+      "update_member",
+      "user",
+      id,
+      Object.fromEntries(changed.map((k) => [k, cur[k]])),
+      Object.fromEntries(changed.map((k) => [k, next[k]])),
+    );
+  }
+  return { status: 200, body: { ok: true, changed } };
+}
+
+const PLAN_STATES = ["active", "expiring", "expired", "none"] as const;
+
+/**
+ * The manager's member list (FR-MEM-04): everyone with an account, filtered by
+ * status, sport and plan state, in name order and paged.
+ *
+ * `plan_state` comes from the member's latest plan: live and ending within a
+ * week is `expiring`, live is `active`, lapsed is `expired`, and nobody who has
+ * never bought one is `none`. Filtering by `active` includes `expiring` — a plan
+ * that ends next Tuesday is still a live plan.
+ */
+export async function membersDirectory(sql: Sql, request: Request, user: PublicUser) {
+  requireRole(user, ["manager"]);
+  const sp = new URL(request.url).searchParams;
+  const q = (sp.get("q") ?? "").trim();
+  const status = sp.get("status");
+  if (status && !["active", "locked", "disabled"].includes(status)) throw err.field("status", "Unknown status.");
+  const sport = sp.get("sport");
+  if (sport && !["badminton", "basketball", "volleyball"].includes(sport)) throw err.field("sport", "Unknown sport.");
+  const plan = sp.get("plan");
+  if (plan && !(PLAN_STATES as readonly string[]).includes(plan)) throw err.field("plan", "Unknown plan state.");
+  const intParam = (name: string, fallback: number, min: number, max: number) => {
+    const raw = sp.get(name);
+    if (raw === null) return fallback;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < min || n > max) throw err.field(name, `${name} must be a whole number from ${min} to ${max}.`);
+    return n;
+  };
+  const limit = intParam("limit", 25, 1, 100);
+  const offset = intParam("offset", 0, 0, 100000);
+  const nq = q ? unaccentVi(q) : null;
+
+  const rows = await sql.query(
+    `with base as (
+       select u.id, u.member_code, u.full_name, u.phone, u.status::text as status, u.created_at,
+              u.name_normalized, latest.plan_name, latest.sport_scope, latest.end_on, latest.sub_status,
+              coalesce(debt.debt_vnd, 0)::int as debt_vnd,
+              (select count(*) from enrollments e where e.user_id = u.id and e.status = 'confirmed')::int as classes,
+              case
+                when latest.id is null then 'none'
+                when latest.sub_status in ('active','frozen') and latest.end_on >= today.d then
+                  case when latest.end_on <= today.d + 7 then 'expiring' else 'active' end
+                else 'expired'
+              end as plan_state
+         from users u
+        cross join (select (now() at time zone 'Asia/Ho_Chi_Minh')::date as d) today
+         left join lateral (
+           select s.id, mp.name as plan_name, s.sport_scope::text as sport_scope, s.end_on,
+                  s.status::text as sub_status
+             from subscriptions s join membership_plans mp on mp.id = s.plan_id
+            where s.user_id = u.id and s.status in ('active','frozen','expired')
+            order by (s.status in ('active','frozen')) desc, s.end_on desc
+            limit 1
+         ) latest on true
+         left join lateral (
+           select sum(d.debt_vnd) filter (where d.debt_vnd > 0) as debt_vnd
+             from v_subscription_debt d join subscriptions s on s.id = d.subscription_id
+            where s.user_id = u.id
+         ) debt on true
+        where u.role = 'member'
+          and ($1::text is null or u.status::text = $1)
+          and ($2::text is null
+               or u.name_normalized like '%' || $2 || '%'
+               or u.phone like '%' || $3 || '%'
+               or coalesce(u.member_code,'') ilike '%' || $4 || '%')
+     )
+     select *, count(*) over ()::int as total
+       from base
+      where ($5::text is null or sport_scope = $5 or sport_scope = 'all')
+        and ($6::text is null
+             or plan_state = $6
+             or ($6 = 'active' and plan_state = 'expiring'))
+      order by name_normalized, id
+      limit $7 offset $8`,
+    [status, nq, q.replace(/[\s-]/g, ""), q, sport, plan, limit, offset],
+  );
+  const total = rows.length ? Number(rows[0]!.total) : 0;
+  return {
+    status: 200,
+    body: {
+      total,
+      limit,
+      offset,
+      items: rows.map(({ total: _t, name_normalized: _n, ...r }) => r),
     },
   };
 }

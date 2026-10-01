@@ -102,3 +102,22 @@ export function pad2(n: number): string {
 export function elapsedAtLeast(lastAt: number | undefined, now: number, everyMs: number) {
   return lastAt == null || now - lastAt >= everyMs;
 }
+
+const ICT_OFFSET_MS = 7 * 3_600_000;
+
+/**
+ * The court time a class really uses: whole booking slots, never part of one.
+ *
+ * A 90-minute class at 17:00 ends at 18:30. Left as it was, that took the 17:00
+ * slot, half of the 18:00 slot, and left 18:30–19:00 too short for anyone to
+ * book — a "bite" out of the next slot that looked on the grid like a clash
+ * with whatever came after. The session keeps its declared start and end (that
+ * is what the coach teaches and the member reads); the court is held for the
+ * slots it touches. Slots are counted from midnight in the centre's time zone.
+ */
+export function slotSpan(start: Date, end: Date, slotMinutes: number): { start: Date; end: Date } {
+  const slotMs = Math.max(1, Math.floor(slotMinutes)) * 60_000;
+  const floor = (t: number) => Math.floor((t + ICT_OFFSET_MS) / slotMs) * slotMs - ICT_OFFSET_MS;
+  const ceil = (t: number) => Math.ceil((t + ICT_OFFSET_MS) / slotMs) * slotMs - ICT_OFFSET_MS;
+  return { start: new Date(floor(start.getTime())), end: new Date(ceil(end.getTime())) };
+}

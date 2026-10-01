@@ -31,9 +31,25 @@
   --color-pass-fg: #fff8ee;
   --color-pass-muted: #c5d0be;
 
+  /* Semantic roles. The palette above is named after what things look like
+     (wood, ink, pass); these name what they mean, so a status colour is chosen
+     by intent and re-pointed here once instead of hunted down per component. */
+  --color-primary: var(--color-accent);
+  --color-primary-fg: var(--color-accent-fg);
+  --color-error: var(--color-danger);
+  --color-warning: var(--color-hold);
+  --color-success: var(--color-accent-2);
 
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
+
+  /* Fluid display sizes: scale smoothly between a phone and a wide desktop
+     instead of jumping at each breakpoint. Ratio steps up by ~1.25 (major third). */
+  --text-fluid-sm: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-fluid-md: clamp(1.25rem, 1.1rem + 0.75vw, 1.5rem);
+  --text-fluid-lg: clamp(1.5rem, 1.2rem + 1.5vw, 2rem);
+  --text-fluid-xl: clamp(1.875rem, 1.3rem + 2.9vw, 3rem);
+  --text-fluid-2xl: clamp(2.25rem, 1.4rem + 4.2vw, 4.5rem);
 
   --radius-xs: 4px;
   --radius-sm: 8px;
@@ -56,6 +72,15 @@
   --animate-float: float 7s ease-in-out infinite;
   --animate-shimmer: shimmer 2.2s linear infinite;
   --animate-drift: drift 22s ease-in-out infinite alternate;
+}
+
+/* Plain-CSS handles for the status roles, for code that reads custom properties
+   directly (canvas, inline styles, third-party widgets) rather than Tailwind. */
+:root {
+  --primary: var(--color-primary);
+  --error: var(--color-error);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
 }
 
 @keyframes enter {
@@ -220,6 +245,53 @@
   }
   * {
     border-color: var(--color-line);
+  }
+}
+
+/* One keyboard focus ring for everything that can take focus. Individual
+   components used `focus:ring` on a few inputs and nothing at all on links,
+   cards-as-buttons and menu items, so tabbing through a page lost the cursor.
+   :focus-visible keeps it off mouse clicks.
+
+   Two tones, not one: the green outline alone vanishes on the dark green photo
+   panels (login, register, landing hero), so a cream halo sits underneath it.
+   Unlayered on purpose, so it also beats the per-component ring utilities. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px color-mix(in oklab, var(--color-on-media) 90%, transparent);
+}
+/* Programmatic focus on the skip-link target should not draw a box. */
+[tabindex="-1"]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* First focusable element on every page: hidden until a keyboard user reaches it. */
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-ink);
+  color: var(--color-bg);
+  font-size: 1rem;
+  font-weight: 500;
+  transform: translateY(-200%);
+  transition: transform 0.2s var(--ease-smooth);
+}
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+/* Below 16px iOS Safari zooms the page when a field takes focus. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 1rem;
   }
 }
 

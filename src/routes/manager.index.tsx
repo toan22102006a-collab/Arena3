@@ -14,8 +14,9 @@ import {
 import { toast } from "sonner";
 import { CourtGrid, type Court, type OccSlot } from "@/components/court-grid";
 import { Cover, MediaCaption, media } from "@/components/media";
-import { Shell, money } from "@/components/shell";
-import { Button, Card, DateField, Seg, Skeleton, Stat, type Trend } from "@/components/ui";
+import { Shell, money, when } from "@/components/shell";
+import { CapacityPanel, ExportButtons, MembersPanel } from "@/components/report-panels";
+import { Button, Card, DateField, Select, Seg, Skeleton, Stat, type Trend } from "@/components/ui";
 import { CountUp, Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
 import { GLBackground, GlareHover, SplitText, SpotlightCard } from "@/components/fx";
 import { apiGet } from "@/lib/arena3/client";
@@ -30,18 +31,24 @@ type Rev = {
   to: string;
   totals: { revenue_vnd: number; gross_vnd?: number; refund_vnd: number; quota_hours: number };
   by_source: Record<string, number>;
+  refunds_by_source?: Record<string, number>;
+  by_shift?: Array<{
+    shift_id: string | null;
+    cashier: string | null;
+    opened_at: string | null;
+    closed_at: string | null;
+    takings_vnd: number;
+    refunds_vnd: number;
+    count: number;
+  }>;
   by_method: Record<string, number>;
   /** One row per ICT day in the window, including days with no takings. */
   by_day?: Array<{ day: string; revenue_vnd: number }>;
+  /** The window just before this one, same length and same method filter. */
+  prev?: Pick<Rev, "from" | "to" | "totals" | "by_source">;
 };
 
 type Occ = { date: string; items: Array<{ court_code: string; minutes: number; pct: number }> };
-
-function daysInclusive(from: string, to: string) {
-  const a = Date.parse(`${from}T00:00:00Z`);
-  const b = Date.parse(`${to}T00:00:00Z`);
-  return Math.round((b - a) / 86400000) + 1;
-}
 
 function monthStart(iso: string) {
   return `${iso.slice(0, 7)}-01`;
@@ -111,7 +118,8 @@ function Page() {
   const [to, setTo] = useState(today);
   const [period, setPeriod] = useState("today");
   const [rev, setRev] = useState<Rev | null>(null);
-  const [prev, setPrev] = useState<Rev | null>(null);
+  const [prev, setPrev] = useState<Pick<Rev, "from" | "to" | "totals" | "by_source"> | null>(null);
+  const [method, setMethod] = useState("");
   const [occ, setOcc] = useState<Occ | null>(null);
   const [map, setMap] = useState<{ courts: Court[]; slots: OccSlot[] } | null>(null);
   const [chartReady, setChartReady] = useState(false);
@@ -132,24 +140,23 @@ function Page() {
   }
 
   async function load() {
-    const n = daysInclusive(from, to);
-    const prevTo = addDaysISO(from, -1);
-    const prevFrom = addDaysISO(prevTo, -(n - 1));
-    const [r, p, o, m] = await Promise.all([
-      apiGet<Rev>(`/reports/revenue?from=${from}&to=${to}`),
-      apiGet<Rev>(`/reports/revenue?from=${prevFrom}&to=${prevTo}`),
+    const methodQ = method ? `&method=${method}` : "";
+    // The server returns the previous window of the same length alongside, with
+    // the same method filter, so the comparison is always like for like.
+    const [r, o, m] = await Promise.all([
+      apiGet<Rev>(`/reports/revenue?from=${from}&to=${to}${methodQ}`),
       apiGet<Occ>(`/reports/occupancy?date=${to}`),
       apiGet<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${to}`),
     ]);
     setRev(r);
-    setPrev(p);
+    setPrev(r.prev ?? null);
     setOcc(o);
     setMap(m);
   }
   useEffect(() => {
     void load().catch((e) => toast.error(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to]);
+  }, [from, to, method]);
 
   const chartData = Object.entries(rev?.by_method ?? {}).map(([k, v]) => ({
     name: methodLabel(k),
@@ -219,8 +226,20 @@ function Page() {
           }}
           aria-label="To date"
         />
+        <div className="w-40">
+          <Select aria-label="Payment method" value={method} onChange={(e) => setMethod(e.target.value)}>
+            <option value="">All methods</option>
+            {["cash", "transfer", "card", "gateway", "quota"].map((m) => (
+              <option key={m} value={m}>
+                {methodLabel(m)}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <ExportButtons kind="revenue" from={from} to={to} extra={{ method }} />
         <Button
           variant="outline"
+          size="sm"
           onClick={() => {
             if (!rev || !occ) return;
             downloadCsv(`arena3-report-${from}_${to}.csv`, [
@@ -405,6 +424,81 @@ function Page() {
         </Card>
         </SpotlightCard>
       </Reveal>
+
+      {rev ? (
+        <Reveal className="mt-6 grid gap-3 md:grid-cols-2">
+          <Card>
+            <p className="text-2xs font-medium uppercase tracking-wider text-muted">Where the money came from</p>
+            {Object.keys(rev.by_source).length || Object.keys(rev.refunds_by_source ?? {}).length ? (
+              <table className="mt-3 w-full text-sm">
+                <thead className="text-left text-2xs uppercase tracking-wider text-muted">
+                  <tr>
+                    <th className="pb-1 font-medium">Source</th>
+                    <th className="pb-1 text-right font-medium">Taken</th>
+                    <th className="pb-1 text-right font-medium">Refunded</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...new Set([...Object.keys(rev.by_source), ...Object.keys(rev.refunds_by_source ?? {})])].map((k) => (
+                    <tr key={k} className="border-t border-line/60">
+                      <td className="py-1.5">{sourceLabel(k)}</td>
+                      <td className="py-1.5 text-right tabular-nums">{money(rev.by_source[k] ?? 0)}</td>
+                      <td className="py-1.5 text-right tabular-nums">{money(rev.refunds_by_source?.[k] ?? 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="mt-3 text-sm text-muted">
+                Nothing taken in this period yet. Takings appear here once reception records a payment.
+              </p>
+            )}
+            <p className="mt-3 text-xs text-muted">
+              Class places come out of a plan and gear hire is not charged as a payment, so neither has a line of its own.
+            </p>
+          </Card>
+          <Card>
+            <p className="text-2xs font-medium uppercase tracking-wider text-muted">By cashier shift</p>
+            {rev.by_shift?.length ? (
+              <table className="mt-3 w-full text-sm">
+                <thead className="text-left text-2xs uppercase tracking-wider text-muted">
+                  <tr>
+                    <th className="pb-1 font-medium">Shift</th>
+                    <th className="pb-1 text-right font-medium">Taken</th>
+                    <th className="pb-1 text-right font-medium">Refunded</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rev.by_shift.map((s) => (
+                    <tr key={s.shift_id ?? "none"} className="border-t border-line/60">
+                      <td className="py-1.5">
+                        {s.shift_id ? (
+                          <>
+                            <span className="font-medium">{s.cashier ?? "Reception"}</span>
+                            <span className="block text-xs text-muted">
+                              {s.opened_at ? when(s.opened_at) : ""}
+                              {s.closed_at ? ` – ${when(s.closed_at)}` : " – still open"}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-muted">Not taken at the desk (online)</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">{money(s.takings_vnd)}</td>
+                      <td className="py-1.5 text-right tabular-nums">{money(s.refunds_vnd)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="mt-3 text-sm text-muted">No payments in this period, so there are no shifts to show.</p>
+            )}
+          </Card>
+        </Reveal>
+      ) : null}
+
+      <CapacityPanel from={from} to={to} />
+      <MembersPanel from={from} to={to} />
 
       <SplitText
         as="h2"

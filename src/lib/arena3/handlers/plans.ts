@@ -5,6 +5,7 @@ import { audit, bool, num, readJson, str } from "../helpers";
 import { limit, RULES } from "../ratelimit";
 import { requireRole, type PublicUser } from "../session";
 import { one } from "../tx";
+import { parseInteger } from "../validate";
 
 export async function plansList(sql: Sql, user: PublicUser | null) {
   const all = user?.role === "manager";
@@ -19,13 +20,34 @@ export async function plansList(sql: Sql, user: PublicUser | null) {
   return { status: 200, body: { items } };
 }
 
+const PLAN_SPORTS = ["badminton", "basketball", "volleyball", "all"];
+const INT4 = 2_147_483_647;
+
+/** Blank means "not given" (null); anything else has to be a whole number in range. */
+function optInt(field: string, label: string, v: unknown, min: number, max: number): number | null {
+  if (v === undefined || v === null || (typeof v === "string" && v.trim() === "")) return null;
+  return parseInteger(field, label, v, min, max);
+}
+
+function planName(v: unknown): string | undefined {
+  const name = str(v);
+  if (name === undefined) return undefined;
+  if (name.length > 80) throw err.field("name", "A plan name is at most 80 characters.");
+  return name;
+}
+
 export async function plansCreate(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["manager"]);
   const b = await readJson(request);
-  const name = str(b.name);
+  const name = planName(b.name);
   const sport_scope = str(b.sport_scope);
-  const price_vnd = num(b.price_vnd);
-  if (!name || !sport_scope || price_vnd == null) throw err.validation("name, sport_scope and price_vnd are required.");
+  if (!name) throw err.field("name", "A plan needs a name.");
+  if (!sport_scope || !PLAN_SPORTS.includes(sport_scope)) throw err.field("sport_scope", "Choose a sport.");
+  const price_vnd = parseInteger("price_vnd", "Price", b.price_vnd, 0, INT4);
+  const duration_days = optInt("duration_days", "Duration", b.duration_days, 1, 3650);
+  const session_quota = optInt("session_quota", "Class sessions", b.session_quota, 0, 100000);
+  const court_hours = optInt("court_hours", "Court hours", b.court_hours, 0, 100000) ?? 0;
+  const court_discount_pct = optInt("court_discount_pct", "Court discount", b.court_discount_pct, 0, 100) ?? 0;
   const row = await one(
     sql,
     `insert into membership_plans
@@ -35,10 +57,10 @@ export async function plansCreate(sql: Sql, request: Request, user: PublicUser) 
     [
       name,
       sport_scope,
-      num(b.duration_days) ?? null,
-      num(b.session_quota) ?? null,
-      num(b.court_hours) ?? 0,
-      num(b.court_discount_pct) ?? 0,
+      duration_days,
+      session_quota,
+      court_hours,
+      court_discount_pct,
       price_vnd,
       bool(b.is_on_sale),
       bool(b.carry_over_hours),
@@ -48,11 +70,45 @@ export async function plansCreate(sql: Sql, request: Request, user: PublicUser) 
   return { status: 201, body: row };
 }
 
+/**
+ * One plan opened up (G-05): everything the table holds about it, and how many
+ * people hold it today — which is what decides whether withdrawing it from sale
+ * matters to anyone (it never takes it away from them; BR-65 only stops new
+ * orders).
+ */
+export async function plansGet(sql: Sql, id: string, user: PublicUser) {
+  requireRole(user, ["manager"]);
+  const plan = await one(
+    sql,
+    `select id, name, sport_scope, duration_days, session_quota, court_hours,
+            court_discount_pct, price_vnd, is_on_sale, carry_over_hours
+       from membership_plans where id = $1`,
+    [id],
+  );
+  if (!plan) throw err.notFound("No such plan.");
+  const holders = await one<Record<string, number>>(
+    sql,
+    `select count(*) filter (where status = 'active')::int as active,
+            count(*) filter (where status = 'pending')::int as pending,
+            count(*) filter (where status = 'frozen')::int as frozen,
+            count(*)::int as ever
+       from subscriptions where plan_id = $1`,
+    [id],
+  );
+  return { status: 200, body: { plan, holders } };
+}
+
 export async function plansPatch(sql: Sql, id: string, request: Request, user: PublicUser) {
   requireRole(user, ["manager"]);
   const b = await readJson(request);
   const cur = await one(sql, `select * from membership_plans where id = $1`, [id]);
   if (!cur) throw err.notFound();
+  const name = planName(b.name) ?? null;
+  const price = b.price_vnd === undefined ? null : parseInteger("price_vnd", "Price", b.price_vnd, 0, INT4);
+  const duration = b.duration_days === undefined ? null : optInt("duration_days", "Duration", b.duration_days, 1, 3650);
+  const quota = b.session_quota === undefined ? null : optInt("session_quota", "Class sessions", b.session_quota, 0, 100000);
+  const hours = b.court_hours === undefined ? null : optInt("court_hours", "Court hours", b.court_hours, 0, 100000);
+  const disc = b.court_discount_pct === undefined ? null : optInt("court_discount_pct", "Court discount", b.court_discount_pct, 0, 100);
   await sql.query(
     `update membership_plans set
        name = coalesce($2, name),
@@ -64,20 +120,22 @@ export async function plansPatch(sql: Sql, id: string, request: Request, user: P
        is_on_sale = coalesce($8, is_on_sale),
        carry_over_hours = coalesce($9, carry_over_hours)
      where id = $1`,
-    [
-      id,
-      str(b.name) ?? null,
-      num(b.duration_days) ?? null,
-      num(b.session_quota) ?? null,
-      num(b.court_hours) ?? null,
-      num(b.court_discount_pct) ?? null,
-      num(b.price_vnd) ?? null,
-      bool(b.is_on_sale) ?? null,
-      bool(b.carry_over_hours) ?? null,
-    ],
+    [id, name, duration, quota, hours, disc, price, bool(b.is_on_sale) ?? null, bool(b.carry_over_hours) ?? null],
   );
-  await audit(sql, user.id, "patch_plan", "plan", id, cur);
   const row = await one(sql, `select * from membership_plans where id = $1`, [id]);
+  await audit(
+    sql,
+    user.id,
+    typeof b.is_on_sale === "boolean" && Object.keys(b).length === 1
+      ? b.is_on_sale
+        ? "put_plan_on_sale"
+        : "withdraw_plan_from_sale"
+      : "patch_plan",
+    "plan",
+    id,
+    cur,
+    row,
+  );
   return { status: 200, body: row };
 }
 

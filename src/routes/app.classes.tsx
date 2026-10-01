@@ -2,8 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Cover, MediaCaption, sportPhoto } from "@/components/media";
+import { MyAttendance } from "@/components/my-attendance";
 import { Shell } from "@/components/shell";
-import { Badge, Button, Card, Empty, Seg, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Seg, Skeleton } from "@/components/ui";
 import { Lift, Stagger, StaggerItem, motion } from "@/components/motion";
 import { GlareHover, SpotlightCard } from "@/components/fx";
 import { cn } from "@/lib/cn";
@@ -11,6 +12,9 @@ import { apiDelete, apiGet, apiPost } from "@/lib/arena3/client";
 import { levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
 
 export const Route = createFileRoute("/app/classes")({
+  validateSearch: (s: Record<string, unknown>): { sport?: string } => ({
+    sport: s.sport === "badminton" || s.sport === "basketball" || s.sport === "volleyball" ? s.sport : undefined,
+  }),
   component: Page,
 });
 
@@ -34,7 +38,7 @@ function Page() {
   const [items, setItems] = useState<Cl[] | null>(null);
   const [mine, setMine] = useState<Enr[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
-  const [sport, setSport] = useState("");
+  const [sport, setSport] = useState(Route.useSearch().sport ?? "");
   async function load() {
     const [cls, me] = await Promise.all([
       apiGet<{ items: Cl[] }>("/classes"),
@@ -207,10 +211,11 @@ function Page() {
             );
           })}
           {!shown.length ? (
-            <Empty title="No open classes" hint="The manager publishes the weekly timetable." />
+            <EmptyState title="No open classes" hint="The manager publishes the weekly timetable." />
           ) : null}
         </Stagger>
       )}
+      <MyAttendance />
     </Shell>
   );
 }

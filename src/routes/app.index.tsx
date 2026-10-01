@@ -4,13 +4,14 @@ import { AssistantMark } from "@/components/mark";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PassCard } from "@/components/media";
+import { NotificationList, type Notification } from "@/components/notifications";
 import { PayOnlineButton } from "@/components/pay-online";
 import { Shell, hhmm, money, when } from "@/components/shell";
-import { Button, Card, Empty, Skeleton, StatusBadge } from "@/components/ui";
+import { Button, Card, EmptyState, Skeleton, StatusBadge } from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { GlareHover, ShinyText, SplitText, SpotlightCard } from "@/components/fx";
-import { apiGet, apiPost, getStoredUser, openInvoice } from "@/lib/arena3/client";
-import { formatDate, levelLabel, sportLabel, todayISO } from "@/lib/arena3/labels";
+import { apiGet, apiPost, getStoredUser } from "@/lib/arena3/client";
+import { formatDate, levelLabel, planBenefits, sportLabel, todayISO } from "@/lib/arena3/labels";
 
 export const Route = createFileRoute("/app/")({
   component: Page,
@@ -24,9 +25,13 @@ type Me = {
     end_on: string;
     plan_name: string;
     court_hours_left: string | number;
+    session_left: number | null;
+    plan_court_hours: number;
+    plan_session_quota: number | null;
+    court_discount_pct: number;
     sport_scope: string;
   }>;
-  inbox: Array<{ id: string; template: string; payload: unknown; sent_at: string }>;
+  inbox: Notification[];
   offers?: Array<{ id: string; expires_at: string; sport: string; level: string }>;
   enrollments?: Array<{ id: string; status: string; waitlist_pos: number | null; sport: string; level: string }>;
   today: {
@@ -186,16 +191,16 @@ function Page() {
                   plan={first.plan_name}
                   sport={sportLabel(first.sport_scope)}
                   endOn={formatDate(first.end_on)}
-                  hours={Number(first.court_hours_left)}
+                  benefits={planBenefits(first)}
                   code={u?.member_code}
                 />
               </GlareHover>
             ) : (
-              <Empty title="No active plan" hint="Buy a plan to enrol in classes and book courts.">
+              <EmptyState title="No active plan" hint="Buy a plan to enrol in classes and book courts.">
                 <Link to="/app/plans">
                   <Button>Browse plans</Button>
                 </Link>
-              </Empty>
+              </EmptyState>
             )}
           </Reveal>
 
@@ -320,64 +325,52 @@ function Page() {
 
       {live.length > 1 ? (
         <Stagger className="mt-4 grid gap-3 md:grid-cols-3" gap={0.07}>
-          {live.slice(1).map((s) => (
-            <StaggerItem key={s.id}>
-              <Card interactive className="h-full">
-                <p className="text-2xs uppercase tracking-wider text-muted">
-                  {sportLabel(s.sport_scope)}
-                </p>
-                <p className="mt-1 font-medium text-fg">{s.plan_name}</p>
-                <p className="text-sm text-muted">
-                  Until {formatDate(s.end_on)} · {Number(s.court_hours_left)} court hours
-                </p>
-              </Card>
-            </StaggerItem>
-          ))}
+          {live.slice(1).map((s) => {
+            // Each pack opens the screen it is spent on, already narrowed to its
+            // sport: court hours go to the court map, class sessions to classes.
+            const sport = s.sport_scope === "all" ? undefined : s.sport_scope;
+            const forCourts = s.plan_court_hours > 0 || s.plan_session_quota == null;
+            return (
+              <StaggerItem key={s.id}>
+                <Link to={forCourts ? "/app/book" : "/app/classes"} search={{ sport }} className="block h-full">
+                  <Card interactive className="h-full">
+                    <p className="text-2xs uppercase tracking-wider text-muted">{sportLabel(s.sport_scope)}</p>
+                    <p className="mt-1 font-medium text-fg">{s.plan_name}</p>
+                    <p className="text-sm text-muted">Until {formatDate(s.end_on)}</p>
+                    <p className="text-sm text-muted">{planBenefits(s).join(" · ")}</p>
+                  </Card>
+                </Link>
+              </StaggerItem>
+            );
+          })}
         </Stagger>
       ) : null}
 
-      <SplitText as="h2" text="Notifications" className="mt-8 font-display text-2xl" />
-      <Stagger className="mt-3 grid gap-2" gap={0.05}>
-        {(me?.inbox ?? []).slice(0, 8).map((n) => {
-          const receipt = n.template === "payment_receipt" ? asReceipt(n.payload) : null;
-          const body = (
-            <Card className="p-4 text-left transition-colors duration-200 hover:bg-wood/40">
-              <p className="text-sm font-medium text-fg">
-                {receipt ? `Receipt · ${money(receipt.amount_vnd)}` : inboxLabel(n.template)}
-              </p>
-              <p className="text-xs text-muted">
-                {when(n.sent_at)}
-                {receipt ? ` · ${methodLabel(receipt.method)} · tap to open` : ""}
-              </p>
-            </Card>
-          );
-          return (
-            <StaggerItem key={n.id}>
-              {/* The receipt is the only notification with somewhere to go, so it
-                  is the only one that becomes a button. Making every row look
-                  tappable would promise eight links and deliver one. */}
-              {receipt ? (
-                <button
-                  type="button"
-                  className="block w-full"
-                  onClick={async () => {
-                    try {
-                      await openInvoice(receipt.invoice_id);
-                    } catch (e) {
-                      toast.error(e instanceof Error ? e.message : "The receipt would not open");
-                    }
-                  }}
-                >
-                  {body}
-                </button>
-              ) : (
-                body
-              )}
-            </StaggerItem>
-          );
-        })}
-        {me && !me.inbox.length ? <p className="text-sm text-muted">Nothing here yet.</p> : null}
-      </Stagger>
+      <div className="mt-8 flex items-end justify-between gap-3">
+        <SplitText as="h2" text="Notifications" className="font-display text-2xl" />
+        <Link to="/app/notifications" className="text-sm underline">
+          Open inbox
+        </Link>
+      </div>
+      {me && me.inbox.length ? (
+        <NotificationList
+          items={me.inbox}
+          limit={4}
+          onRead={(ids) =>
+            setMe((m) =>
+              m
+                ? {
+                    ...m,
+                    inbox: m.inbox.map((n) =>
+                      ids.includes(n.id) && !n.read_at ? { ...n, read_at: new Date().toISOString() } : n,
+                    ),
+                  }
+                : m,
+            )
+          }
+        />
+      ) : null}
+      {me && !me.inbox.length ? <p className="mt-3 text-sm text-muted">Nothing here yet.</p> : null}
     </Shell>
   );
 }
@@ -386,45 +379,4 @@ function daysUntil(iso: string) {
   const a = Date.parse(`${todayISO()}T00:00:00+07:00`);
   const b = Date.parse(`${iso.slice(0, 10)}T00:00:00+07:00`);
   return Math.round((b - a) / 86400000);
-}
-
-/**
- * A receipt notification, or null if it is one of the older ones.
- *
- * Rows written before receipts carried their invoice hold only `{payment_id}`,
- * and they stay in the inbox forever. Reading them back as a plain notification
- * is the right outcome: the alternative is a tappable row that opens nothing.
- */
-function asReceipt(payload: unknown) {
-  if (!payload || typeof payload !== "object") return null;
-  const p = payload as { invoice_id?: unknown; amount_vnd?: unknown; method?: unknown };
-  if (typeof p.invoice_id !== "string" || typeof p.amount_vnd !== "number") return null;
-  return {
-    invoice_id: p.invoice_id,
-    amount_vnd: p.amount_vnd,
-    method: typeof p.method === "string" ? p.method : "",
-  };
-}
-
-function methodLabel(m: string) {
-  return (
-    { cash: "Cash", card: "Card", transfer: "Bank transfer", quota: "Plan hours" } as Record<string, string>
-  )[m] ?? "Paid";
-}
-
-function inboxLabel(t: string) {
-  return (
-    {
-      booking_confirmed: "Booking confirmed",
-      booking_cancelled: "Booking cancelled",
-      transfer_requested: "Transfer noted — reception will confirm it",
-      transfer_rejected: "We could not find your transfer",
-      hold_expiring: "Your hold is about to expire",
-      class_changed: "Class schedule changed",
-      sub_expiring: "Plan expiring soon",
-      waitlist_offer: "A class seat opened — claim it in the app",
-      payment_receipt: "Payment receipt",
-      ticket_replied: "Reception replied — read it under Account › Support",
-    } as Record<string, string>
-  )[t] ?? t;
 }

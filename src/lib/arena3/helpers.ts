@@ -47,6 +47,34 @@ export async function getSettings(sql: Sql): Promise<Settings> {
   return row;
 }
 
+/**
+ * Who a court booking's receipt is made out to.
+ *
+ * A walk-in's name and phone were typed at the counter and live on the booking,
+ * not on any account; reading the receptionist's own name off the session (as
+ * the till did) put the wrong person on the invoice. What was typed wins, then
+ * the account, then a plain label.
+ */
+export async function bookingBuyer(
+  sql: Sql,
+  bookingId: string,
+): Promise<{ name: string; phone: string | null; userId: string | null }> {
+  const r = await one<{ user_id: string | null; guest_name: string | null; guest_phone: string | null; full_name: string | null }>(
+    sql,
+    `select b.user_id, b.guest_name, b.guest_phone, u.full_name
+       from court_bookings b left join users u on u.id = b.user_id
+      where b.id = $1`,
+    [bookingId],
+  );
+  return {
+    name: r?.guest_name || r?.full_name || "Khách lẻ",
+    phone: r?.guest_phone ?? null,
+    userId: r?.user_id ?? null,
+  };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function audit(
   sql: Sql,
   actor: string | null,
@@ -56,6 +84,10 @@ export async function audit(
   before: unknown = null,
   after: unknown = null,
 ) {
+  // `entity_id` is a UUID column. A caller with a key that is not one (the
+  // `center_settings` row is `id = 1`) used to fail the whole request with a
+  // uuid syntax error, so the id is dropped to null rather than allowed to.
+  const entityUuid = entityId && UUID_RE.test(entityId) ? entityId : null;
   await sql.query(
     `insert into audit_logs (actor_id, action, entity, entity_id, before, after)
      values ($1,$2,$3,$4,$5::jsonb,$6::jsonb)`,
@@ -63,7 +95,7 @@ export async function audit(
       actor,
       action,
       entity,
-      entityId,
+      entityUuid,
       before ? JSON.stringify(before) : null,
       after ? JSON.stringify(after) : null,
     ],
@@ -180,6 +212,8 @@ export async function issueInvoice(
   args: {
     paymentId: string;
     buyerName: string;
+    /** A walk-in's phone. Null for a member, whose account identifies them. */
+    buyerPhone?: string | null;
     amountVnd: number;
     vatRate: number;
     description: string;
@@ -192,10 +226,10 @@ export async function issueInvoice(
   const inv = await one<{ id: string }>(
     sql,
     `insert into invoices
-       (code, payment_id, buyer_name, form_no, serial_no,
+       (code, payment_id, buyer_name, buyer_phone, form_no, serial_no,
         seller_legal_name, seller_tax_code, seller_address,
         subtotal_vnd, vat_rate, vat_vnd, total_vnd)
-     values ($1,$2,$3,'1',$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
+     values ($1,$2,$3,$12,'1',$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
     [
       code,
       args.paymentId,
@@ -208,6 +242,7 @@ export async function issueInvoice(
       args.vatRate,
       args.amountVnd - subtotal,
       args.amountVnd,
+      args.buyerPhone ?? null,
     ],
   );
   await sql.query(

@@ -3,8 +3,23 @@ import { describe, it } from "node:test";
 import { isValidVnPhone, normalizePhone, passwordOk, phoneLast9 } from "./phone.ts";
 import { rruleLabel } from "./labels.ts";
 import { numberToVietnamese, vndInWords } from "./money-words.ts";
-import { addDays, elapsedAtLeast, ictDateTime, ictHour, ictMinutes, pad2, roundVnd } from "./time.ts";
-import { discountPctOk, planActiveOn, slotPriceOk, ticketBody, validatePriceRules } from "./rules.ts";
+import { addDays, elapsedAtLeast, ictDateTime, ictHour, ictMinutes, pad2, roundVnd, slotSpan } from "./time.ts";
+import { ApiError, mapDbError } from "./errors.ts";
+import { checkOpeningHours, parseSettingsPatch } from "./validate.ts";
+import {
+  absentStreak,
+  attendanceLocked,
+  discountPctOk,
+  homeworkComplete,
+  isAttResult,
+  normalizeChecklist,
+  normalizeDone,
+  planActiveOn,
+  slotPriceOk,
+  ticketBody,
+  validateMetrics,
+  validatePriceRules,
+} from "./rules.ts";
 
 describe("phone", () => {
   it("normalizes VN mobiles to +84", () => {
@@ -159,5 +174,152 @@ describe("money in words", () => {
     assert.equal(vndInWords(900_000), "Chín trăm nghìn đồng./.");
     assert.equal(vndInWords(0), "Không đồng./.");
     assert.equal(vndInWords(-50_000), "Âm năm mươi nghìn đồng./.");
+  });
+});
+
+describe("settings validation (B-01)", () => {
+  const fieldOf = (fn: () => unknown) => {
+    try {
+      fn();
+    } catch (e) {
+      assert.ok(e instanceof ApiError);
+      assert.equal(e.status, 400);
+      return String(e.extra.field);
+    }
+    assert.fail("expected a 400");
+  };
+  it("takes numbers typed as strings", () => {
+    const p = parseSettingsPatch({ hold_minutes: "15", debt_limit_vnd: 500000, open_time: "6:00", tax_code: " 0312 " });
+    assert.deepEqual(p, { hold_minutes: 15, debt_limit_vnd: 500000, open_time: "06:00", tax_code: "0312" });
+  });
+  it("never turns a blank number into null", () => {
+    assert.equal(fieldOf(() => parseSettingsPatch({ hold_minutes: "" })), "hold_minutes");
+    assert.equal(fieldOf(() => parseSettingsPatch({ debt_limit_vnd: null })), "debt_limit_vnd");
+    assert.equal(fieldOf(() => parseSettingsPatch({ book_ahead_days: Number.NaN })), "book_ahead_days");
+  });
+  it("rejects text, fractions and out-of-range integers", () => {
+    assert.equal(fieldOf(() => parseSettingsPatch({ hold_minutes: "abc" })), "hold_minutes");
+    assert.equal(fieldOf(() => parseSettingsPatch({ hold_minutes: "1.5" })), "hold_minutes");
+    assert.equal(fieldOf(() => parseSettingsPatch({ debt_limit_vnd: 2_147_483_648 })), "debt_limit_vnd");
+    assert.equal(fieldOf(() => parseSettingsPatch({ debt_limit_vnd: -1 })), "debt_limit_vnd");
+  });
+  it("rejects text longer than its column", () => {
+    assert.equal(fieldOf(() => parseSettingsPatch({ tax_code: "1".repeat(21) })), "tax_code");
+    assert.equal(fieldOf(() => parseSettingsPatch({ legal_name: "x".repeat(191) })), "legal_name");
+    assert.equal(parseSettingsPatch({ tax_code: "1".repeat(20) }).tax_code, "1".repeat(20));
+  });
+  it("clears optional text on a blank, ignores unknown keys", () => {
+    assert.deepEqual(parseSettingsPatch({ address: "  ", nope: 1 }), { address: null });
+  });
+  it("checks opening hours as a pair", () => {
+    checkOpeningHours("06:00", "22:00");
+    assert.equal(fieldOf(() => checkOpeningHours("22:00", "06:00:00")), "close_time");
+    assert.equal(fieldOf(() => parseSettingsPatch({ open_time: "25:00" })), "open_time");
+  });
+});
+
+describe("database errors keep their meaning", () => {
+  it("maps value errors to a 400 naming the column", () => {
+    assert.deepEqual(mapDbError({ code: "22001", column: "tax_code" })?.body, {
+      code: "VALIDATION",
+      message: "That value is too long.",
+      field: "tax_code",
+    });
+    assert.equal(mapDbError({ code: "22003" })?.status, 400);
+    assert.equal(mapDbError({ code: "23502", column: "hold_minutes" })?.status, 400);
+  });
+  it("keeps rule errors as rule codes", () => {
+    assert.equal(mapDbError({ code: "23P01" })?.body.code, "CONFLICT_SLOT");
+    assert.equal(mapDbError({ message: "CLASS_FULL" })?.body.br, "BR-22");
+    assert.equal(mapDbError({ message: "ALREADY_ENROLLED" })?.body.br, "BR-24");
+    assert.equal(mapDbError({ code: "23505", constraint: "u" })?.status, 409);
+  });
+  it("leaves the unknown to be a 500", () => {
+    assert.equal(mapDbError(new Error("boom")), null);
+    assert.equal(mapDbError({ code: "XX000" }), null);
+  });
+});
+
+describe("class court time (B-03)", () => {
+  const hhmm = (d: Date) => `${pad2(ictHour(d))}:${pad2(ictMinutes(d) % 60)}`;
+  it("rounds a 90-minute class out to whole slots", () => {
+    const start = ictDateTime("2026-09-14", "17:00");
+    const held = slotSpan(start, new Date(start.getTime() + 90 * 60_000), 60);
+    assert.equal(hhmm(held.start), "17:00");
+    assert.equal(hhmm(held.end), "19:00");
+  });
+  it("leaves a class that already fits the grid alone", () => {
+    const start = ictDateTime("2026-09-14", "18:00");
+    const held = slotSpan(start, new Date(start.getTime() + 120 * 60_000), 60);
+    assert.equal(held.start.getTime(), start.getTime());
+    assert.equal(held.end.getTime(), start.getTime() + 120 * 60_000);
+  });
+  it("also rounds a start that is off the grid down", () => {
+    const start = ictDateTime("2026-09-14", "17:30");
+    const held = slotSpan(start, new Date(start.getTime() + 60 * 60_000), 60);
+    assert.equal(hhmm(held.start), "17:00");
+    assert.equal(hhmm(held.end), "19:00");
+  });
+});
+
+describe("F4 attendance lock (BR-53)", () => {
+  const end = ictDateTime("2026-09-14", "19:30").getTime();
+  it("stays open for two hours after the session ends", () => {
+    assert.equal(attendanceLocked(end, end + 119 * 60_000, "scheduled"), false);
+    assert.equal(attendanceLocked(end, end + 2 * 3_600_000, "scheduled"), false);
+  });
+  it("closes once the window has passed, even before the job marks it done", () => {
+    assert.equal(attendanceLocked(end, end + 2 * 3_600_000 + 1, "scheduled"), true);
+  });
+  it("is closed for a session already marked done", () => {
+    assert.equal(attendanceLocked(end, end - 60_000, "done"), true);
+  });
+});
+
+describe("F4 absent streak (BR-58)", () => {
+  it("counts only the run at the end", () => {
+    assert.equal(absentStreak(["absent", "present", "absent", "absent"]), 2);
+    assert.equal(absentStreak(["absent", "absent", "absent"]), 3);
+    assert.equal(absentStreak([]), 0);
+  });
+  it("is broken by present, late or excused", () => {
+    assert.equal(absentStreak(["absent", "absent", "excused", "absent"]), 1);
+    assert.equal(absentStreak(["absent", "absent", "absent", "late"]), 0);
+  });
+  it("accepts only the four register values", () => {
+    assert.equal(isAttResult("late"), true);
+    assert.equal(isAttResult("sick"), false);
+    assert.equal(isAttResult(undefined), false);
+  });
+});
+
+describe("F4 session metrics (FR-TRN-05)", () => {
+  it("accepts whole numbers in range and ignores blanks", () => {
+    const r = validateMetrics({ smash_count: 24, freethrow_pct: "80", serve_pct: "" });
+    assert.deepEqual(r, { ok: true, metrics: { smash_count: 24, freethrow_pct: 80 } });
+  });
+  it("rejects percentages above 100, fractions and unknown keys", () => {
+    assert.equal(validateMetrics({ serve_pct: 101 }).ok, false);
+    assert.equal(validateMetrics({ smash_count: 2.5 }).ok, false);
+    assert.equal(validateMetrics({ speed: 3 }).ok, false);
+    assert.equal(validateMetrics([1]).ok, false);
+  });
+});
+
+describe("F4 homework checklist (FR-TRN-07)", () => {
+  it("trims, drops blanks and refuses a wrong shape", () => {
+    assert.deepEqual(normalizeChecklist([" a ", "", "b"]), ["a", "b"]);
+    assert.equal(normalizeChecklist("a"), null);
+    assert.equal(normalizeChecklist([1]), null);
+    assert.equal(normalizeChecklist(Array.from({ length: 21 }, () => "x")), null);
+  });
+  it("keeps only ticks that point at a real row", () => {
+    assert.deepEqual(normalizeDone(3, [2, 2, 0, 5, -1, "1"]), [0, 2]);
+  });
+  it("is complete when every row is ticked, or on explicit done for an empty list", () => {
+    assert.equal(homeworkComplete(3, [0, 1], false), false);
+    assert.equal(homeworkComplete(3, [0, 1, 2], false), true);
+    assert.equal(homeworkComplete(0, [], false), false);
+    assert.equal(homeworkComplete(0, [], true), true);
   });
 });

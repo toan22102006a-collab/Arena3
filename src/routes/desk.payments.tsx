@@ -5,7 +5,7 @@ import { ArrowUpRight, Banknote, Clock3, CreditCard, Landmark, Ticket, Undo2 } f
 import { HoldTimer } from "@/components/media";
 import { PayOnlineButton } from "@/components/pay-online";
 import { Shell, money, useSessionUser, when } from "@/components/shell";
-import { Badge, Button, Card, Empty, Seg, Select, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, Seg, Select, Skeleton } from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
 import { GLBackground, SplitText, SpotlightCard, StarBorder } from "@/components/fx";
 import { api, apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
@@ -51,6 +51,7 @@ type Receipt = {
   ref_type: string;
   member_name: string | null;
   member_code: string | null;
+  buyer_phone: string | null;
   taken_by: string | null;
   invoice_id: string | null;
   /** 'manual' — a person asserted it. 'auto' — the gateway confirmed it. */
@@ -127,6 +128,7 @@ function Page() {
   const [data, setData] = useState<Queue | null>(null);
   const [days, setDays] = useState("7");
   const [payMethod, setPayMethod] = useState("all");
+  const [receiptQuery, setReceiptQuery] = useState("");
   // Whether this centre has payOS set up at all. Read once: the button must be
   // absent rather than present-and-broken when it has not been configured.
   const [onlineOn, setOnlineOn] = useState(false);
@@ -166,7 +168,13 @@ function Page() {
   // Filtered here rather than at the server: the cap is applied before the
   // filter either way, and narrowing a list already on screen should not cost a
   // round trip while somebody is reading down a statement.
-  const receipts = (data?.receipts ?? []).filter((r) => payMethod === "all" || r.method === payMethod);
+  const needle = receiptQuery.trim().toLowerCase();
+  const receipts = (data?.receipts ?? []).filter(
+    (r) =>
+      (payMethod === "all" || r.method === payMethod) &&
+      (!needle ||
+        [r.member_name, r.member_code, r.buyer_phone, r.code].some((v) => v?.toLowerCase().includes(needle))),
+  );
   // Per-row flooring, not a floor on the total: one over-paid order must not
   // quietly cancel out what another member still owes.
   const owed = orders.reduce((sum, o) => sum + Math.max(0, o.price_vnd - o.paid_vnd), 0);
@@ -321,8 +329,10 @@ function Page() {
             <Badge tone="hold">No shift open — open one to take payment</Badge>
           </Link>
         ) : null}
-        <Link to="/desk" className="ml-auto">
-          <Button variant="ink">Back to the desk</Button>
+        {/* A manager came here from the manager menu, so "back" is their own
+            home — `/desk` is the receptionist's counter, with a till they do not run. */}
+        <Link to={isManager ? "/manager" : "/desk"} className="ml-auto">
+          <Button variant="ink">{isManager ? "Back to reports" : "Back to the desk"}</Button>
         </Link>
       </Reveal>
 
@@ -495,7 +505,7 @@ function Page() {
         </Stagger>
       ) : (
         <div className="mt-3">
-          <Empty title="Nothing owed" hint="Every plan ordered in the app has been paid for." />
+          <EmptyState title="Nothing owed" hint="Every plan ordered in the app has been paid for." />
         </div>
       )}
 
@@ -574,6 +584,7 @@ function Page() {
                     <p className="truncate text-sm font-medium">{t.member_name ?? "Walk-in"}</p>
                     <p className="truncate text-xs tabular-nums text-muted">
                       {t.code} · {methodLabel(t.method)} · {t.ref_type} · {when(t.created_at)}
+                      {t.buyer_phone && !t.member_code ? ` · ${t.buyer_phone}` : ""}
                       {t.taken_by ? ` · ${t.taken_by}` : ""}
                     </p>
                   </div>
@@ -600,7 +611,7 @@ function Page() {
           </Stagger>
         ) : (
           <div className="mt-3">
-            <Empty
+            <EmptyState
               title={payMethod === "all" ? "Nothing taken in this window" : `No ${methodLabel(payMethod).toLowerCase()} in this window`}
               hint="Widen the range, or try another method."
             />

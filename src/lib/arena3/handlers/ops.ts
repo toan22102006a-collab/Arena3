@@ -7,10 +7,12 @@ import { requireRole, type PublicUser } from "../session";
 import { isValidVnPhone, normalizePhone } from "../phone";
 import { generateAssistantReply, type ChatTurn } from "../gemini";
 import { COACHES } from "../coaches";
-import { ticketBody } from "../rules";
+import { ATTENDANCE_LOCK_HOURS, attendanceLocked, isAttResult, ticketBody } from "../rules";
+import { checkAbsentStreaks, sessionScope } from "./training";
 import { addDays, ictDateString } from "../time";
 import { one } from "../tx";
 import { payosConfigured } from "../payos";
+import { parseInteger } from "../validate";
 
 export async function flagsGet(sql: Sql) {
   return {
@@ -186,16 +188,37 @@ export async function equipmentLoan(sql: Sql, request: Request, user: PublicUser
   requireRole(user, ["receptionist", "manager"]);
   const b = await readJson(request);
   const item_id = str(b.item_id);
-  const phone = normalizePhone(str(b.phone) ?? "");
-  const qty = num(b.qty) ?? 1;
-  if (!item_id || !isValidVnPhone(phone) || qty < 1) throw err.validation("Gear, phone or quantity is missing.");
+  if (!item_id) throw err.field("item_id", "Choose the gear to rent out.");
+  const qty = parseInteger("qty", "Quantity", b.qty ?? 1, 1, 99);
+
+  // A member rents against their account — the phone on the loan is theirs, so
+  // the loan list can name them. A guest has only the number they give.
+  const memberId = str(b.user_id);
+  let phone: string;
+  if (memberId) {
+    const m = await one<{ phone: string; status: string }>(
+      sql,
+      `select phone, status from users where id = $1 and role = 'member'`,
+      [memberId],
+    );
+    if (!m) throw err.field("user_id", "That member account was not found.");
+    if (m.status !== "active") throw err.field("user_id", "That member account is not active.");
+    phone = m.phone;
+  } else {
+    phone = normalizePhone(str(b.phone) ?? "");
+    if (!phone) throw err.field("phone", "Enter the guest's phone number, or pick a member.");
+    if (!isValidVnPhone(phone)) throw err.field("phone", "That phone number is not valid.");
+  }
+
   const item = await one<{ stock: number; rent_vnd: number; name: string }>(
     sql,
     `select stock, rent_vnd, name from equipment_items where id = $1 for update`,
     [item_id],
   );
   if (!item) throw err.notFound();
-  if (item.stock < qty) throw err.br("BR-38", "That gear is out of stock.");
+  if (item.stock < qty) {
+    throw err.br("BR-38", `Only ${item.stock} ${item.name} left — you asked for ${qty}.`, { available: item.stock });
+  }
   await sql.query(`update equipment_items set stock = stock - $2 where id = $1`, [item_id, qty]);
   const loan = await one(
     sql,
@@ -217,19 +240,25 @@ export async function equipmentReturn(sql: Sql, id: string, user: PublicUser) {
   );
   if (!loan) throw err.notFound();
   if (loan.status !== "out") throw err.conflictState();
+  // Lock the item row so a return and a rental cannot interleave on the count.
+  await sql.query(`select 1 from equipment_items where id = $1 for update`, [loan.item_id]);
   await sql.query(
     `update equipment_loans set status = 'returned', returned_at = now() where id = $1`,
     [id],
   );
   await sql.query(`update equipment_items set stock = stock + $2 where id = $1`, [loan.item_id, loan.qty]);
+  await audit(sql, user.id, "loan_return", "equipment", loan.item_id, null, { loan_id: id, qty: loan.qty });
   return { status: 200, body: { ok: true } };
 }
 
 export async function loansOpen(sql: Sql, user: PublicUser) {
   requireRole(user, ["receptionist", "manager"]);
   const items = await sql.query(
-    `select l.*, i.name, i.sku from equipment_loans l
+    `select l.*, i.name, i.sku,
+            m.full_name as member_name, m.member_code
+       from equipment_loans l
        join equipment_items i on i.id = l.item_id
+       left join users m on m.phone = l.phone and m.role = 'member'
       where l.status = 'out'
       order by l.due_at`,
   );
@@ -239,12 +268,17 @@ export async function loansOpen(sql: Sql, user: PublicUser) {
 export async function sessionAttendanceGet(sql: Sql, sessionId: string, user: PublicUser) {
   requireRole(user, ["coach", "manager"]);
   await requireFlag(sql, "F4");
-  const session = await one<{ id: string; class_id: string; status: string }>(
-    sql,
-    `select id, class_id, status from sessions where id = $1`,
-    [sessionId],
-  );
-  if (!session) throw err.notFound();
+  // BR-59: a coach reads the register of their own classes only.
+  const scope = await sessionScope(sql, sessionId, user);
+  const session = {
+    id: scope.id,
+    class_id: scope.class_id,
+    status: scope.status,
+    start_at: scope.start_at,
+    end_at: scope.end_at,
+    locked: attendanceLocked(new Date(scope.end_at).getTime(), Date.now(), scope.status),
+    lock_at: new Date(new Date(scope.end_at).getTime() + ATTENDANCE_LOCK_HOURS * 3_600_000).toISOString(),
+  };
   const roster = await sql.query(
     `select u.id, u.full_name, u.member_code, u.health_notes,
             a.result, a.at
@@ -258,34 +292,108 @@ export async function sessionAttendanceGet(sql: Sql, sessionId: string, user: Pu
   return { status: 200, body: { session, items: roster } };
 }
 
+/**
+ * A member's own attendance (M-05): one line per session of the classes they
+ * are in that has already run, with the mark the coach gave — present, late,
+ * absent or excused — or null when none has been recorded. Only the caller's
+ * own rows; there is no id parameter to point it at somebody else.
+ */
+export async function meAttendance(sql: Sql, user: PublicUser) {
+  requireRole(user, ["member"]);
+  await requireFlag(sql, "F4");
+  const items = await sql.query<{
+    session_id: string;
+    start_at: string;
+    end_at: string;
+    sport: string;
+    level: string;
+    court_code: string;
+    result: string | null;
+  }>(
+    `select s.id as session_id, s.start_at, s.end_at, cl.sport::text as sport, cl.level,
+            c.court_code, a.result::text as result
+       from sessions s
+       join classes cl on cl.id = s.class_id
+       join courts c on c.id = s.court_id
+       left join attendance a on a.session_id = s.id and a.user_id = $1 and a.kind = 'session'
+      where s.start_at < now()
+        and s.status <> 'cancelled'
+        and (a.id is not null
+             or exists (select 1 from enrollments e
+                         where e.class_id = cl.id and e.user_id = $1 and e.status = 'confirmed'))
+      order by s.start_at desc
+      limit 60`,
+    [user.id],
+  );
+  const counts = { present: 0, late: 0, absent: 0, excused: 0 } as Record<string, number>;
+  for (const r of items) if (r.result && r.result in counts) counts[r.result]++;
+  return { status: 200, body: { items, counts } };
+}
+
 export async function sessionAttendancePost(sql: Sql, sessionId: string, request: Request, user: PublicUser) {
   requireRole(user, ["coach", "manager"]);
   await requireFlag(sql, "F4");
-  const session = await one<{ id: string; status: string; end_at: string }>(
-    sql,
-    `select id, status, end_at from sessions where id = $1`,
-    [sessionId],
-  );
-  if (!session) throw err.notFound();
-  if (session.status === "done") throw err.br("BR-27", "Attendance for this session is locked.");
+  const session = await sessionScope(sql, sessionId, user);
+  if (session.status === "cancelled") throw err.conflictState("That session was cancelled.");
   const b = await readJson(request);
-  const items = Array.isArray(b.items) ? b.items : [];
-  for (const it of items) {
+  const raw = Array.isArray(b.items) ? (b.items as Record<string, unknown>[]) : [];
+  if (raw.length === 0) throw err.field("items", "Nothing to save.");
+
+  // BR-53: the register closes two hours after the session. Past that only a
+  // manager may correct it, and must say why — the reason is kept in the audit.
+  let reason: string | null = null;
+  if (attendanceLocked(new Date(session.end_at).getTime(), Date.now(), session.status)) {
+    if (user.role !== "manager") {
+      throw err.br("BR-53", "This register closed 2 hours after the session. Ask a manager to correct it.");
+    }
+    reason = (str(b.reason) ?? "").trim();
+    if (reason.length < 3) throw err.field("reason", "Say why this closed register is being changed.");
+  }
+
+  const marks = new Map<string, string>();
+  for (const [i, it] of raw.entries()) {
     const uid = str(it.user_id);
+    if (!uid || !/^[0-9a-f-]{36}$/i.test(uid)) throw err.field("user_id", `Row ${i + 1}: missing student.`, { index: i });
     const result = str(it.result) ?? "present";
-    if (!uid) continue;
-    await sql.query(
-      `delete from attendance where session_id = $1 and user_id = $2 and kind = 'session'`,
-      [sessionId, uid],
+    if (!isAttResult(result)) {
+      throw err.field("result", `Row ${i + 1}: result must be present, late, absent or excused.`, { index: i });
+    }
+    const enrolled = await one(
+      sql,
+      `select 1 as ok from enrollments where class_id = $1 and user_id = $2 and status = 'confirmed'`,
+      [session.class_id, uid],
     );
+    if (!enrolled) throw err.field("user_id", `Row ${i + 1}: that student is not in this class.`, { index: i });
+    marks.set(uid, result);
+  }
+
+  const before: Record<string, string | null> = {};
+  for (const [uid, result] of marks) {
+    const prev = await one<{ result: string | null }>(
+      sql,
+      `select result::text as result from attendance where session_id = $1 and user_id = $2 and kind = 'session' limit 1`,
+      [session.id, uid],
+    );
+    before[uid] = prev?.result ?? null;
+    await sql.query(`delete from attendance where session_id = $1 and user_id = $2 and kind = 'session'`, [session.id, uid]);
     await sql.query(
-      `insert into attendance (kind, user_id, session_id, result)
-       values ('session', $1, $2, $3::att_result)`,
-      [uid, sessionId, result],
+      `insert into attendance (kind, user_id, session_id, result) values ('session', $1, $2, $3::att_result)`,
+      [uid, session.id, result],
     );
   }
-  await audit(sql, user.id, "attendance", "session", sessionId);
-  return sessionAttendanceGet(sql, sessionId, user);
+  await audit(
+    sql,
+    user.id,
+    reason ? "attendance_correct" : "attendance",
+    "session",
+    session.id,
+    before,
+    { marks: Object.fromEntries(marks), ...(reason ? { reason } : {}) },
+  );
+  // BR-58: only a fresh absence can start or extend a streak.
+  const absent = [...marks].filter(([, r]) => r === "absent").map(([uid]) => uid);
+  await checkAbsentStreaks(sql, session.class_id, absent);
+  return sessionAttendanceGet(sql, session.id, user);
 }
 
 export async function trainingList(sql: Sql, request: Request, user: PublicUser) {
@@ -294,44 +402,29 @@ export async function trainingList(sql: Sql, request: Request, user: PublicUser)
   const classId = url.searchParams.get("class_id");
   const mine = url.searchParams.get("mine") === "1";
   const items = await sql.query(
-    `select * from training_plans
-      where published = true
-        and ($1::uuid is null or class_id = $1)
+    `select p.*, s.start_at as session_start
+       from training_plans p
+       left join sessions s on s.id = p.session_id
+      where ($1::uuid is null or p.class_id = $1)
         and (
-          $2::boolean is false
-          or user_id = $3
-          or (user_id is null and class_id is null)
-          or (user_id is null and class_id in (
-                select class_id from enrollments where user_id = $3 and status = 'confirmed'
-              ))
+          case
+            when $2::boolean then
+              p.published = true
+              and (p.user_id = $3
+                   or (p.user_id is null and p.class_id is null)
+                   or (p.user_id is null and p.class_id in (
+                         select class_id from enrollments where user_id = $3 and status = 'confirmed')))
+            when $4::text = 'coach' then
+              p.created_by = $3
+              or p.class_id in (select id from classes where coach_id = $3 or assistant_id = $3)
+            else true
+          end
         )
-      order by id desc
-      limit 40`,
-    [classId, mine || user.role === "member", user.id],
+      order by coalesce(s.start_at, p.created_at) desc, p.id
+      limit 60`,
+    [classId && /^[0-9a-f-]{36}$/i.test(classId) ? classId : null, mine || user.role === "member", user.id, user.role],
   );
   return { status: 200, body: { items } };
-}
-
-export async function trainingCreate(sql: Sql, request: Request, user: PublicUser) {
-  requireRole(user, ["coach", "manager"]);
-  await requireFlag(sql, "F4");
-  const b = await readJson(request);
-  const payload = b.payload ?? {};
-  const row = await one(
-    sql,
-    `insert into training_plans (scope, class_id, user_id, source, published, payload)
-     values ($1,$2,$3,$4, coalesce($5,true), $6::jsonb)
-     returning *`,
-    [
-      str(b.scope) ?? "class",
-      str(b.class_id) ?? null,
-      str(b.user_id) ?? null,
-      str(b.source) ?? "coach",
-      b.published !== false,
-      JSON.stringify(payload),
-    ],
-  );
-  return { status: 201, body: row };
 }
 
 export async function trainingSuggest(sql: Sql, request: Request, user: PublicUser) {

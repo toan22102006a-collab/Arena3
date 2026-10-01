@@ -3,13 +3,15 @@ import { Download, Eye, EyeOff, KeyRound, Receipt, UserRound } from "lucide-reac
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Guard, Shell, money, useSessionUser, when } from "@/components/shell";
-import { Badge, Button, Card, Empty, Field, Input, Label, Seg, Skeleton, Textarea } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, Label, Seg, Skeleton, Textarea } from "@/components/ui";
 import { Lift, Stagger, StaggerItem } from "@/components/motion";
 import { SpotlightCard, StarBorder } from "@/components/fx";
 import {
   apiGet,
   apiPatch,
   apiPost,
+  getStoredUser,
+  homeFor,
   openInvoice,
   setStoredUser,
   type SessionUser,
@@ -45,7 +47,7 @@ const REF: Record<string, string> = {
 
 function Page() {
   const user = useSessionUser();
-  const [tab, setTab] = useState("profile");
+  const [tab, setTab] = useState(() => (getStoredUser()?.must_change_password ? "security" : "profile"));
 
   return (
     <Guard roles={["member", "receptionist", "coach", "manager"]}>
@@ -61,13 +63,15 @@ function Page() {
             options={[
               { value: "profile", label: "Profile" },
               { value: "security", label: "Security" },
-              { value: "receipts", label: "Receipts" },
+              // Staff take payments, they do not make them: their receipts are
+              // the centre's, and live under Payments (D-04).
+              ...(user?.role === "member" || !user ? [{ value: "receipts", label: "Receipts" }] : []),
               { value: "support", label: "Support" },
             ]}
           />
         </div>
         {tab === "profile" ? <Profile user={user} /> : null}
-        {tab === "security" ? <Security /> : null}
+        {tab === "security" ? <Security forced={!!user?.must_change_password} /> : null}
         {tab === "receipts" ? <Receipts /> : null}
         {tab === "support" ? <Support /> : null}
       </Shell>
@@ -169,7 +173,7 @@ function Row({ label, value, note, mono }: { label: string; value: string; note?
   );
 }
 
-function Security() {
+function Security({ forced }: { forced: boolean }) {
   const [form, setForm] = useState({ current_password: "", new_password: "", confirm_password: "" });
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -188,6 +192,12 @@ function Security() {
       await apiPost("/me/password", form);
       setForm({ current_password: "", new_password: "", confirm_password: "" });
       toast.success("Password changed. Your other devices stay signed in.");
+      const u = getStoredUser();
+      if (u?.must_change_password) {
+        setStoredUser({ ...u, must_change_password: false });
+        // Let the menu and guard see the cleared flag.
+        window.location.assign(homeFor(u.role));
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not change your password");
     } finally {
@@ -202,6 +212,12 @@ function Security() {
           <KeyRound className="size-4 text-accent" strokeWidth={1.75} />
           <h2 className="font-display text-xl">Change password</h2>
         </div>
+        {forced ? (
+          <p className="mb-4 rounded-[var(--radius-md)] bg-wood px-3 py-2 text-sm">
+            You signed in with a temporary password. Choose your own to continue — enter the temporary one as the
+            current password.
+          </p>
+        ) : null}
         <form className="grid gap-4" onSubmit={submit}>
           <Field label="Current password">
             <Input
@@ -332,7 +348,7 @@ function Support() {
       {!items ? (
         <Skeleton className="h-24" />
       ) : items.length === 0 ? (
-        <Empty title="Nothing asked yet" hint="Anything you send the desk will be kept here with its reply." />
+        <EmptyState title="Nothing asked yet" hint="Anything you send the desk will be kept here with its reply." />
       ) : (
         <Stagger className="grid gap-2.5" gap={0.05}>
           {items.map((t) => (
@@ -391,7 +407,7 @@ function Receipts() {
 
   if (items.length === 0) {
     return (
-      <Empty
+      <EmptyState
         title="No receipts yet"
         hint="Every payment you make — court, class or membership — lands here as a PDF you can download."
       />

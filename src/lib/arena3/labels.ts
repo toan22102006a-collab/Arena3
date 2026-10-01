@@ -96,8 +96,46 @@ const BYDAY: Record<string, string> = {
   SU: "Sun",
 };
 
+/**
+ * What a subscription actually gives its holder, in the words the member reads.
+ * Driven by the plan's own grants: a session pack has no court hours to show,
+ * and a court-hours pack has no sessions, so each line appears only for a plan
+ * that carries it.
+ */
+export function planBenefits(s: {
+  plan_court_hours?: number | null;
+  plan_session_quota?: number | null;
+  court_hours_left: string | number;
+  session_left?: number | null;
+  court_discount_pct?: number | null;
+}): string[] {
+  const out: string[] = [];
+  if ((s.plan_court_hours ?? 0) > 0) out.push(`${Number(s.court_hours_left)} court hours left`);
+  if (s.plan_session_quota != null) out.push(`${s.session_left ?? 0} sessions left`);
+  if ((s.court_discount_pct ?? 0) > 0) out.push(`${s.court_discount_pct}% off courts`);
+  return out.length ? out : ["Membership"];
+}
+
 export function sportLabel(s: string) {
   return SPORT_LABEL[s] ?? s;
+}
+
+const CODE_SPORT: Record<string, string> = { badminton: "BAD", basketball: "BAS", volleyball: "VOL" };
+const CODE_LEVEL: Record<string, string> = { beginner: "BEG", intermediate: "INT", advanced: "ADV", team: "SQD" };
+
+/**
+ * A short, stable code for a class — "BAD-BEG-1F3A".
+ *
+ * Classes carry no code of their own, and "Beginner" on its own does not say
+ * which of the three beginner badminton classes a coach or the desk means.
+ * Sport and level make it readable aloud; the last four characters of the id
+ * make it unique. Derived rather than stored: no schema change, and it can
+ * never drift from the row it names.
+ */
+export function classCode(sport: string, level: string, id: string) {
+  const sp = CODE_SPORT[sport] ?? sport.slice(0, 3).toUpperCase();
+  const lv = CODE_LEVEL[level.toLowerCase()] ?? level.slice(0, 3).toUpperCase();
+  return `${sp}-${lv}-${id.replace(/-/g, "").slice(-4).toUpperCase()}`;
 }
 
 export function roleLabel(s: string) {

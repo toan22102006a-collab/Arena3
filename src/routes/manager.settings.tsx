@@ -6,7 +6,7 @@ import { Button, Card, Field, Input, Seg, Skeleton } from "@/components/ui";
 import { Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
 import { SplitText } from "@/components/fx";
 import { cn } from "@/lib/cn";
-import { apiGet, apiPatch } from "@/lib/arena3/client";
+import { ApiClientError, apiGet, apiPatch } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
 
 export const Route = createFileRoute("/manager/settings")({
@@ -19,9 +19,25 @@ const FLAG_META: { key: string; label: string; hint: string }[] = [
   { key: "F6", label: "Member assistant", hint: "Gemini Q&A, grounded in the timetable, plans and coaches." },
 ];
 
+const SETTINGS_FORM_KEYS = [
+  "legal_name",
+  "address",
+  "tax_code",
+  "open_time",
+  "close_time",
+  "hold_minutes",
+  "book_ahead_days",
+  "cancel_court_hours",
+  "debt_limit_vnd",
+  "freeze_max_days_year",
+  "waitlist_offer_hours",
+];
+
 function Page() {
   const [s, setS] = useState<Record<string, unknown> | null>(null);
   const [flags, setFlags] = useState<Record<string, boolean>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
     void apiGet<Record<string, unknown>>("/settings")
       .then(setS)
@@ -37,10 +53,22 @@ function Page() {
       </Shell>
     );
   }
-  function f(key: string, label: string) {
+  /** One input of the Centre details form; the server's message for it shows underneath. */
+  function f(key: string, label: string, type: "text" | "number" | "time" = "text") {
+    const raw = s![key];
+    const value = type === "time" ? String(raw ?? "").slice(0, 5) : String(raw ?? "");
     return (
-      <Field label={label}>
-        <Input value={String(s![key] ?? "")} onChange={(e) => setS({ ...s!, [key]: e.target.value })} />
+      <Field label={label} hint={fieldErrors[key]}>
+        <Input
+          type={type}
+          inputMode={type === "number" ? "numeric" : undefined}
+          value={value}
+          aria-invalid={fieldErrors[key] ? true : undefined}
+          onChange={(e) => {
+            setS({ ...s!, [key]: e.target.value });
+            if (fieldErrors[key]) setFieldErrors(({ [key]: _gone, ...rest }) => rest);
+          }}
+        />
       </Field>
     );
   }
@@ -96,35 +124,45 @@ function Page() {
         {f("legal_name", "Legal name")}
         {f("address", "Address")}
         {f("tax_code", "Tax code")}
-        {f("hold_minutes", "Hold length (minutes)")}
-        {f("book_ahead_days", "Book ahead (days)")}
-        {f("cancel_court_hours", "Court cancellation window (hours)")}
-        {f("debt_limit_vnd", "Debt ceiling (đ)")}
-        {f("freeze_max_days_year", "Freeze cap (days per year)")}
-        {f("waitlist_offer_hours", "Waitlist offer window (hours)")}
+        {f("open_time", "Opens at", "time")}
+        {f("close_time", "Closes at", "time")}
+        {f("hold_minutes", "Hold length (minutes)", "number")}
+        {f("book_ahead_days", "Book ahead (days)", "number")}
+        {f("cancel_court_hours", "Court cancellation window (hours)", "number")}
+        {f("debt_limit_vnd", "Debt ceiling (đ)", "number")}
+        {f("freeze_max_days_year", "Freeze cap (days per year)", "number")}
+        {f("waitlist_offer_hours", "Waitlist offer window (hours)", "number")}
+        <p className="text-xs text-muted md:col-span-2">
+          Time zone ({String(s.timezone ?? "—")}) and currency ({String(s.currency ?? "—")}) are fixed for this centre.
+        </p>
         <div className="md:col-span-2">
           <Button
+            disabled={saving}
             onClick={async () => {
+              setSaving(true);
+              setFieldErrors({});
               try {
-                const body = {
-                  legal_name: s.legal_name,
-                  address: s.address,
-                  tax_code: s.tax_code,
-                  hold_minutes: Number(s.hold_minutes),
-                  book_ahead_days: Number(s.book_ahead_days),
-                  cancel_court_hours: Number(s.cancel_court_hours),
-                  debt_limit_vnd: Number(s.debt_limit_vnd),
-                  freeze_max_days_year: Number(s.freeze_max_days_year),
-                  waitlist_offer_hours: Number(s.waitlist_offer_hours),
-                };
+                // Values go as typed: the server checks each one and names the
+                // input that is wrong, so a blank never becomes a silent null.
+                const body: Record<string, unknown> = {};
+                for (const k of SETTINGS_FORM_KEYS) body[k] = s[k] ?? "";
+                body.open_time = String(s.open_time ?? "").slice(0, 5);
+                body.close_time = String(s.close_time ?? "").slice(0, 5);
                 setS(await apiPatch("/settings", body));
                 toast.success("Saved — new transactions use these now");
               } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Something went wrong");
+                if (e instanceof ApiClientError && e.body.field) {
+                  setFieldErrors({ [e.body.field]: e.message });
+                  toast.error(e.message);
+                } else {
+                  toast.error(e instanceof Error ? e.message : "Something went wrong");
+                }
+              } finally {
+                setSaving(false);
               }
             }}
           >
-            Save
+            {saving ? "Saving…" : "Save"}
           </Button>
         </div>
       </Card>

@@ -3,10 +3,10 @@ import { PayOnlineButton } from "@/components/pay-online";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Shell, money, useSessionUser, when } from "@/components/shell";
-import { Badge, Button, Card, Field, Input, Modal, Skeleton, StatusBadge, Textarea } from "@/components/ui";
+import { Badge, Button, Card, DateField, Field, Input, Modal, Skeleton, StatusBadge, Textarea } from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { SplitText, SpotlightCard } from "@/components/fx";
-import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
+import { ApiClientError, apiGet, apiPatch, apiPost, openInvoice } from "@/lib/arena3/client";
 import { METHOD_LABEL, formatDate, sportLabel } from "@/lib/arena3/labels";
 
 export const Route = createFileRoute("/desk/member/$id")({
@@ -36,7 +36,8 @@ function Page() {
   const { id } = Route.useParams();
   const me = useSessionUser();
   const [data, setData] = useState<{
-    user: { full_name: string; phone: string; member_code: string | null };
+    user: { full_name: string; phone: string; member_code: string | null; date_of_birth: string | null };
+    guardian: { name: string | null; phone: string | null };
     debt_vnd: number;
     subscriptions: Array<{
       id: string;
@@ -68,8 +69,44 @@ function Page() {
   const [refundReason, setRefundReason] = useState("");
   const [refundBusy, setRefundBusy] = useState(false);
 
+  // Profile correction (B-11): what the desk has typed, and which input the
+  // server said was wrong.
+  const [editing, setEditing] = useState(false);
+  const [edit, setEdit] = useState({ full_name: "", phone: "", date_of_birth: "", guardian_name: "", guardian_phone: "" });
+  const [editBusy, setEditBusy] = useState(false);
+  const [editErr, setEditErr] = useState<{ field?: string; message: string } | null>(null);
+
   async function load() {
     setData(await apiGet(`/members/${id}`));
+  }
+
+  function openEdit() {
+    if (!data) return;
+    setEdit({
+      full_name: data.user.full_name,
+      phone: data.user.phone,
+      date_of_birth: data.user.date_of_birth ?? "",
+      guardian_name: data.guardian.name ?? "",
+      guardian_phone: data.guardian.phone ?? "",
+    });
+    setEditErr(null);
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    setEditBusy(true);
+    setEditErr(null);
+    try {
+      await apiPatch(`/members/${id}`, { ...edit, date_of_birth: edit.date_of_birth || null });
+      toast.success("Profile updated");
+      setEditing(false);
+      await load();
+    } catch (e) {
+      if (e instanceof ApiClientError) setEditErr({ field: e.body.field, message: e.message });
+      else setEditErr({ message: e instanceof Error ? e.message : "Could not save the profile" });
+    } finally {
+      setEditBusy(false);
+    }
   }
   useEffect(() => {
     void load().catch((e) => toast.error(e.message));
@@ -133,10 +170,19 @@ function Page() {
         : "";
 
   return (
-    <Shell role="receptionist" title={data.user.full_name} subtitle={`${data.user.member_code} · ${data.user.phone}`}>
-      <p className="mb-4 text-sm">
-        Outstanding balance <span className="tabular-nums font-medium">{money(data.debt_vnd)}</span>
-      </p>
+    <Shell
+      role={me?.role === "manager" ? "manager" : "receptionist"}
+      title={data.user.full_name}
+      subtitle={`${data.user.member_code} · ${data.user.phone}`}
+    >
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <p className="text-sm">
+          Outstanding balance <span className="tabular-nums font-medium">{money(data.debt_vnd)}</span>
+        </p>
+        <Button size="sm" variant="outline" onClick={openEdit}>
+          Edit profile
+        </Button>
+      </div>
       <Stagger className="grid gap-3 md:grid-cols-2" gap={0.07}>
         {data.subscriptions.map((s) => (
           <StaggerItem key={s.id} className="h-full">
@@ -290,6 +336,58 @@ function Page() {
           <p className="text-sm text-muted">Nothing has been taken from this member yet.</p>
         ) : null}
       </Stagger>
+
+      <Modal
+        open={editing}
+        onClose={() => setEditing(false)}
+        title="Edit profile"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+            <Button disabled={editBusy} onClick={() => void saveEdit()}>
+              {editBusy ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="grid gap-4">
+          <Field label="Full name" hint={editErr?.field === "full_name" ? editErr.message : undefined}>
+            <Input value={edit.full_name} onChange={(e) => setEdit({ ...edit, full_name: e.target.value })} />
+          </Field>
+          <Field label="Phone" hint={editErr?.field === "phone" ? editErr.message : undefined}>
+            <Input
+              inputMode="tel"
+              value={edit.phone}
+              onChange={(e) => setEdit({ ...edit, phone: e.target.value })}
+            />
+          </Field>
+          <Field label="Date of birth" hint={editErr?.field === "date_of_birth" ? editErr.message : undefined}>
+            <DateField
+              value={edit.date_of_birth}
+              onChange={(v) => setEdit({ ...edit, date_of_birth: v })}
+              aria-label="Date of birth"
+            />
+          </Field>
+          <Field label="Guardian name" hint={editErr?.field === "guardian_name" ? editErr.message : undefined}>
+            <Input
+              value={edit.guardian_name}
+              onChange={(e) => setEdit({ ...edit, guardian_name: e.target.value })}
+            />
+          </Field>
+          <Field label="Guardian phone" hint={editErr?.field === "guardian_phone" ? editErr.message : undefined}>
+            <Input
+              inputMode="tel"
+              value={edit.guardian_phone}
+              onChange={(e) => setEdit({ ...edit, guardian_phone: e.target.value })}
+            />
+          </Field>
+          {editErr && !["full_name", "phone", "date_of_birth", "guardian_name", "guardian_phone"].includes(editErr.field ?? "") ? (
+            <p className="text-sm text-danger">{editErr.message}</p>
+          ) : null}
+        </div>
+      </Modal>
 
       <Modal
         open={!!refunding}

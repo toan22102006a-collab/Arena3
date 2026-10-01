@@ -2,6 +2,7 @@ import type { Sql } from "@/lib/db";
 import { err, isConflictSlot } from "../errors";
 import {
   audit,
+  bookingBuyer,
   enqueue,
   enqueueReceipt,
   getSettings,
@@ -14,7 +15,7 @@ import {
 import { isValidVnPhone, normalizePhone } from "../phone";
 import { applyDiscount, lookupPrice, memberDiscount } from "../pricing";
 import { requireRole, type PublicUser } from "../session";
-import { ictClock, ictDateString, ictDateTime, ictStamp, roundVnd } from "../time";
+import { addDays, ictClock, ictDateString, ictDateTime, ictStamp, roundVnd } from "../time";
 import { one } from "../tx";
 
 async function courtById(sql: Sql, id: string) {
@@ -121,6 +122,238 @@ export async function occupancyGet(sql: Sql, request: Request) {
   };
 }
 
+/**
+ * Which days still have a free slot (M-03).
+ *
+ * The court map answers one day at a time, so a member hunting for "any evening
+ * this week" had to open seven of them. This answers the whole stretch in one
+ * read: for each day, how many court-slots of the sport are still sellable
+ * (ready courts, inside opening hours, not already taken, not in the past) out
+ * of how many there are, and whether the day is inside the booking horizon.
+ * Counts only — who holds what stays on the day view.
+ */
+export async function availabilityGet(sql: Sql, request: Request) {
+  const params = new URL(request.url).searchParams;
+  const today = ictDateString();
+  const from = params.get("from") ?? today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) throw err.field("from", "from must be YYYY-MM-DD.");
+  const days = Number(params.get("days") ?? 31);
+  if (!Number.isInteger(days) || days < 1 || days > 62) throw err.field("days", "days must be 1 to 62.");
+  const sport = params.get("sport");
+  if (sport && !["badminton", "basketball", "volleyball"].includes(sport)) {
+    throw err.field("sport", "Unknown sport.");
+  }
+  const first = from < today ? today : from;
+  const settings = await getSettings(sql);
+  const courts = await sql.query<{ id: string }>(
+    `select id from courts where status = 'ready' and ($1::text is null or sport::text = $1) order by id`,
+    [sport],
+  );
+  const rangeStart = ictDateTime(first, "00:00");
+  const rangeEnd = ictDateTime(addDays(first, days), "00:00");
+  const occ = await sql.query<{ court_id: string; start_at: string; end_at: string }>(
+    `select court_id, start_at, end_at from occupancies where start_at < $2 and end_at > $1`,
+    [rangeStart.toISOString(), rangeEnd.toISOString()],
+  );
+  const byCourt = new Map<string, { s: number; e: number }[]>();
+  for (const o of occ) {
+    const list = byCourt.get(o.court_id) ?? [];
+    list.push({ s: new Date(o.start_at).getTime(), e: new Date(o.end_at).getTime() });
+    byCourt.set(o.court_id, list);
+  }
+  const now = Date.now();
+  const horizon = now + settings.book_ahead_days * 86400000;
+  const step = settings.slot_minutes * 60_000;
+  const out: { date: string; free: number; total: number; bookable: boolean }[] = [];
+  for (let i = 0; i < days; i++) {
+    const date = addDays(first, i);
+    const open = ictDateTime(date, settings.open_time.slice(0, 5)).getTime();
+    const close = ictDateTime(date, settings.close_time.slice(0, 5)).getTime();
+    let total = 0;
+    let free = 0;
+    for (let t = open; t < close; t += step) {
+      for (const c of courts) {
+        total++;
+        if (t < now || t > horizon) continue;
+        const taken = (byCourt.get(c.id) ?? []).some((o) => o.s < t + step && o.e > t);
+        if (!taken) free++;
+      }
+    }
+    out.push({ date, free, total, bookable: Boolean(total) && date <= ictDateString(new Date(horizon)) });
+  }
+  return { status: 200, body: { from: first, sport: sport ?? null, days: out } };
+}
+
+/**
+ * The member's own upcoming court bookings, each with whether it can still be
+ * moved. The home screen only shows today's, which left no way to find a
+ * booking next week in order to change it.
+ */
+export async function meBookings(sql: Sql, user: PublicUser) {
+  requireRole(user, ["member"]);
+  const settings = await getSettings(sql);
+  const rows = await sql.query<{
+    id: string;
+    code: string;
+    status: string;
+    start_at: string;
+    end_at: string;
+    price_vnd: number;
+    quota_hours: string | number;
+    court_id: string;
+    court_code: string;
+    sport: string;
+  }>(
+    `select b.id, b.code, b.status::text as status, b.start_at, b.end_at, b.price_vnd, b.quota_hours,
+            b.court_id, c.court_code, c.sport::text as sport
+       from court_bookings b join courts c on c.id = b.court_id
+      where b.user_id = $1 and b.status in ('hold','confirmed','in_use') and b.end_at > now()
+      order by b.start_at
+      limit 50`,
+    [user.id],
+  );
+  const now = Date.now();
+  return {
+    status: 200,
+    body: {
+      window_hours: settings.cancel_court_hours,
+      items: rows.map((r) => ({
+        ...r,
+        can_move:
+          r.status === "confirmed" &&
+          (new Date(r.start_at).getTime() - now) / 3600000 >= settings.cancel_court_hours,
+      })),
+    },
+  };
+}
+
+/**
+ * What is behind a taken cell on the court map (B-07).
+ *
+ * The grid only knows that an hour is occupied. At the counter the next
+ * question is always "whose is it, what did they pay, and is it confirmed?", so
+ * this answers it for the occupancy the desk clicked: a booking or hold (member
+ * or walk-in, code, time, amount, status), a class session, or the reason a
+ * court was taken out of service. Reception and the manager only — members see
+ * that an hour is taken, never by whom.
+ */
+export async function occupancyDetail(sql: Sql, request: Request, user: PublicUser) {
+  requireRole(user, ["receptionist", "manager"]);
+  const params = new URL(request.url).searchParams;
+  const kind = params.get("kind") ?? "";
+  const ref = params.get("ref") ?? "";
+  if (!/^[0-9a-f-]{36}$/i.test(ref)) throw err.field("ref", "ref must be an id.");
+
+  if (kind === "booking" || kind === "hold") {
+    const b = await one<{
+      id: string;
+      code: string;
+      status: string;
+      channel: string;
+      start_at: string;
+      end_at: string;
+      price_vnd: number;
+      discount_pct: number;
+      hold_until: string | null;
+      transfer_requested_at: string | null;
+      court_code: string;
+      sport: string;
+      user_id: string | null;
+      member_name: string | null;
+      member_code: string | null;
+      member_phone: string | null;
+      guest_name: string | null;
+      guest_phone: string | null;
+    }>(
+      sql,
+      `select b.id, b.code, b.status::text as status, b.channel, b.start_at, b.end_at, b.price_vnd,
+              b.discount_pct, b.hold_until, b.transfer_requested_at,
+              c.court_code, c.sport::text as sport,
+              b.user_id, u.full_name as member_name, u.member_code, u.phone as member_phone,
+              b.guest_name, b.guest_phone
+         from court_bookings b
+         join courts c on c.id = b.court_id
+         left join users u on u.id = b.user_id
+        where b.id = $1`,
+      [ref],
+    );
+    if (!b) throw err.notFound("No such booking.");
+    const paid = await one<{ paid_vnd: number }>(
+      sql,
+      `select coalesce(sum(amount_vnd) filter (where status in ('posted','refund_pending')), 0)::int as paid_vnd
+         from payments where ref_type = 'booking' and ref_id = $1`,
+      [b.id],
+    );
+    return {
+      status: 200,
+      body: {
+        kind: "booking",
+        booking: {
+          id: b.id,
+          code: b.code,
+          status: b.status,
+          channel: b.channel,
+          start_at: b.start_at,
+          end_at: b.end_at,
+          price_vnd: b.price_vnd,
+          discount_pct: b.discount_pct,
+          paid_vnd: paid?.paid_vnd ?? 0,
+          hold_until: b.hold_until,
+          awaiting_transfer: Boolean(b.transfer_requested_at) && b.status === "hold",
+          court_code: b.court_code,
+          sport: b.sport,
+        },
+        customer: b.user_id
+          ? { type: "member", id: b.user_id, name: b.member_name, phone: b.member_phone, member_code: b.member_code }
+          : { type: "guest", id: null, name: b.guest_name, phone: b.guest_phone, member_code: null },
+      },
+    };
+  }
+
+  if (kind === "session") {
+    const s = await one<{
+      id: string;
+      class_id: string;
+      start_at: string;
+      end_at: string;
+      status: string;
+      court_code: string;
+      sport: string;
+      level: string;
+      capacity: number;
+      enrolled_count: number;
+      coach_name: string;
+    }>(
+      sql,
+      `select s.id, s.class_id, s.start_at, s.end_at, s.status::text as status,
+              c.court_code, cl.sport::text as sport, cl.level, cl.capacity, cl.enrolled_count,
+              co.full_name as coach_name
+         from sessions s
+         join classes cl on cl.id = s.class_id
+         join courts c on c.id = s.court_id
+         join users co on co.id = cl.coach_id
+        where s.id = $1`,
+      [ref],
+    );
+    if (!s) throw err.notFound("No such session.");
+    return { status: 200, body: { kind: "session", session: s } };
+  }
+
+  if (kind === "maintenance") {
+    const o = await one<{ reason: string | null; court_code: string; start_at: string; end_at: string }>(
+      sql,
+      `select o.reason, c.court_code, o.start_at, o.end_at
+         from occupancies o join courts c on c.id = o.court_id
+        where o.kind = 'maintenance' and o.ref_id = $1 limit 1`,
+      [ref],
+    );
+    if (!o) throw err.notFound();
+    return { status: 200, body: { kind: "maintenance", maintenance: o } };
+  }
+
+  throw err.field("kind", "kind must be booking, hold, session or maintenance.");
+}
+
 export async function courtsList(sql: Sql) {
   const items = await sql.query(`select id, court_code, sport, status, convertible, pair_court_id from courts order by court_code`);
   return { status: 200, body: { items } };
@@ -177,7 +410,7 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
   const debt = await userDebt(sql, user.id);
   if (debt > settings.debt_limit_vnd) throw err.br("BR-44", "Your balance is over the limit — settle it at the desk.");
   const n = await countSlotsToday(sql, user.id, start);
-  if (n >= settings.max_slots_per_day) throw err.br("BR-32", "You can hold at most 2 slots a day.");
+  if (n >= settings.max_slots_per_day) throw err.br("BR-32", `You can hold at most ${settings.max_slots_per_day} slots a day.`);
   const overlap = await overlapClass(sql, user.id, start, end);
   if (overlap && b.confirm_overlap !== true) {
     throw err.br("BR-39C", "This slot clashes with a class you are in. Confirm to hold it anyway.", {
@@ -265,6 +498,8 @@ export async function settleHeldBooking(
     quotaHours: number;
     /** Whose name goes on the receipt. */
     buyerName: string;
+    /** A guest booking's phone; null when the buyer is a member. */
+    buyerPhone?: string | null;
     /** Who pressed the button — the member, or the receptionist. */
     actorId: string;
     /**
@@ -310,6 +545,7 @@ export async function settleHeldBooking(
   const invoiceId = await issueInvoice(sql, {
     paymentId: pay!.id,
     buyerName: opts.buyerName,
+    buyerPhone: opts.buyerPhone ?? null,
     amountVnd: opts.payAmount,
     vatRate: Number(booking.vat_rate ?? 0),
     description:
@@ -467,14 +703,13 @@ export async function bookingsTransferConfirm(sql: Sql, id: string, user: Public
     throw err.holdExpired();
   }
   const court = await courtById(sql, booking.court_id);
-  const buyer = await one<{ full_name: string }>(sql, `select full_name from users where id = $1`, [
-    booking.user_id,
-  ]);
+  const buyer = await bookingBuyer(sql, booking.id);
   const settled = await settleHeldBooking(sql, booking, court, {
     method: "transfer",
     payAmount: booking.price_vnd,
     quotaHours: 0,
-    buyerName: buyer?.full_name ?? "Khach le",
+    buyerName: buyer.name,
+    buyerPhone: buyer.phone,
     actorId: user.id,
   });
   await audit(sql, user.id, "transfer_confirm", "booking", booking.id);
@@ -566,6 +801,116 @@ export async function bookingsCancel(sql: Sql, id: string, user: PublicUser) {
   await enqueue(sql, "inapp", "booking_cancelled", booking.user_id, { id }, `booking_cancelled|${id}`);
   await audit(sql, user.id, "cancel_booking", "booking", id);
   return { status: 200, body: { refund, refundable } };
+}
+
+/**
+ * Move a confirmed booking to another slot (M-04).
+ *
+ * The same window as cancelling decides whether it is allowed — a change is
+ * "cancel and rebook" without the member losing the court in between — and the
+ * move is one transaction: the occupancy row is updated in place, so the old
+ * slot is freed and the new one taken together, or neither happens. The overlap
+ * trigger is still the last word. Money does not move: a slot that would cost a
+ * different amount is refused rather than adjusted, because the SRS has no
+ * formula for the difference; cancel and rebook is the path for that.
+ */
+export async function bookingsReschedule(sql: Sql, id: string, request: Request, user: PublicUser) {
+  requireRole(user, ["member"]);
+  const b = await readJson(request);
+  const startAt = str(b.start_at);
+  if (!startAt) throw err.field("start_at", "Pick the new time.");
+  const start = new Date(startAt);
+  if (Number.isNaN(start.getTime())) throw err.field("start_at", "That time is not valid.");
+  const settings = await getSettings(sql);
+  const booking = await one<{
+    id: string;
+    user_id: string | null;
+    status: string;
+    court_id: string;
+    start_at: string;
+    price_vnd: number;
+    discount_pct: number;
+    quota_hours: string | number;
+    occupancy_id: string | null;
+    code: string;
+  }>(sql, `select * from court_bookings where id = $1 for update`, [id]);
+  if (!booking) throw err.notFound();
+  if (booking.user_id !== user.id) throw err.forbidden();
+  if (booking.status !== "confirmed" || !booking.occupancy_id) {
+    throw err.conflictState("Only a confirmed booking that has not started can be moved.");
+  }
+  const hoursLeft = (new Date(booking.start_at).getTime() - Date.now()) / 3600000;
+  if (hoursLeft < settings.cancel_court_hours) {
+    throw err.conflictState(
+      `A booking can only be moved up to ${settings.cancel_court_hours} hours before it starts.`,
+      { window_hours: settings.cancel_court_hours },
+    );
+  }
+  const oldCourt = await courtById(sql, booking.court_id);
+  const courtId = str(b.court_id) ?? booking.court_id;
+  const court = courtId === booking.court_id ? oldCourt : await courtById(sql, courtId);
+  if (court.sport !== oldCourt.sport) {
+    throw err.field("court_id", "A booking can only move to a court of the same sport.");
+  }
+  if (court.status !== "ready") throw err.br("BR-35", "That court is not available.");
+  if (courtId === booking.court_id && start.getTime() === new Date(booking.start_at).getTime()) {
+    throw err.field("start_at", "That is the slot you already have.");
+  }
+  const { end } = slotBounds(start, settings.slot_minutes);
+  await assertBookWindow(sql, start, { walkIn: false, settings });
+
+  const sameDay = ictDateString(start) === ictDateString(new Date(booking.start_at));
+  if (!sameDay) {
+    const n = await countSlotsToday(sql, user.id, start);
+    if (n >= settings.max_slots_per_day) {
+      throw err.br("BR-32", `You can hold at most ${settings.max_slots_per_day} slots a day.`);
+    }
+  }
+  const overlap = await overlapClass(sql, user.id, start, end);
+  if (overlap && b.confirm_overlap !== true) {
+    throw err.br("BR-39C", "This slot clashes with a class you are in. Confirm to move it anyway.", {
+      requires_confirm: true,
+    });
+  }
+  // Plan hours pay for any slot; money only moves between slots of equal price.
+  if (!(Number(booking.quota_hours) > 0)) {
+    const list = await lookupPrice(sql, { sport: court.sport, courtId, start });
+    const price = applyDiscount(list.price_vnd, booking.discount_pct, settings.round_vnd);
+    if (price !== booking.price_vnd) {
+      throw err.conflictState(
+        "That slot is priced differently from the one you paid for. Cancel this booking and book the new slot instead.",
+        { paid_vnd: booking.price_vnd, new_price_vnd: price },
+      );
+    }
+  }
+  await sql.query(`select 1 from courts where id = $1 for update`, [courtId]);
+  try {
+    await sql.query(
+      `update occupancies set court_id = $2, start_at = $3, end_at = $4 where id = $1`,
+      [booking.occupancy_id, courtId, start.toISOString(), end.toISOString()],
+    );
+  } catch (e) {
+    if (isConflictSlot(e)) throw err.conflictSlot("Someone just took that slot.");
+    throw e;
+  }
+  await sql.query(
+    `update court_bookings set court_id = $2, start_at = $3, end_at = $4 where id = $1`,
+    [booking.id, courtId, start.toISOString(), end.toISOString()],
+  );
+  await enqueue(
+    sql,
+    "inapp",
+    "booking_rescheduled",
+    user.id,
+    { booking_id: booking.id, code: booking.code, court_code: court.court_code, start_at: start.toISOString() },
+    `booking_rescheduled|${booking.id}|${start.toISOString()}`,
+  );
+  await audit(sql, user.id, "reschedule_booking", "booking", booking.id, { start_at: booking.start_at, court_id: booking.court_id }, {
+    start_at: start.toISOString(),
+    court_id: courtId,
+  });
+  const fresh = await one(sql, `select * from court_bookings where id = $1`, [booking.id]);
+  return { status: 200, body: { booking: fresh } };
 }
 
 export async function bookingsCheckIn(sql: Sql, id: string, user: PublicUser) {
@@ -689,6 +1034,7 @@ export async function walkIn(sql: Sql, request: Request, user: PublicUser) {
   const invoiceId = await issueInvoice(sql, {
     paymentId: pay!.id,
     buyerName: guest_name,
+    buyerPhone: guest_phone,
     amountVnd: price,
     vatRate: Number(settings.vat_rate ?? 0),
     description: `Khách vãng lai — sân ${court.court_code} ${ictStamp(start)}`,

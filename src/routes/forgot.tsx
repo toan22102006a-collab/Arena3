@@ -79,7 +79,7 @@ function Forgot() {
   }
 
   return (
-    <main className="mx-auto grid min-h-dvh max-w-md place-items-center px-4">
+    <main id="main-content" tabIndex={-1} className="mx-auto grid min-h-dvh max-w-md place-items-center px-4">
       <Card className="w-full p-6">
         <h1 className="font-display text-3xl">Forgot your password</h1>
 
@@ -197,7 +197,7 @@ function Forgot() {
 
         <p className="mt-6 text-sm text-muted">
           Remembered it?{" "}
-          <Link to="/login" className="text-accent-2 hover:underline">
+          <Link to="/login" className="text-accent-2 underline underline-offset-2">
             Sign in
           </Link>
         </p>

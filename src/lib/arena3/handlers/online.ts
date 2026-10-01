@@ -232,6 +232,9 @@ export async function onlineCreate(sql: Sql, request: Request, user: PublicUser)
       [refId],
     );
     if (!sub) throw err.notFound();
+    // A link settles by activating the order, so it only makes sense for one
+    // still waiting for money (D-01).
+    if (sub.status !== "pending") throw err.conflictState("That plan is not waiting for payment.");
     const plan = await one<{ price_vnd: number }>(
       sql,
       `select price_vnd from membership_plans where id = $1`,
