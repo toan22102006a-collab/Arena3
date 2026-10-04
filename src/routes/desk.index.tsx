@@ -1,12 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { SectionTitle } from "@/components/section";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Shell, money } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Modal, Select, StatusBadge } from "@/components/ui";
 import { Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
-import { GLBackground, SplitText, SpotlightCard, StarBorder } from "@/components/fx";
+import { GLBackground, SpotlightCard, StarBorder } from "@/components/fx";
 import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
+import { t, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/desk/")({
   component: Page,
@@ -89,12 +91,12 @@ function Page() {
       setItems([]);
       return;
     }
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       void apiGet<{ items: Hit[] }>(`/members?q=${encodeURIComponent(q)}`)
         .then((r) => setItems(r.items))
-        .catch((e) => toast.error(e.message));
+        .catch((e) => toast.error(tServer(e.message)));
     }, 180);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [q]);
 
   function resetWizard() {
@@ -107,7 +109,7 @@ function Page() {
   }
 
   return (
-    <Shell role="receptionist" title="Front desk" subtitle="Find a member, sell a plan, take payment — three moves.">
+    <Shell role="receptionist" title={t("Front desk")} subtitle={t("Find a member, sell a plan, take payment — three moves.")}>
       {/* Kept well under the text: this console is stared at all shift, so the
           field is a texture, not a feature. */}
       <GLBackground
@@ -122,16 +124,16 @@ function Page() {
       />
       <Reveal className="mb-5 flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] bg-surface p-3 shadow-[var(--shadow-border)]" from="down">
         {shift ? (
-          <Badge tone="accent">Shift open · cash {money(shift.totals?.cash ?? 0)}</Badge>
+          <Badge tone="accent">{t("Shift open · cash {amount}", { amount: money(shift.totals?.cash ?? 0) })}</Badge>
         ) : (
           <Button
             onClick={async () => {
               try {
                 await apiPost("/shifts/open");
                 await loadShift();
-                toast.success("Shift opened");
+                toast.success(t("Shift opened"));
               } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Something went wrong");
+                toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
               }
             }}
           >
@@ -142,8 +144,11 @@ function Page() {
               "Open a shift first" on the payment button with no idea where
               to go.
             */}
-            Open shift
+            {t("Open shift")}
           </Button>
+        )}
+        {shift ? null : (
+          <span className="text-sm text-muted">{t("Open your cash shift first — payments can’t be taken without one.")}</span>
         )}
         {shift ? (
           <Button
@@ -153,12 +158,12 @@ function Page() {
               setCloseOpen(true);
             }}
           >
-            Close shift
+            {t("Close shift")}
           </Button>
         ) : null}
         <Link to="/desk/payments" className="ml-auto">
           <Button variant="outline">
-            Payments
+            {t("Payments")}
             {waiting ? (
               <span className="rounded-full bg-hold px-2 py-0.5 text-2xs font-semibold tabular-nums text-bg">
                 {waiting}
@@ -167,21 +172,21 @@ function Page() {
           </Button>
         </Link>
         <Link to="/desk/courts">
-          <Button variant="ink">Court map</Button>
+          <Button variant="ink">{t("Court map")}</Button>
         </Link>
       </Reveal>
 
-      <Field label="Find a member">
+      <Field label={t("Find a member")} tone="muted">
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Name, phone or member code"
+          placeholder={t("Name, phone or member code")}
           autoFocus
         />
       </Field>
       <div className="mt-3 grid gap-2">
         {q.trim().length > 0 && q.trim().length < 3 ? (
-          <p className="text-sm text-muted">Type at least 3 characters.</p>
+          <p className="text-sm text-muted">{t("Type at least 3 characters.")}</p>
         ) : null}
         {items.map((m, i) => (
           <motion.button
@@ -204,13 +209,13 @@ function Page() {
         ))}
       </div>
 
-      <SplitText as="h2" text="New member" className="mt-8 font-display text-2xl" />
-      <p className="mt-1 text-sm text-muted">Three steps: profile → plan → payment.</p>
+      <SectionTitle text={t("New member")} className="mt-8 font-display text-2xl" />
+      <p className="mt-1 text-sm text-muted">{t("Three steps: profile → plan → payment.")}</p>
       <ol className="mt-3 flex gap-2 text-2xs font-medium uppercase tracking-wider">
         {[
-          [1, "Profile"],
-          [2, "Plan"],
-          [3, "Payment"],
+          [1, t("Profile")],
+          [2, t("Plan")],
+          [3, t("Payment")],
         ].map(([n, l]) => (
           <li key={n} className="relative rounded-full px-3 py-1">
             {step === n ? (
@@ -232,14 +237,14 @@ function Page() {
       <Card className="relative z-[2]">
         {step === 1 ? (
           <div className="grid gap-3 md:grid-cols-3">
-            <Field label="Full name">
+            <Field label={t("Full name")}>
               <Input
                 value={form.full_name}
                 onChange={(e) => setForm({ ...form, full_name: e.target.value })}
                 placeholder="Alex Nguyen"
               />
             </Field>
-            <Field label="Phone number">
+            <Field label={t("Phone number")}>
               <Input
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
@@ -263,17 +268,22 @@ function Page() {
                     setStep(2);
                     toast.success(
                       res.existing
-                        ? "This person already has a profile — pick a plan or stop here"
-                        : `Created ${res.user.member_code ?? "the profile"}. Temporary password: ${res.temp_password}`,
+                        ? t("This person already has a profile — pick a plan or stop here")
+                        : res.user.member_code
+                          ? t("Created {code}. Temporary password: {password}", {
+                              code: res.user.member_code,
+                              password: res.temp_password ?? "",
+                            })
+                          : t("Created the profile. Temporary password: {password}", { password: res.temp_password ?? "" }),
                     );
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : "Could not create the account");
+                    toast.error(e instanceof Error ? tServer(e.message) : t("Could not create the account"));
                   } finally {
                     setBusy(false);
                   }
                 }}
               >
-                Create profile
+                {t("Create profile")}
               </Button>
             </div>
           </div>
@@ -286,9 +296,9 @@ function Page() {
             </p>
             {newUser.temp_password ? (
               <Card className="mb-4 border border-hold/30 bg-hold/5 p-4">
-                <p className="text-2xs uppercase tracking-wider text-muted">Temporary password — hand this to the member so they can sign in</p>
+                <p className="text-2xs uppercase tracking-wider text-muted">{t("Temporary password — hand this to the member so they can sign in")}</p>
                 <p className="mt-1 font-mono text-lg font-semibold tracking-wide">{newUser.temp_password}</p>
-                <p className="mt-1 text-xs text-muted">They change it after the first sign-in.</p>
+                <p className="mt-1 text-xs text-muted">{t("They change it after the first sign-in.")}</p>
               </Card>
             ) : null}
             <div className="grid gap-2 sm:grid-cols-2">
@@ -305,14 +315,14 @@ function Page() {
                   <p className="font-medium">{p.name}</p>
                   <p className="text-sm tabular-nums text-muted">
                     {money(p.price_vnd)}
-                    {p.duration_days ? ` · ${p.duration_days} days` : ""} · {p.court_hours} court hours
+                    {p.duration_days ? ` · ${t("{n} days", { n: p.duration_days })}` : ""} · {t("{n} court hours", { n: p.court_hours })}
                   </p>
                 </button>
               ))}
             </div>
             <div className="mt-4 flex gap-2">
               <Button variant="ghost" onClick={() => setStep(1)}>
-                Back
+                {t("Back")}
               </Button>
               <Button
                 disabled={!picked || busy}
@@ -327,13 +337,13 @@ function Page() {
                     setSubId(res.subscription.id);
                     setStep(3);
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : "Could not start the plan");
+                    toast.error(e instanceof Error ? tServer(e.message) : t("Could not start the plan"));
                   } finally {
                     setBusy(false);
                   }
                 }}
               >
-                Next: take payment
+                {t("Next: take payment")}
               </Button>
             </div>
           </div>
@@ -343,11 +353,11 @@ function Page() {
             <div className="md:col-span-3 text-sm">
               {newUser.full_name} · {picked.name} · {money(picked.price_vnd)}
             </div>
-            <Field label="Payment method">
+            <Field label={t("Payment method")}>
               <Select value={method} onChange={(e) => setMethod(e.target.value)}>
-                <option value="cash">Cash</option>
-                <option value="transfer">Bank transfer</option>
-                <option value="card">Card</option>
+                <option value="cash">{t("Cash")}</option>
+                <option value="transfer">{t("Bank transfer")}</option>
+                <option value="card">{t("Card")}</option>
               </Select>
             </Field>
             <div className="flex items-end gap-2 md:col-span-2">
@@ -368,7 +378,7 @@ function Page() {
                       },
                       true,
                     );
-                    toast.success("Paid — receipt opened");
+                    toast.success(t("Paid — receipt opened"));
                     // Clear the wizard before printing. The payment is already
                     // posted; if the receipt fails to open, leaving step 3 on
                     // screen would offer to take the same money again.
@@ -379,21 +389,21 @@ function Page() {
                       try {
                         await openInvoice(res.invoice.id);
                       } catch {
-                        toast.warning("Paid — but the receipt did not open. Reprint it from the profile.");
+                        toast.warning(t("Paid — but the receipt did not open. Reprint it from the profile."));
                       }
                     }
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : "Payment did not go through");
+                    toast.error(e instanceof Error ? tServer(e.message) : t("Payment did not go through"));
                   } finally {
                     setBusy(false);
                   }
                 }}
               >
-                {shift ? "Take payment & print" : "Open a shift first"}
+                {shift ? t("Take payment & print") : t("Open a shift first")}
               </Button>
               </StarBorder>
               <Button variant="ghost" onClick={() => setStep(2)}>
-                Back
+                {t("Back")}
               </Button>
             </div>
           </div>
@@ -404,62 +414,62 @@ function Page() {
       <Modal
         open={closeOpen}
         onClose={() => setCloseOpen(false)}
-        title="Close shift"
+        title={t("Close shift")}
         footer={
           <>
             <Button variant="ghost" onClick={() => setCloseOpen(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               onClick={async () => {
                 if (!shift) return;
                 try {
                   await apiPost(`/shifts/${shift.shift.id}/close`, { cash_declared_vnd: Number(cash) });
-                  toast.success("Shift closed");
+                  toast.success(t("Shift closed"));
                   setCloseOpen(false);
                   await loadShift();
                 } catch (e) {
-                  toast.error(e instanceof Error ? e.message : "Something went wrong");
+                  toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
                 }
               }}
             >
-              Reconcile & close
+              {t("Reconcile & close")}
             </Button>
           </>
         }
       >
-        <Field label="Cash counted (VND)">
+        <Field label={t("Cash counted (VND)")}>
           <Input inputMode="numeric" value={cash} onChange={(e) => setCash(e.target.value)} />
         </Field>
-        <p className="mt-2 text-sm text-muted">Expected from the books: {money(shift?.totals?.cash ?? 0)}</p>
+        <p className="mt-2 text-sm text-muted">{t("Expected from the books: {amount}", { amount: money(shift?.totals?.cash ?? 0) })}</p>
       </Modal>
 
       {tickets.length ? (
         <div className="mt-8">
-          <SplitText as="h2" text="Requests from the app" className="font-display text-2xl" />
+          <SectionTitle text={t("Requests from the app")} className="font-display text-2xl" />
           <Stagger className="mt-3 grid gap-2" gap={0.05}>
-            {tickets.map((t) => (
-              <StaggerItem key={t.id}>
+            {tickets.map((ticket) => (
+              <StaggerItem key={ticket.id}>
               <Card className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     {/* A member's own words, so they may contain a long run
                         with nothing to wrap on — without this it pushes the
                         Reply and Close buttons off the side of the card. */}
-                    <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-sm">{t.body}</p>
+                    <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-sm">{ticket.body}</p>
                     <p className="mt-1 text-xs text-muted">
-                      {t.full_name} · {t.phone}
+                      {ticket.full_name} · {ticket.phone}
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <Button
                       size="sm"
                       onClick={() => {
-                        setReplyTo(replyTo === t.id ? null : t.id);
+                        setReplyTo(replyTo === ticket.id ? null : ticket.id);
                         setReply("");
                       }}
                     >
-                      {replyTo === t.id ? "Cancel" : "Reply"}
+                      {replyTo === ticket.id ? t("Cancel") : t("Reply")}
                     </Button>
                     {/* Closing without answering is still allowed — a duplicate,
                         or something dealt with at the counter in person — but it
@@ -469,19 +479,19 @@ function Page() {
                       variant="outline"
                       onClick={async () => {
                         try {
-                          await apiPost(`/tickets/${t.id}/close`);
-                          setTickets((list) => list.filter((x) => x.id !== t.id));
-                          toast.success("Request closed");
+                          await apiPost(`/tickets/${ticket.id}/close`);
+                          setTickets((list) => list.filter((x) => x.id !== ticket.id));
+                          toast.success(t("Request closed"));
                         } catch (e) {
-                          toast.error(e instanceof Error ? e.message : "Something went wrong");
+                          toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
                         }
                       }}
                     >
-                      Close
+                      {t("Close")}
                     </Button>
                   </div>
                 </div>
-                {replyTo === t.id ? (
+                {replyTo === ticket.id ? (
                   <form
                     className="mt-3 flex flex-wrap gap-2"
                     onSubmit={async (e) => {
@@ -489,13 +499,13 @@ function Page() {
                       if (reply.trim().length < 2 || replying) return;
                       setReplying(true);
                       try {
-                        await apiPost(`/tickets/${t.id}/reply`, { reply: reply.trim() });
-                        setTickets((list) => list.filter((x) => x.id !== t.id));
+                        await apiPost(`/tickets/${ticket.id}/reply`, { reply: reply.trim() });
+                        setTickets((list) => list.filter((x) => x.id !== ticket.id));
                         setReplyTo(null);
                         setReply("");
-                        toast.success("Replied — the member has been notified");
+                        toast.success(t("Replied — the member has been notified"));
                       } catch (err) {
-                        toast.error(err instanceof Error ? err.message : "Something went wrong");
+                        toast.error(err instanceof Error ? tServer(err.message) : t("Something went wrong"));
                       } finally {
                         setReplying(false);
                       }
@@ -505,12 +515,12 @@ function Page() {
                       className="min-w-0 flex-1"
                       autoFocus
                       maxLength={2000}
-                      placeholder="What should we tell them?"
+                      placeholder={t("What should we tell them?")}
                       value={reply}
                       onChange={(e) => setReply(e.target.value)}
                     />
                     <Button type="submit" disabled={replying || reply.trim().length < 2}>
-                      Send
+                      {t("Send")}
                     </Button>
                   </form>
                 ) : null}

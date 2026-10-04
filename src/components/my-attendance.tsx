@@ -3,6 +3,9 @@ import { when } from "@/components/shell";
 import { Badge, Card, EmptyState, Skeleton } from "@/components/ui";
 import { apiGet } from "@/lib/arena3/client";
 import { levelLabel, sportLabel } from "@/lib/arena3/labels";
+import { SectionTitle } from "@/components/section";
+import { ClipboardCheck } from "lucide-react";
+import { t, tk } from "@/lib/i18n";
 
 type Row = {
   session_id: string;
@@ -15,10 +18,10 @@ type Row = {
 type Attendance = { items: Row[]; counts: Record<"present" | "late" | "absent" | "excused", number> };
 
 const RESULTS = [
-  { key: "present", label: "Present", tone: "accent" },
-  { key: "late", label: "Late", tone: "hold" },
-  { key: "absent", label: "Absent", tone: "danger" },
-  { key: "excused", label: "Excused", tone: "muted" },
+  { key: "present", label: tk("Present"), tone: "accent" },
+  { key: "late", label: tk("Late"), tone: "hold" },
+  { key: "absent", label: tk("Absent"), tone: "danger" },
+  { key: "excused", label: tk("Excused"), tone: "muted" },
 ] as const;
 
 /**
@@ -37,24 +40,22 @@ export function MyAttendance() {
 
   return (
     <section aria-labelledby="my-attendance" className="mt-10">
-      <h2 id="my-attendance" className="mb-2 font-display text-2xl">
-        My attendance
-      </h2>
+      <SectionTitle id="my-attendance" icon={ClipboardCheck} text={t("My attendance")} className="mb-3" />
       {failed ? (
-        <p className="text-sm text-muted">Your attendance could not be loaded just now.</p>
+        <p className="text-sm text-muted">{t("Your attendance could not be loaded just now.")}</p>
       ) : !data ? (
         <Skeleton className="h-24" />
       ) : !data.items.length ? (
         <EmptyState
-          title="No finished sessions yet"
-          hint="After each class your coach marks you present, late, absent or excused — the marks show up here."
+          title={t("No finished sessions yet")}
+          hint={t("After each class your coach marks you present, late, absent or excused — the marks show up here.")}
         />
       ) : (
         <>
           <div className="mb-3 flex flex-wrap gap-2">
             {RESULTS.map((r) => (
               <Badge key={r.key} tone={r.tone}>
-                {r.label} · {data.counts[r.key] ?? 0}
+                {t(r.label)} · {data.counts[r.key] ?? 0}
               </Badge>
             ))}
           </div>
@@ -71,7 +72,7 @@ export function MyAttendance() {
                       {when(row.start_at)} · {row.court_code}
                     </span>
                   </span>
-                  {r ? <Badge tone={r.tone}>{r.label}</Badge> : <Badge tone="muted">Not marked yet</Badge>}
+                  {r ? <Badge tone={r.tone}>{t(r.label)}</Badge> : <Badge tone="muted">{t("Not marked yet")}</Badge>}
                 </div>
               );
             })}

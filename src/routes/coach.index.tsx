@@ -9,6 +9,7 @@ import { Lift, Stagger, StaggerItem } from "@/components/motion";
 import { GlareHover, SpotlightCard } from "@/components/fx";
 import { apiGet } from "@/lib/arena3/client";
 import { levelLabel, sportLabel } from "@/lib/arena3/labels";
+import { t, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/coach/")({
   component: Page,
@@ -40,7 +41,7 @@ function Page() {
   useEffect(() => {
     void apiGet<{ items: CoachSession[] }>("/coach/schedule")
       .then((r) => setItems(r.items))
-      .catch((e) => toast.error(e.message));
+      .catch((e) => toast.error(tServer(e.message)));
   }, []);
 
   // One heading per teaching day, so every card sits under the date it happens on.
@@ -51,14 +52,17 @@ function Page() {
   }
 
   return (
-    <Shell role="coach" title="Schedule" subtitle="Every session you teach, by day. Tap one to take its register.">
+    <Shell role="coach" title={t("Schedule")} subtitle={t("Every session you teach, by day. Tap one to take its register.")}>
       {!items ? (
         <div className="grid gap-3 md:grid-cols-2">
           <Skeleton className="h-36" />
           <Skeleton className="h-36" />
         </div>
       ) : !items.length ? (
-        <EmptyState title="No sessions coming up" hint="When the manager publishes a class with you as coach, its sessions appear here." />
+        <EmptyState
+          title={t("No sessions coming up")}
+          hint={t("When the manager publishes a class with you as coach, its sessions appear here.")}
+        />
       ) : (
         [...days.entries()].map(([k, list]) => (
           <section key={k} className="mb-8">
@@ -94,12 +98,12 @@ function Page() {
                             <p className="tabular-nums text-sm">
                               {sessionDay(s.start_at)} · {hhmm(s.start_at)}–{hhmm(s.end_at)}
                             </p>
-                            <p className="text-sm text-muted">
-                              Court {s.court_code} ·{" "}
-                              <span className="tabular-nums">
-                                {s.enrolled_count}/{s.capacity}
-                              </span>{" "}
-                              students
+                            <p className="text-sm text-muted tabular-nums">
+                              {t("Court {court} · {enrolled}/{capacity} students", {
+                                court: s.court_code,
+                                enrolled: s.enrolled_count,
+                                capacity: s.capacity,
+                              })}
                             </p>
                           </div>
                         </Card>

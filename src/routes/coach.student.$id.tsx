@@ -1,4 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { SectionTitle } from "@/components/section";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Shell } from "@/components/shell";
@@ -6,21 +7,22 @@ import { Badge, Button, Card, EmptyState, Field, Select, Skeleton, Textarea } fr
 import { SplitText } from "@/components/fx";
 import { apiGet, apiPost, apiPut } from "@/lib/arena3/client";
 import { formatDate, levelLabel, sportLabel } from "@/lib/arena3/labels";
+import { t, tServer, tk } from "@/lib/i18n";
 
 export const Route = createFileRoute("/coach/student/$id")({ component: Page });
 
 const GOALS: Record<string, string> = {
-  weight: "Lose weight",
-  technique: "Improve technique",
-  compete: "Compete",
-  fun: "Have fun",
+  weight: tk("Lose weight"),
+  technique: tk("Improve technique"),
+  compete: tk("Compete"),
+  fun: tk("Have fun"),
 };
 const SPORTS = ["badminton", "basketball", "volleyball"];
 const LEVELS = ["beginner", "intermediate", "advanced"];
 const METRIC_LABEL: Record<string, string> = {
-  smash_count: "Smashes",
-  freethrow_pct: "Free throws",
-  serve_pct: "Serves in",
+  smash_count: tk("Smashes"),
+  freethrow_pct: tk("Free throws"),
+  serve_pct: tk("Serves in"),
 };
 
 type Profile = {
@@ -51,7 +53,7 @@ type Profile = {
   homework: Array<{ id: string; title: string; due_on: string | null; checklist: string[]; done_items: number[]; completed_at: string | null }>;
 };
 
-const say = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong");
+const say = (e: unknown) => (e instanceof Error ? tServer(e.message) : t("Something went wrong"));
 
 function Page() {
   const { id } = Route.useParams();
@@ -87,13 +89,13 @@ function Page() {
   const att = p?.attendance ?? {};
 
   return (
-    <Shell role="coach" title={p?.student.full_name ?? "Student"} subtitle={p ? (p.student.member_code ?? "") : ""}>
+    <Shell role="coach" title={p?.student.full_name ?? t("Student")} subtitle={p ? (p.student.member_code ?? "") : ""}>
       <Link to="/coach/attendance" className="text-sm text-muted underline-offset-4 hover:underline">
-        ← Back to attendance
+        {t("← Back to attendance")}
       </Link>
       {!p ? (
         failed ? (
-          <EmptyState title="This student isn't available" hint="You can see students in the classes you teach." />
+          <EmptyState title={t("This student isn't available")} hint={t("You can see students in the classes you teach.")} />
         ) : (
           <Skeleton className="mt-4 h-40" />
         )
@@ -101,25 +103,30 @@ function Page() {
         <div className="mt-4 grid gap-8">
           <Card className="grid gap-3 md:grid-cols-3">
             <div>
-              <p className="kicker text-2xs text-muted">Goal</p>
-              <p className="mt-1 text-lg">{p.goal ? GOALS[p.goal] : "Not set yet"}</p>
+              <p className="kicker text-2xs text-muted">{t("Goal")}</p>
+              <p className="mt-1 text-lg">{p.goal && GOALS[p.goal] ? t(GOALS[p.goal]!) : t("Not set yet")}</p>
             </div>
             <div>
-              <p className="kicker text-2xs text-muted">Attendance</p>
+              <p className="kicker text-2xs text-muted">{t("Attendance")}</p>
               <p className="mt-1 text-sm">
-                {att.present ?? 0} present · {att.late ?? 0} late · {att.absent ?? 0} absent · {att.excused ?? 0} excused
+                {t("{present} present · {late} late · {absent} absent · {excused} excused", {
+                  present: att.present ?? 0,
+                  late: att.late ?? 0,
+                  absent: att.absent ?? 0,
+                  excused: att.excused ?? 0,
+                })}
               </p>
             </div>
             <div>
-              <p className="kicker text-2xs text-muted">Health notes</p>
+              <p className="kicker text-2xs text-muted">{t("Health notes")}</p>
               <p className={`mt-1 whitespace-pre-wrap text-sm [overflow-wrap:anywhere] ${p.student.health_notes ? "text-danger" : "text-muted"}`}>
-                {p.student.health_notes || "None on file"}
+                {p.student.health_notes || t("None on file")}
               </p>
             </div>
           </Card>
 
           <section>
-            <SplitText as="h2" text="Level" className="font-display text-2xl" />
+            <SectionTitle text={t("Level")} className="font-display text-2xl" />
             <Card className="mt-3 grid gap-3">
               <div className="flex flex-wrap gap-2">
                 {p.levels.length ? (
@@ -129,11 +136,11 @@ function Page() {
                     </Badge>
                   ))
                 ) : (
-                  <span className="text-sm text-muted">No level assessed yet.</span>
+                  <span className="text-sm text-muted">{t("No level assessed yet.")}</span>
                 )}
               </div>
               <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
-                <Field label="Sport">
+                <Field label={t("Sport")}>
                   <Select value={lvl.sport} onChange={(e) => setLvl({ ...lvl, sport: e.target.value })}>
                     {SPORTS.map((s) => (
                       <option key={s} value={s}>
@@ -142,7 +149,7 @@ function Page() {
                     ))}
                   </Select>
                 </Field>
-                <Field label="Level">
+                <Field label={t("Level")}>
                   <Select value={lvl.level} onChange={(e) => setLvl({ ...lvl, level: e.target.value })}>
                     {LEVELS.map((s) => (
                       <option key={s} value={s}>
@@ -151,19 +158,21 @@ function Page() {
                     ))}
                   </Select>
                 </Field>
-                <Button variant="outline" onClick={() => run(() => apiPut(`/students/${id}/level`, lvl), "Level updated")}>
-                  Set level
+                <Button variant="outline" onClick={() => run(() => apiPut(`/students/${id}/level`, lvl), t("Level updated"))}>
+                  {t("Set level")}
                 </Button>
               </div>
             </Card>
           </section>
 
           <section>
-            <SplitText as="h2" text="Progress review" className="font-display text-2xl" />
-            <p className="mt-1 text-sm text-muted">A review stays on record and the student is told about it. It can't be edited afterwards.</p>
+            <SectionTitle text={t("Progress review")} className="font-display text-2xl" />
+            <p className="mt-1 text-sm text-muted">
+              {t("A review stays on record and the student is told about it. It can't be edited afterwards.")}
+            </p>
             <Card className="mt-3 grid gap-3">
               <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-                <Field label="Sport">
+                <Field label={t("Sport")}>
                   <Select value={rev.sport} onChange={(e) => setRev({ ...rev, sport: e.target.value })}>
                     {SPORTS.map((s) => (
                       <option key={s} value={s}>
@@ -172,14 +181,17 @@ function Page() {
                     ))}
                   </Select>
                 </Field>
-                <Field label="Period">
+                <Field label={t("Period")}>
                   <Select value={rev.period_weeks} onChange={(e) => setRev({ ...rev, period_weeks: e.target.value })}>
-                    <option value="2">2 weeks</option>
-                    <option value="4">4 weeks</option>
+                    <option value="2">{t("{n} weeks", { n: 2 })}</option>
+                    <option value="4">{t("{n} weeks", { n: 4 })}</option>
                   </Select>
                 </Field>
                 {(["technique", "fitness", "attitude"] as const).map((k) => (
-                  <Field key={k} label={`${k[0]!.toUpperCase()}${k.slice(1)} (1–5)`}>
+                  <Field
+                    key={k}
+                    label={k === "technique" ? t("Technique (1–5)") : k === "fitness" ? t("Fitness (1–5)") : t("Attitude (1–5)")}
+                  >
                     <Select value={rev[k]} onChange={(e) => setRev({ ...rev, [k]: e.target.value })}>
                       {[1, 2, 3, 4, 5].map((n) => (
                         <option key={n} value={n}>
@@ -190,7 +202,7 @@ function Page() {
                   </Field>
                 ))}
               </div>
-              <Field label="Comment">
+              <Field label={t("Comment")}>
                 <Textarea rows={3} maxLength={2000} value={rev.comment} onChange={(e) => setRev({ ...rev, comment: e.target.value })} />
               </Field>
               <div>
@@ -199,10 +211,10 @@ function Page() {
                     run(async () => {
                       await apiPost(`/students/${id}/reviews`, rev);
                       setRev({ ...rev, comment: "" });
-                    }, "Review saved")
+                    }, t("Review saved"))
                   }
                 >
-                  Save review
+                  {t("Save review")}
                 </Button>
               </div>
             </Card>
@@ -210,10 +222,14 @@ function Page() {
               {p.reviews.map((r) => (
                 <Card key={r.id} className="p-4">
                   <p className="text-xs text-muted">
-                    {formatDate(r.created_at)} · {sportLabel(r.sport)} · {r.period_weeks} weeks · {r.coach_name}
+                    {formatDate(r.created_at)} · {sportLabel(r.sport)} · {t("{n} weeks", { n: r.period_weeks })} · {r.coach_name}
                   </p>
                   <p className="mt-1 text-sm">
-                    Technique {r.technique}/5 · Fitness {r.fitness}/5 · Attitude {r.attitude}/5
+                    {t("Technique {technique}/5 · Fitness {fitness}/5 · Attitude {attitude}/5", {
+                      technique: r.technique,
+                      fitness: r.fitness,
+                      attitude: r.attitude,
+                    })}
                   </p>
                   {r.comment ? <p className="mt-1 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{r.comment}</p> : null}
                 </Card>
@@ -222,10 +238,10 @@ function Page() {
           </section>
 
           <section>
-            <SplitText as="h2" text="Coach notes" className="font-display text-2xl" />
-            <p className="mt-1 text-sm text-muted">Private to staff. The student never sees these.</p>
+            <SectionTitle text={t("Coach notes")} className="font-display text-2xl" />
+            <p className="mt-1 text-sm text-muted">{t("Private to staff. The student never sees these.")}</p>
             <Card className="mt-3 grid gap-3">
-              <Textarea rows={2} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Observation, injury watch, what to work on…" />
+              <Textarea rows={2} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("Observation, injury watch, what to work on…")} />
               <div>
                 <Button
                   disabled={!note.trim()}
@@ -233,10 +249,10 @@ function Page() {
                     run(async () => {
                       await apiPost(`/students/${id}/notes`, { body: note });
                       setNote("");
-                    }, "Note added")
+                    }, t("Note added"))
                   }
                 >
-                  Add note
+                  {t("Add note")}
                 </Button>
               </div>
             </Card>
@@ -253,7 +269,7 @@ function Page() {
           </section>
 
           <section>
-            <SplitText as="h2" text="Recent sessions" className="font-display text-2xl" />
+            <SectionTitle text={t("Recent sessions")} className="font-display text-2xl" />
             <div className="mt-3 grid gap-2">
               {p.results.length ? (
                 p.results.map((r) => (
@@ -262,20 +278,20 @@ function Page() {
                       {formatDate(r.start_at)} · {sportLabel(r.sport)}
                     </p>
                     <p className="mt-1 text-sm">
-                      {r.plan_pct == null ? "No plan score" : `${r.plan_pct}% of the plan`}
-                      {Object.entries(r.metrics ?? {}).map(([k, v]) => ` · ${METRIC_LABEL[k] ?? k} ${v}`)}
+                      {r.plan_pct == null ? t("No plan score") : t("{pct}% of the plan", { pct: r.plan_pct })}
+                      {Object.entries(r.metrics ?? {}).map(([k, v]) => ` · ${METRIC_LABEL[k] ? t(METRIC_LABEL[k]) : k} ${v}`)}
                     </p>
                     {r.note ? <p className="mt-1 text-sm text-muted">{r.note}</p> : null}
                   </Card>
                 ))
               ) : (
-                <p className="text-sm text-muted">No results recorded yet.</p>
+                <p className="text-sm text-muted">{t("No results recorded yet.")}</p>
               )}
             </div>
           </section>
 
           <section>
-            <SplitText as="h2" text="Homework" className="font-display text-2xl" />
+            <SectionTitle text={t("Homework")} className="font-display text-2xl" />
             <div className="mt-3 grid gap-2">
               {p.homework.length ? (
                 p.homework.map((h) => (
@@ -283,14 +299,15 @@ function Page() {
                     <div>
                       <p className="font-medium">{h.title}</p>
                       <p className="text-xs text-muted">
-                        {h.due_on ? `Due ${formatDate(h.due_on)}` : "No due date"} · {h.done_items.length}/{h.checklist.length} items
+                        {h.due_on ? t("Due {date}", { date: formatDate(h.due_on) }) : t("No due date")} ·{" "}
+                        {t("{done}/{total} items", { done: h.done_items.length, total: h.checklist.length })}
                       </p>
                     </div>
-                    <Badge tone={h.completed_at ? "accent" : "muted"}>{h.completed_at ? "Done" : "Open"}</Badge>
+                    <Badge tone={h.completed_at ? "accent" : "muted"}>{h.completed_at ? t("Done") : t("Open")}</Badge>
                   </Card>
                 ))
               ) : (
-                <p className="text-sm text-muted">No homework assigned.</p>
+                <p className="text-sm text-muted">{t("No homework assigned.")}</p>
               )}
             </div>
           </section>

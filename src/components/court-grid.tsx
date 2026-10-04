@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { availLabel, type AvailMap } from "@/components/availability-calendar";
 import { cn } from "@/lib/cn";
+import { locale, t } from "@/lib/i18n";
 import {
   addDaysISO,
   kindLabel,
@@ -11,7 +12,7 @@ import {
 } from "@/lib/arena3/labels";
 
 function hhmm(iso: string) {
-  return new Date(iso).toLocaleTimeString("en-GB", {
+  return new Date(iso).toLocaleTimeString(locale(), {
     timeZone: "Asia/Ho_Chi_Minh",
     hour: "2-digit",
     minute: "2-digit",
@@ -23,8 +24,6 @@ export type Court = {
   court_code: string;
   sport: string;
   status: string;
-  convertible?: boolean;
-  pair_court_id?: string | null;
 };
 export type OccSlot = {
   court_id: string;
@@ -39,7 +38,6 @@ export type OccSlot = {
    * has no business knowing.
    */
   ref?: string;
-  convert_group_id?: string | null;
 };
 
 export const HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
@@ -63,7 +61,6 @@ export type SlotState =
   | "in_use"
   | "class"
   | "maintenance"
-  | "merged"
   | "closed"
   | "past";
 
@@ -86,7 +83,6 @@ const STATE_CLASS: Record<SlotState, string> = {
   in_use: "bg-accent-2 text-accent-fg ring-2 ring-accent-2/40",
   class: "bg-fg text-bg",
   maintenance: "stripes bg-wood text-muted",
-  merged: "bg-line-strong/30 text-subtle",
   closed: "stripes bg-line-strong/45 text-subtle",
   past: "bg-wood/30 text-subtle/80 line-through decoration-subtle/40",
 };
@@ -157,7 +153,6 @@ export function slotState(
   if (!occ) return "free";
   if (occ.kind === "hold") return "hold";
   if (occ.kind === "maintenance") return "maintenance";
-  if (occ.kind === "convert") return "merged";
   if (occ.kind === "session") return "class";
   return isNow(date, hour, now) ? "in_use" : "booked";
 }
@@ -234,7 +229,7 @@ export function DateStrip({
             )}
           >
             <span className="text-2xs font-medium uppercase tracking-wide opacity-70">
-              {it.isToday ? "Today" : it.wd}
+              {it.isToday ? t("Today") : it.wd}
             </span>
             <span className="font-display text-xl tabular-nums leading-none">{it.day}</span>
             {avail ? <span className="mt-0.5 text-2xs leading-none opacity-80">{availLabel(avail[it.iso])}</span> : null}
@@ -248,14 +243,14 @@ export function DateStrip({
 /**
  * The key to the grid.
  *
- * `compact` drops the two states a member never has to reason about — a merged
- * court and a closed one are the centre's business, not theirs — so the public
+ * `compact` drops the two states a member never has to reason about — a closed
+ * court is the centre's business, not theirs — so the public
  * schedule reads in one line instead of two.
  */
 export function CourtLegend({ compact = false }: { compact?: boolean }) {
   const order: SlotState[] = compact
     ? ["free", "hold", "booked", "in_use", "class", "past"]
-    : ["free", "hold", "booked", "in_use", "class", "maintenance", "merged", "closed", "past"];
+    : ["free", "hold", "booked", "in_use", "class", "maintenance", "closed", "past"];
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 text-2xs text-muted">
       {order.map((s) => (
@@ -294,19 +289,23 @@ function NoFreeSlots({
   onPickDate?: (date: string) => void;
 }) {
   const tomorrow = addDaysISO(date, 1);
-  const what = sport ? sportLabel(sport).toLowerCase() : "court";
+  const sportName = sport ? sportLabel(sport).toLowerCase() : "";
   const offers = (onPickDate ? 1 : 0) + (onPickSport ? alternatives.length : 0);
   return (
     <div className="rounded-[var(--radius-xl)] border border-hold/30 bg-hold/5 p-4">
       <p className="text-sm font-medium">
         {dayOver
-          ? `Play has finished for the day on ${sport ? sportLabel(sport).toLowerCase() : "every court"}.`
-          : `Every ${what} hour left is taken.`}
+          ? sport
+            ? t("Play has finished for the day on {sport}.", { sport: sportName })
+            : t("Play has finished for the day on every court.")
+          : sport
+            ? t("Every {sport} hour left is taken.", { sport: sportName })
+            : t("Every court hour left is taken.")}
       </p>
       <p className="mt-1 text-sm text-muted">
         {dayOver
-          ? `The hall opens again at 06:00.${offers ? " Pick the next day below." : ""}`
-          : `Nothing has gone wrong — this is a full day.${offers ? " Here is what is still open." : ""}`}
+          ? `${t("The hall opens again at 06:00.")}${offers ? ` ${t("Pick the next day below.")}` : ""}`
+          : `${t("Nothing has gone wrong — this is a full day.")}${offers ? ` ${t("Here is what is still open.")}` : ""}`}
       </p>
       {offers ? (
         <div className="mt-3 flex flex-wrap gap-2">
@@ -316,7 +315,7 @@ function NoFreeSlots({
               onClick={() => onPickDate(tomorrow)}
               className="min-h-9 rounded-[var(--radius-pill)] border border-line bg-surface px-4 text-xs font-medium shadow-[var(--shadow-border)] transition-colors duration-150 hover:bg-wood"
             >
-              Try {weekdayShort(tomorrow)} {Number(tomorrow.slice(8, 10))}
+              {t("Try {day} {n}", { day: weekdayShort(tomorrow), n: Number(tomorrow.slice(8, 10)) })}
             </button>
           ) : null}
           {onPickSport
@@ -327,7 +326,7 @@ function NoFreeSlots({
                   onClick={() => onPickSport(a.sport)}
                   className="min-h-9 rounded-[var(--radius-pill)] border border-line bg-surface px-4 text-xs font-medium shadow-[var(--shadow-border)] transition-colors duration-150 hover:bg-wood"
                 >
-                  {sportLabel(a.sport)} · {a.count} free
+                  {t("{sport} · {n} free", { sport: sportLabel(a.sport), n: a.count })}
                 </button>
               ))
             : null}
@@ -346,7 +345,6 @@ export function CourtGrid({
   onInspect,
   onPickSport,
   onPickDate,
-  canRelease = true,
   legendCompact = false,
   selected,
 }: {
@@ -361,13 +359,6 @@ export function CourtGrid({
   onPickSport?: (sport: string) => void;
   /** Offered when the whole day is sold out. */
   onPickDate?: (date: string) => void;
-  /**
-   * Whether tapping a merged cell hands the paired court back.
-   *
-   * That is a staff action — on the public schedule a visitor would be
-   * clicking a button that unmerges a basketball court.
-   */
-  canRelease?: boolean;
   legendCompact?: boolean;
   /** The hour the caller is currently asking about, marked on the grid. */
   selected?: { courtId: string; hour: number } | null;
@@ -393,8 +384,10 @@ export function CourtGrid({
   if (list.length === 0) {
     return (
       <div className="grid place-items-center gap-1 rounded-[var(--radius-xl)] bg-surface px-6 py-14 text-center shadow-[var(--shadow-border)]">
-        <p className="font-medium">No {sport ? sportLabel(sport).toLowerCase() : ""} courts</p>
-        <p className="text-sm text-muted">Nothing is set up for this sport yet. Try another filter.</p>
+        <p className="font-medium">
+          {sport ? t("No {sport} courts", { sport: sportLabel(sport).toLowerCase() }) : t("No courts")}
+        </p>
+        <p className="text-sm text-muted">{t("Nothing is set up for this sport yet. Try another filter.")}</p>
       </div>
     );
   }
@@ -403,7 +396,7 @@ export function CourtGrid({
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <CourtLegend compact={legendCompact} />
-        <p className="text-xs tabular-nums text-muted">{free} free slots left</p>
+        <p className="text-xs tabular-nums text-muted">{t("{n} free slots left", { n: free })}</p>
       </div>
       {free === 0 ? (
         <NoFreeSlots
@@ -416,10 +409,10 @@ export function CourtGrid({
         />
       ) : null}
       {!hasClass ? (
-        <p className="text-sm text-muted">No classes scheduled on court today — you are seeing member bookings only.</p>
+        <p className="text-sm text-muted">{t("No classes scheduled on court today — you are seeing member bookings only.")}</p>
       ) : null}
 
-      <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 md:hidden">
+      <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 md:hidden" role="region" aria-label={t("Courts, scrolls sideways")} tabIndex={0}>
         {list.map((c) => (
           <div
             key={c.id}
@@ -439,7 +432,7 @@ export function CourtGrid({
                 const title = cellTitle(state, occ);
                 // Past hours are shown, never offered — seeing the whole day is
                 // the point of the grid, but nothing can be sold backwards.
-                const clickable = onPick && (isBookable(state) || (canRelease && state === "merged"));
+                const clickable = onPick && (isBookable(state));
                 const inspect = !clickable && onInspect && canInspect(occ) ? occ : null;
                 const cls = cn(
                   "grid min-h-11 place-items-center rounded-[var(--radius-xs)] text-2xs font-medium tabular-nums",
@@ -455,7 +448,7 @@ export function CourtGrid({
                       key={h}
                       type="button"
                       title={title}
-                      aria-label={`${slotStateLabel(state)} · ${c.court_code} at ${label}:00 — show details`}
+                      aria-label={t("{state} · {court} at {time} — show details", { state: slotStateLabel(state), court: c.court_code, time: `${label}:00` })}
                       onClick={() => onInspect!(c, h, inspect)}
                       className={cn(cls, "transition-transform duration-150 active:scale-95")}
                     >
@@ -474,8 +467,8 @@ export function CourtGrid({
                   <button
                     key={h}
                     type="button"
-                    title={state === "merged" ? "Tap to release the paired court" : title}
-                    aria-label={`${slotStateLabel(state)} · ${c.court_code} at ${label}:00`}
+                    title={title}
+                    aria-label={t("{state} · {court} at {time}", { state: slotStateLabel(state), court: c.court_code, time: `${label}:00` })}
                     onClick={() => onPick(c, h)}
                     className={cn(
                       cls,
@@ -492,7 +485,7 @@ export function CourtGrid({
         ))}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-[var(--radius-xl)] bg-surface shadow-[var(--shadow-border)] md:block">
+      <div className="hidden overflow-x-auto rounded-[var(--radius-xl)] bg-surface shadow-[var(--shadow-border)] md:block" role="region" aria-label={t("Court timetable, scrolls sideways")} tabIndex={0}>
         <div
           className="grid"
           style={{
@@ -508,13 +501,12 @@ export function CourtGrid({
           }}
         >
           <div className="sticky left-0 z-10 bg-surface px-2 py-2 text-2xs font-medium uppercase tracking-wider text-muted">
-            Hour
+            {t("Hour")}
           </div>
           {list.map((c) => (
             <div key={c.id} className="border-l border-line/80 px-1 py-2 text-center">
               <div className="text-xs font-medium">
                 {c.court_code}
-                {c.convertible ? <span className="ml-0.5 text-subtle">↔</span> : null}
               </div>
               {/* A court out of service says so in its own heading — otherwise
                   the only clue is a column of stripes with nothing naming it. */}
@@ -534,7 +526,6 @@ export function CourtGrid({
               date={date}
               onPick={onPick}
               onInspect={onInspect}
-              canRelease={canRelease}
               selected={selected}
               now={now}
             />
@@ -547,7 +538,7 @@ export function CourtGrid({
 
 /** Hover text: the state, plus what is on the court and until when. */
 function cellTitle(state: SlotState, occ: OccSlot | undefined) {
-  if (state === "past") return occ ? `${kindLabel(occ.kind)} · finished` : "This hour has passed";
+  if (state === "past") return occ ? t("{kind} · finished", { kind: kindLabel(occ.kind) }) : t("This hour has passed");
   if (!occ) return slotStateLabel(state);
   return `${slotStateLabel(state)} · ${kindLabel(occ.kind)} ${hhmm(occ.start)}–${hhmm(occ.end)}`;
 }
@@ -559,7 +550,6 @@ function HourRow({
   date,
   onPick,
   onInspect,
-  canRelease,
   selected,
   now,
 }: {
@@ -569,7 +559,6 @@ function HourRow({
   date: string;
   onPick?: (court: Court, hour: number) => void;
   onInspect?: (court: Court, hour: number, occ: OccSlot & { ref: string }) => void;
-  canRelease: boolean;
   selected?: { courtId: string; hour: number } | null;
   now: number;
 }) {
@@ -590,7 +579,7 @@ function HourRow({
         const occ = occAt(slots, c.id, date, hour);
         const state = slotState(c, occ, date, hour, now);
         const title = cellTitle(state, occ);
-        const clickable = onPick && (isBookable(state) || (canRelease && state === "merged"));
+        const clickable = onPick && (isBookable(state));
         const cls = cn(
           "h-9 w-full overflow-hidden rounded-[var(--radius-xs)]",
           STATE_CLASS[state],
@@ -606,7 +595,11 @@ function HourRow({
               <button
                 type="button"
                 title={title}
-                aria-label={`${slotStateLabel(state)} · ${c.court_code} at ${String(hour).padStart(2, "0")}:00 — show details`}
+                aria-label={t("{state} · {court} at {time} — show details", {
+                  state: slotStateLabel(state),
+                  court: c.court_code,
+                  time: `${String(hour).padStart(2, "0")}:00`,
+                })}
                 onClick={() => onInspect!(c, hour, inspect)}
                 className={cn(cls, "block transition-transform duration-150 active:scale-95")}
               />
@@ -624,11 +617,14 @@ function HourRow({
           <div key={c.id} className="border-l border-t border-line/70 p-1">
             <button
               type="button"
-              title={state === "merged" ? "Tap to release the paired court" : title}
+              title={title}
               aria-label={
                 isBookable(state)
-                  ? `Book ${c.court_code} at ${String(hour).padStart(2, "0")}:00`
-                  : `Release the court paired with ${c.court_code} at ${String(hour).padStart(2, "0")}:00`
+                  ? t("Book {court} at {time}", { court: c.court_code, time: `${String(hour).padStart(2, "0")}:00` })
+                  : t("Release the court paired with {court} at {time}", {
+                      court: c.court_code,
+                      time: `${String(hour).padStart(2, "0")}:00`,
+                    })
               }
               onClick={() => onPick(c, hour)}
               className={cn(

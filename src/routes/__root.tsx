@@ -1,11 +1,21 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
+import { LangProvider, t } from "@/lib/i18n";
 import { ClickSpark } from "@/components/fx";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { Toaster } from "sonner";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Arena3";
+
+// Its own component so `t()` runs when the language remounts it, not once in the root render.
+function SkipLink() {
+  return (
+    <a href="#main-content" className="skip-link">
+      {t("Skip to main content")}
+    </a>
+  );
+}
 
 export const Route = createRootRoute({
   head: () => ({
@@ -47,14 +57,14 @@ export const Route = createRootRoute({
       </head>
       <body className="bg-bg text-fg">
         <PreviewHostBridge />
-        <a href="#main-content" className="skip-link">
-          Skip to main content
-        </a>
         <AuthProvider>
           {/* One shared canvas for click feedback across every route; it parks
               its rAF loop whenever there is nothing left to draw. */}
-          <ClickSpark />
-          <Outlet />
+          <LangProvider>
+            <SkipLink />
+            <ClickSpark />
+            <Outlet />
+          </LangProvider>
           <Toaster
             position="top-center"
             offset={72}

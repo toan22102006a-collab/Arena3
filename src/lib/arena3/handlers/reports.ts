@@ -6,6 +6,7 @@ import { buildReportPdf, buildXlsx, type ReportDoc } from "../report-files";
 import { requireRole, type PublicUser } from "../session";
 import { addDays, ictDateString } from "../time";
 import { one } from "../tx";
+import { atRiskBody, attendanceReportBody } from "./attendance";
 import { previousWindow, reportDay, revenueBody, revenueParams } from "./desk";
 
 /** Longest window a report will scan. A quarter, plus slack; a year is a trend, not a report. */
@@ -36,7 +37,7 @@ export async function capacityBody(sql: Sql, from: string, to: string, sport: st
   const openHour = Math.max(0, parseInt(String(settings.open_time).slice(0, 2), 10) || 6);
   const closeHour = Math.min(24, parseInt(String(settings.close_time).slice(0, 2), 10) || 22);
   // "Sold" is a booking or a class session. A hold is unpaid, maintenance is not
-  // a sale, and a convert row mirrors a booking on the paired court.
+  // a sale.
   const cells = await sql.query<CapacityCell>(
     `with slots as (
        select c.id as court_id, c.court_code, c.sport::text as sport, h.hr,
@@ -191,7 +192,7 @@ export async function membersReportBody(sql: Sql, from: string, to: string, spor
             (select count(*) from enrollments e where e.class_id = c.id and e.status = 'confirmed')::int as enrolled,
             (select count(*) from enrollments e where e.class_id = c.id and e.status = 'waitlisted')::int as waitlisted,
             (select count(*) from attendance a join sessions s on s.id = a.session_id
-              where s.class_id = c.id and a.kind = 'session' and a.result is not null
+              where s.class_id = c.id and a.kind = 'session' and a.result is not null and a.result <> 'excused'
                 and (s.start_at at time zone 'Asia/Ho_Chi_Minh')::date between $1::date and $2::date)::int as marked,
             (select count(*) from attendance a join sessions s on s.id = a.session_id
               where s.class_id = c.id and a.kind = 'session' and a.result in ('present','late')
@@ -241,7 +242,7 @@ export async function reportsMembers(sql: Sql, request: Request, user: PublicUse
 
 // ---- files (FR-PAY-07) ---------------------------------------------------------
 
-const KINDS = ["revenue", "capacity", "members"] as const;
+const KINDS = ["revenue", "capacity", "members", "attendance", "at-risk"] as const;
 
 function filterRows(from: string, to: string, extra: [string, string][]): [string, string][] {
   return [["Period", `${formatDate(from)} – ${formatDate(to)}`], ...extra];
@@ -249,6 +250,74 @@ function filterRows(from: string, to: string, extra: [string, string][]): [strin
 
 export async function reportDoc(sql: Sql, request: Request, kind: string): Promise<{ doc: ReportDoc; from: string; to: string }> {
   const generated_at = new Date().toLocaleString("en-GB", { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "medium", timeStyle: "short" });
+  if (kind === "attendance" || kind === "at-risk") {
+    const sp = new URL(request.url).searchParams;
+    const to = reportDay(sp, "to", ictDateString());
+    const from = reportDay(sp, "from", addDays(to, -29));
+    if (kind === "at-risk") {
+      const d = await atRiskBody(sql, null);
+      return {
+        from,
+        to,
+        doc: {
+          title: "At-risk members",
+          filters: [["As of", formatDate(ictDateString())], ["Idle threshold", `${d.idle_days} days`]],
+          generated_at,
+          sections: [
+            {
+              name: "At-risk members",
+              columns: ["Member", "Code", "Phone", "Plan ends", "Attendance %", "Reasons", "Contacted", "Last outcome"],
+              rows: d.items.map((i) => [
+                i.full_name,
+                i.member_code,
+                i.phone,
+                i.plan_end_on,
+                i.attendance_pct,
+                i.reasons.map((r) => r.message).join(" "),
+                i.contacted ? "Yes" : "No",
+                i.last_contact?.outcome ?? null,
+              ]),
+              note: "Listed so the front desk and coaches can call before the plan lapses. No fee or penalty applies.",
+            },
+          ],
+        },
+      };
+    }
+    const sport = sp.get("sport") || null;
+    const d = await attendanceReportBody(sql, from, to, { sport, classId: null, coachScopeId: null });
+    return {
+      from,
+      to,
+      doc: {
+        title: "Attendance report",
+        filters: filterRows(from, to, [["Sport", sport ? sportLabel(sport) : "All"]]),
+        generated_at,
+        sections: [
+          {
+            name: "Summary",
+            columns: ["Present", "Late", "Absent", "Excused", "Attendance %"],
+            rows: [[d.totals.present, d.totals.late, d.totals.absent, d.totals.excused, d.totals.rate_pct]],
+            note: "Attendance % = (Present + Late) ÷ (sessions marked − Excused).",
+          },
+          {
+            name: "By class",
+            columns: ["Class", "Sport", "Coach", "Students", "Present", "Late", "Absent", "Excused", "Attendance %"],
+            rows: d.classes.map((c) => [c.class_code, sportLabel(c.sport), c.coach, c.students, c.present, c.late, c.absent, c.excused, c.rate_pct]),
+          },
+          {
+            name: "By coach",
+            columns: ["Coach", "Classes", "Present", "Late", "Absent", "Excused", "Attendance %"],
+            rows: d.coaches.map((c) => [c.coach, c.classes, c.present, c.late, c.absent, c.excused, c.rate_pct]),
+          },
+          {
+            name: "By student",
+            columns: ["Student", "Code", "Class", "Present", "Late", "Absent", "Excused", "Attendance %"],
+            rows: d.students.map((r) => [r.full_name, r.member_code, r.class_code, r.present, r.late, r.absent, r.excused, r.rate_pct]),
+          },
+        ],
+      },
+    };
+  }
   if (kind === "revenue") {
     const { from, to, method } = revenueParams(request);
     const cur = await revenueBody(sql, from, to, method);

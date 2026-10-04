@@ -1,3 +1,5 @@
+import { tServer } from "@/lib/i18n";
+
 const TOKEN_KEY = "arena3.token";
 const USER_KEY = "arena3.user";
 
@@ -71,12 +73,20 @@ export type ApiErrorBody = {
   requires_confirm?: boolean;
 };
 
+/**
+ * The server answers in English. The message is translated here, once, so every screen that
+ * shows `e.message` or `e.body.message` reads in the language the UI is in at the moment the
+ * error arrives (`tServer` returns English unchanged, and anything it does not know).
+ */
 export class ApiClientError extends Error {
-  constructor(
-    public status: number,
-    public body: ApiErrorBody,
-  ) {
-    super(body.message);
+  status: number;
+  body: ApiErrorBody;
+  constructor(status: number, body: ApiErrorBody | null) {
+    const raw = typeof body?.message === "string" ? body.message : "Request failed";
+    const message = tServer(raw);
+    super(message);
+    this.status = status;
+    this.body = { code: "ERROR", ...(body ?? {}), message };
   }
 }
 

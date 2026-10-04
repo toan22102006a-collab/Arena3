@@ -1,5 +1,5 @@
 import { Link, Navigate, createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -58,6 +58,8 @@ import {
 import { COACHES, type CoachCard } from "@/lib/arena3/coaches";
 import { addDaysISO, levelLabel, rruleLabel, sportLabel, weekdayShort } from "@/lib/arena3/labels";
 import { money } from "@/components/shell";
+import { LangSwitch } from "@/components/lang-switch";
+import { t, tk } from "@/lib/i18n";
 
 export const Route = createFileRoute("/")({
   // Today's schedule loads with the page rather than behind a sign-in wall:
@@ -73,10 +75,36 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
+/**
+ * Rich sentences: translate the whole sentence with `{name}` placeholders set to `mark("name")`,
+ * then `rich()` swaps each marker for a styled node, so word order stays the translator's call.
+ */
+const mark = (k: string) => `\u0001${k}\u0002`;
+function rich(text: string, nodes: Record<string, ReactNode>): ReactNode {
+  return text.split(/\u0001(\w+)\u0002/).map((part, i) =>
+    i % 2 === 0 ? part : <span key={i}>{nodes[part]}</span>,
+  );
+}
+
+/** Short weekday for display; `weekdayShort` keeps its English codes for the weekend check. */
+const WD_SHORT: Record<string, string> = {
+  Mon: tk("Mon"),
+  Tue: tk("Tue"),
+  Wed: tk("Wed"),
+  Thu: tk("Thu"),
+  Fri: tk("Fri"),
+  Sat: tk("Sat"),
+  Sun: tk("Sun"),
+};
+const wdLabel = (iso: string) => {
+  const w = weekdayShort(iso);
+  return t(WD_SHORT[w] ?? w);
+};
+
 function Home() {
-  const t = getToken();
+  const token = getToken();
   const u = getStoredUser();
-  if (t && u) return <Navigate to={homeFor(u.role)} />;
+  if (token && u) return <Navigate to={homeFor(u.role)} />;
   return <Landing />;
 }
 
@@ -114,11 +142,11 @@ function useVenueHour() {
  * reassurance does not belong in front of the decision.
  */
 const NAV: [string, string][] = [
-  ["#schedule", "Today's schedule"],
-  ["#courts", "Courts & pricing"],
-  ["#classes", "Classes"],
-  ["#coaches", "Coaches"],
-  ["#plans", "Plans"],
+  ["#schedule", tk("Today's schedule")],
+  ["#courts", tk("Courts & pricing")],
+  ["#classes", tk("Classes")],
+  ["#coaches", tk("Coaches")],
+  ["#plans", tk("Plans")],
 ];
 
 /**
@@ -183,14 +211,14 @@ function SiteHeader({ reduced }: { reduced: boolean }) {
             The landing used a wide-tracked display face that read as decoration
             next to it, so the two halves of the same product looked like two
             different products. */}
-        <nav className="hidden items-center gap-1 lg:flex">
+        <nav className="hidden items-center gap-1 xl:flex">
           {NAV.map(([href, label]) => (
             <a
               key={href}
               href={href}
-              className="flex h-9 items-center rounded-[var(--radius-pill)] px-3 text-xs font-semibold uppercase tracking-[0.1em] text-muted transition-colors duration-200 hover:bg-wood hover:text-fg"
+              className="flex h-9 items-center whitespace-nowrap rounded-[var(--radius-pill)] px-3 text-xs font-semibold uppercase tracking-[0.1em] text-muted transition-colors duration-200 hover:bg-wood hover:text-fg"
             >
-              {label}
+              {t(label)}
             </a>
           ))}
         </nav>
@@ -198,22 +226,23 @@ function SiteHeader({ reduced }: { reduced: boolean }) {
             the left of the rule, what belongs to a person is on the right. */}
         <div className="hidden items-center gap-2 md:flex">
           <a href="#schedule">
-            <Button>Book a court</Button>
+            <Button>{t("Book a court")}</Button>
           </a>
           <span aria-hidden className="mx-1 h-6 w-px bg-line-strong/70" />
           <Link to="/login">
-            <Button variant="ghost">Sign in</Button>
+            <Button variant="ghost">{t("Sign in")}</Button>
           </Link>
           <Link to="/register">
-            <Button variant="outline">Join</Button>
+            <Button variant="outline">{t("Join")}</Button>
           </Link>
+          <LangSwitch />
         </div>
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          aria-label={open ? "Close menu" : "Open menu"}
-          className="grid size-10 place-items-center rounded-[var(--radius-md)] border border-line bg-surface/70 text-fg transition-colors duration-200 hover:border-accent hover:bg-wood lg:hidden"
+          aria-label={open ? t("Close menu") : t("Open menu")}
+          className="grid size-10 place-items-center rounded-[var(--radius-md)] border border-line bg-surface/70 text-fg transition-colors duration-200 hover:border-accent hover:bg-wood xl:hidden"
         >
           {open ? <X className="size-5" strokeWidth={1.75} /> : <Menu className="size-5" strokeWidth={1.75} />}
         </button>
@@ -227,13 +256,13 @@ function SiteHeader({ reduced }: { reduced: boolean }) {
             animate={{ height: "auto", opacity: 1 }}
             exit={reduced ? undefined : { height: 0, opacity: 0 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="overflow-hidden border-t border-line/70 bg-surface/95 backdrop-blur-sm lg:hidden"
+            className="overflow-hidden border-t border-line/70 bg-surface/95 backdrop-blur-sm xl:hidden"
           >
             <nav className="mx-auto grid max-w-6xl gap-1 px-4 py-3">
               {/* The first nav entry is the schedule, which is what this button
                   does — so the sheet shows the action and then the rest. */}
               <a href="#schedule" onClick={() => setOpen(false)} className="mb-1 block">
-                <Button className="w-full">Book a court</Button>
+                <Button className="w-full">{t("Book a court")}</Button>
               </a>
               {NAV.slice(1).map(([href, label]) => (
                 <a
@@ -242,18 +271,21 @@ function SiteHeader({ reduced }: { reduced: boolean }) {
                   onClick={() => setOpen(false)}
                   className="rounded-[var(--radius-md)] px-3 py-3 text-sm font-medium text-fg transition-colors duration-200 hover:bg-wood"
                 >
-                  {label}
+                  {t(label)}
                 </a>
               ))}
               <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line/70 pt-3">
                 <Link to="/login" onClick={() => setOpen(false)}>
                   <Button variant="outline" className="w-full">
-                    Sign in
+                    {t("Sign in")}
                   </Button>
                 </Link>
                 <Link to="/register" onClick={() => setOpen(false)}>
-                  <Button className="w-full">Join</Button>
+                  <Button className="w-full">{t("Join")}</Button>
                 </Link>
+              </div>
+              <div className="flex justify-center pt-1 md:hidden">
+                <LangSwitch />
               </div>
             </nav>
           </motion.div>
@@ -322,8 +354,8 @@ function Landing() {
   const schedFree = freeHours(sched.courts, sched.slots, sched.date, now).length;
   const schedDay =
     sched.date === availability.date
-      ? "today"
-      : `on ${weekdayShort(sched.date)} ${Number(sched.date.slice(8, 10))}`;
+      ? t("today")
+      : t("on {day}", { day: `${wdLabel(sched.date)} ${Number(sched.date.slice(8, 10))}` });
   const cheapestHour = Math.min(...prices.filter((p) => !p.court_id).map((p) => p.price_vnd));
 
   /*
@@ -357,21 +389,21 @@ function Landing() {
       photo: media.badminton,
       count: 12,
       codes: "CL-01…12",
-      note: "Feather-grade shuttles, 9m ceiling, wood sprung floor.",
+      note: t("Feather-grade shuttles, 9m ceiling, wood sprung floor."),
     },
     {
       id: "basketball",
       photo: media.basketball,
       count: 2,
       codes: "BR-01, BR-02",
-      note: "Full-size hardwood, breakaway rims, convertible to four badminton bays.",
+      note: t("Full-size hardwood with breakaway rims."),
     },
     {
       id: "volleyball",
       photo: media.volleyball,
       count: 2,
       codes: "BC-01, BC-02",
-      note: "Competition net height, referee stand, ten-second reset between sets.",
+      note: t("Competition net height, referee stand, ten-second reset between sets."),
     },
   ];
 
@@ -383,45 +415,45 @@ function Landing() {
   const facilities = [
     {
       code: "CL-01…12",
-      name: "Badminton courts",
+      name: t("Badminton courts"),
       photo: media.badmintonCourt,
-      note: "Twelve bays on sprung wood. Feather-grade shuttles are issued at the counter, not sold from a machine.",
+      note: t("Twelve bays on sprung wood. Feather-grade shuttles are issued at the counter, not sold from a machine."),
     },
     {
       code: "BR-01, BR-02",
-      name: "Basketball courts",
+      name: t("Basketball courts"),
       photo: media.basketballCourt,
-      note: "Full-size hardwood with breakaway rims — and each one converts to four badminton bays when the schedule needs them.",
+      note: t("Full-size hardwood with breakaway rims."),
     },
     {
       code: "BC-01, BC-02",
-      name: "Volleyball courts",
+      name: t("Volleyball courts"),
       photo: media.volleyballCourt,
-      note: "Competition net height with a referee stand on the side and a ten-second reset between sets.",
+      note: t("Competition net height with a referee stand on the side and a ten-second reset between sets."),
     },
     {
-      code: "Reception",
-      name: "Front desk",
+      code: t("Reception"),
+      name: t("Front desk"),
       photo: media.reception,
-      note: "Staffed the whole time we are open. Rackets, shuttle tubes and match balls go out on your tab and settle with the court.",
+      note: t("Staffed the whole time we are open. Rackets, shuttle tubes and match balls go out on your tab and settle with the court."),
     },
   ];
 
   const steps = [
     {
       n: "01",
-      title: "Pick your slot",
-      body: "Live court map, hour by hour. What you see is what is actually free — holds expire in front of you.",
+      title: t("Pick your slot"),
+      body: t("Live court map, hour by hour. What you see is what is actually free — holds expire in front of you."),
     },
     {
       n: "02",
-      title: "Hold it for five minutes",
-      body: "The slot is yours while you decide. No card up front, no deposit, no phone call.",
+      title: t("Hold it for five minutes"),
+      body: t("The slot is yours while you decide. No card up front, no phone call."),
     },
     {
       n: "03",
-      title: "Pay at the desk",
-      body: "Cash, transfer or straight off your plan's hour balance. Three taps at reception and you are on court.",
+      title: t("Pay at the desk"),
+      body: t("Cash, transfer or straight off your plan's hour balance. Three taps at reception and you are on court."),
     },
   ];
 
@@ -474,10 +506,10 @@ function Landing() {
               <p className="kicker text-2xs text-on-media-muted">
                 <ShinyText className="shiny-on-media" speed={6}>
                   {isOpen == null
-                    ? "Indoor sports centre"
+                    ? t("Indoor sports centre")
                     : isOpen
-                      ? `Open now · until ${CLOSE_HOUR}:00`
-                      : `Closed · opens ${String(OPEN_HOUR).padStart(2, "0")}:00`}
+                      ? t("Open now · until {time}", { time: `${CLOSE_HOUR}:00` })
+                      : t("Closed · opens {time}", { time: `${String(OPEN_HOUR).padStart(2, "0")}:00` })}
                 </ShinyText>
               </p>
             </div>
@@ -488,10 +520,10 @@ function Landing() {
                 built out of the two faces Arena3 already uses. */}
             <h1 className="mt-4">
               <span className="block font-display text-4xl font-medium italic leading-[0.96] sm:text-6xl">
-                <WordReveal text="Courts, classes, plans —" delay={0.35} />
+                <WordReveal text={t("Courts, classes, plans —")} delay={0.35} />
               </span>
               <span className="athletic media-glow -mt-1 block text-[3.25rem] leading-[0.86] sm:-mt-2 sm:text-[5.5rem]">
-                <WordReveal text="one calendar." delay={0.75} className="text-gradient-media" />
+                <WordReveal text={t("one calendar.")} delay={0.75} className="text-gradient-media py-[0.3em] -my-[0.3em]" />
               </span>
             </h1>
 
@@ -501,8 +533,7 @@ function Landing() {
               transition={{ delay: 1.2, duration: 0.7 }}
               className="mt-5 max-w-lg text-on-media-muted"
             >
-              Badminton, basketball, volleyball. Open 06:00–22:00, every day. Book a court in five
-              minutes; the desk closes you out in three taps.
+              {t("Badminton, basketball, volleyball. Open 06:00–22:00, every day. Book a court in five minutes; the desk closes you out in three taps.")}
             </motion.p>
 
             <motion.div
@@ -525,7 +556,7 @@ function Landing() {
                     size="lg"
                     className="group bg-on-media text-fg shadow-[var(--shadow-soft)] hover:bg-surface hover:shadow-[var(--shadow-soft)]"
                   >
-                    Book a court
+                    {t("Book a court")}
                     <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-1" />
                   </Button>
                 </a>
@@ -535,7 +566,7 @@ function Landing() {
                   size="lg"
                   className="group border-on-media/40 bg-on-media/10 text-on-media shadow-none backdrop-blur-sm hover:border-on-media/70 hover:bg-on-media/20"
                 >
-                  See courts &amp; pricing
+                  {t("See courts & pricing")}
                   {/* Diagonal arrow, unseen.co's tell for a "go and look" link. */}
                   <ArrowUpRight className="size-4 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                 </Button>
@@ -550,15 +581,22 @@ function Landing() {
               transition={{ delay: 1.5, duration: 0.6 }}
               className="mt-4 text-sm text-on-media-muted"
             >
-              <span className="tabular-nums text-on-media">{schedFree}</span> court hours still free{" "}
-              {schedDay} · from{" "}
-              <span className="tabular-nums text-on-media">{money(cheapestHour)}</span>/hr · held
-              five minutes while you decide.
+              {rich(
+                t("{n} court hours still free {day} · from {price}/hr · held five minutes while you decide.", {
+                  n: mark("n"),
+                  day: schedDay,
+                  price: mark("price"),
+                }),
+                {
+                  n: <span className="tabular-nums text-on-media">{schedFree}</span>,
+                  price: <span className="tabular-nums text-on-media">{money(cheapestHour)}</span>,
+                },
+              )}
               <span className="mt-1 block">
                 {/* Membership is the third-visit decision, so it stays a link
                     under the fold of the offer rather than a third button. */}
                 <a href="#plans" className="link-underline text-on-media">
-                  Or see membership plans
+                  {t("Or see membership plans")}
                 </a>
               </span>
             </motion.p>
@@ -579,7 +617,7 @@ function Landing() {
             animate={{ opacity: 1 }}
             transition={{ delay: 1.8 }}
           >
-            <span className="kicker text-2xs text-on-media-muted">Scroll</span>
+            <span className="kicker text-2xs text-on-media-muted">{t("Scroll")}</span>
             <span className="relative block h-12 w-px overflow-hidden bg-on-media/25">
               <motion.span
                 className="absolute inset-x-0 top-0 block h-5 bg-on-media/80"
@@ -622,29 +660,29 @@ function Landing() {
             {
               to: schedFree,
               suffix: "",
-              label: "Court hours free",
-              note: `Live from the booking grid · ${schedDay}`,
+              label: t("Court hours free"),
+              note: t("Live from the booking grid · {day}", { day: schedDay }),
               href: "#schedule",
             },
             {
               to: 16,
               suffix: "",
-              label: "Courts & bays",
-              note: "12 badminton · 2 basketball · 2 volleyball",
+              label: t("Courts & bays"),
+              note: t("12 badminton · 2 basketball · 2 volleyball"),
               href: "#courts",
             },
             {
               to: 16,
               suffix: "h",
-              label: "Open every day",
-              note: "06:00–22:00, no closing day",
+              label: t("Open every day"),
+              note: t("06:00–22:00, no closing day"),
               href: "#schedule",
             },
             {
               to: 4,
               suffix: "",
-              label: "Head coaches",
-              note: "One per sport, classes on the same calendar",
+              label: t("Head coaches"),
+              note: t("One per sport, classes on the same calendar"),
               href: "#coaches",
             },
           ].map((s) => (
@@ -676,13 +714,12 @@ function Landing() {
       */}
       <section id="courts" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20">
         <Reveal>
-          <p className="kicker text-2xs text-muted">Three sports</p>
+          <p className="kicker text-2xs text-muted">{t("Three sports")}</p>
           <h2 className="mt-2 font-display text-4xl sm:text-5xl">
-            <SplitText text="Courts & pricing" />
+            <SplitText text={t("Courts & pricing")} />
           </h2>
           <p className="mt-3 max-w-md text-muted">
-            One hall, sixteen playing surfaces. Either basketball floor converts to four badminton
-            bays when the schedule asks for it.
+            {t("One hall, sixteen playing surfaces — badminton, basketball and volleyball under one roof.")}
           </p>
         </Reveal>
 
@@ -706,7 +743,9 @@ function Landing() {
                         <MediaCaption>
                           <p className="athletic text-3xl sm:text-4xl">{sportLabel(s.id)}</p>
                           <p className="mt-1 text-sm text-on-media-muted">
-                            {s.count} {s.count === 1 ? "court" : "courts"} · {s.codes}
+                            {s.count === 1
+                              ? t("1 court · {codes}", { codes: s.codes })
+                              : t("{n} courts · {codes}", { n: s.count, codes: s.codes })}
                           </p>
                         </MediaCaption>
                       </Cover>
@@ -714,13 +753,13 @@ function Landing() {
                     <div className="flex flex-1 flex-col p-5">
                       <dl className="grid grid-cols-2 gap-3 border-b border-line pb-4">
                         <div>
-                          <dt className="kicker text-2xs text-muted">Off-peak</dt>
+                          <dt className="kicker text-2xs text-muted">{t("Off-peak")}</dt>
                           <dd className="font-display text-2xl tabular-nums">
                             {off ? money(off.price_vnd) : "—"}
                           </dd>
                         </div>
                         <div>
-                          <dt className="kicker text-2xs text-muted">Peak</dt>
+                          <dt className="kicker text-2xs text-muted">{t("Peak")}</dt>
                           <dd className="font-display text-2xl tabular-nums text-accent-2">
                             {peak ? money(peak.price_vnd) : "—"}
                           </dd>
@@ -729,11 +768,11 @@ function Landing() {
                       <p className="mt-4 flex-1 text-sm text-muted">{s.note}</p>
                       <div className="mt-4 flex items-center justify-between gap-3">
                         <p className="text-xs tabular-nums text-muted">
-                          {openNow ? `${openNow} hours free` : "Fully booked"}
+                          {openNow ? t("{n} hours free", { n: openNow }) : t("Fully booked")}
                           <span className="text-subtle"> · {schedDay}</span>
                         </p>
                         <Button size="sm" onClick={() => showTimes(s.id)}>
-                          See free times
+                          {t("See free times")}
                         </Button>
                       </div>
                     </div>
@@ -748,13 +787,12 @@ function Landing() {
       {/* ── Today's schedule ─────────────────────────────────────── */}
       <section id="schedule" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-20">
         <Reveal>
-          <p className="kicker text-2xs text-muted">Live availability</p>
+          <p className="kicker text-2xs text-muted">{t("Live availability")}</p>
           <h2 className="mt-2 font-display text-4xl sm:text-5xl">
-            <SplitText text="When is a court free?" splitBy="words" stagger={0.06} />
+            <SplitText text={t("When is a court free?")} splitBy="words" stagger={0.06} />
           </h2>
           <p className="mt-3 max-w-lg text-muted">
-            Every hour in the hall, exactly as it stands. Tap a free one and it is yours for five
-            minutes while you sign in — no card up front, no phone call.
+            {t("Every hour in the hall, exactly as it stands. Tap a free one and it is yours for five minutes while you sign in — no card up front, no phone call.")}
           </p>
         </Reveal>
 
@@ -767,7 +805,7 @@ function Landing() {
               setPicked(null);
             }}
             options={[
-              { value: "", label: "All" },
+              { value: "", label: t("All") },
               { value: "badminton", label: sportLabel("badminton") },
               { value: "basketball", label: sportLabel("basketball") },
               { value: "volleyball", label: sportLabel("volleyball") },
@@ -795,26 +833,26 @@ function Landing() {
                     {String(picked.hour).padStart(2, "0")}:00–
                     {String(picked.hour + 1).padStart(2, "0")}:00
                     <span className="ml-2 text-muted">
-                      {weekdayShort(schedDate)} {Number(schedDate.slice(8, 10))}
+                      {wdLabel(schedDate)} {Number(schedDate.slice(8, 10))}
                     </span>
                   </p>
                   <p className="mt-1 text-sm text-muted">
                     {(() => {
                       const p = priceFor(prices, picked.court.sport, schedDate, picked.hour);
-                      return p ? `${money(p)} for the hour` : "Priced at the desk";
+                      return p ? t("{price} for the hour", { price: money(p) }) : t("Priced at the desk");
                     })()}{" "}
-                    · held five minutes once you sign in
+                    · {t("held five minutes once you sign in")}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Link to="/login">
-                    <Button>Sign in &amp; hold it</Button>
+                    <Button>{t("Sign in & hold it")}</Button>
                   </Link>
                   <Link to="/register">
-                    <Button variant="outline">Create an account</Button>
+                    <Button variant="outline">{t("Create an account")}</Button>
                   </Link>
                   <Button variant="ghost" onClick={() => setPicked(null)}>
-                    Pick another
+                    {t("Pick another")}
                   </Button>
                 </div>
               </Card>
@@ -840,7 +878,6 @@ function Landing() {
                 setPicked(null);
               }}
               onPickDate={setSchedDate}
-              canRelease={false}
               legendCompact
               selected={picked ? { courtId: picked.court.id, hour: picked.hour } : null}
             />
@@ -851,7 +888,7 @@ function Landing() {
       {/* ── Class marquee ────────────────────────────────────────── */}
       {classes.length ? (
         <section
-          aria-label="Classes running this week"
+          aria-label={t("Classes running this week")}
           className="relative z-0 overflow-hidden border-y border-line bg-surface/80 py-5"
         >
           {/* Speed and direction track the scroll wheel: flicking down drives
@@ -874,13 +911,12 @@ function Landing() {
       ) : null}
 
       {/* ── Manifesto ────────────────────────────────────────────── */}
-      <section aria-label="What Arena3 is for" className="mx-auto max-w-4xl px-4 py-24">
+      <section aria-label={t("What Arena3 is for")} className="mx-auto max-w-4xl px-4 py-24">
         {/* Scrubbed rather than triggered: the words resolve out of a blur at
             whatever pace the reader scrolls, which is the one place on the page
             worth slowing someone down. */}
         <ScrollReveal className="font-display text-3xl leading-snug sm:text-[2.6rem] sm:leading-[1.25]">
-          A court should not need a phone call. Pick the hour you want, hold it while you think, and
-          settle the whole thing — court, class, racket — on one tab at the desk.
+          {t("A court should not need a phone call. Pick the hour you want, hold it while you think, and settle the whole thing — court, class, racket — on one tab at the desk.")}
         </ScrollReveal>
       </section>
 
@@ -890,9 +926,9 @@ function Landing() {
             the canvas loop parks itself once the ripple settles. */}
         <GLBackground variant="dotgrid" className="-z-[1]" color="#1f5c43" gap={30} opacity={0.22} />
         <Reveal>
-          <p className="kicker text-2xs text-muted">Booking</p>
+          <p className="kicker text-2xs text-muted">{t("Booking")}</p>
           <h2 className="mt-2 max-w-xl font-display text-4xl sm:text-5xl">
-            <SplitText text="Three steps, no phone call." />
+            <SplitText text={t("Three steps, no phone call.")} />
           </h2>
         </Reveal>
 
@@ -925,13 +961,12 @@ function Landing() {
       {/* ── Coaches ──────────────────────────────────────────────── */}
       <section id="coaches" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20">
         <Reveal>
-          <p className="kicker text-2xs text-muted">The team</p>
+          <p className="kicker text-2xs text-muted">{t("The team")}</p>
           <h2 className="mt-2 max-w-2xl font-display text-4xl sm:text-5xl">
-            <SplitText text="Coaches who actually take the session — not poster faces." splitBy="words" stagger={0.05} />
+            <SplitText text={t("Coaches who actually take the session — not poster faces.")} splitBy="words" stagger={0.05} />
           </h2>
           <p className="mt-3 max-w-lg text-muted">
-            One head coach per sport. Classes never sit on court time you already bought. Sessions
-            show up in the app the moment you join.
+            {t("One head coach per sport. Classes never sit on court time you already bought. Sessions show up in the app the moment you join.")}
           </p>
         </Reveal>
 
@@ -940,10 +975,10 @@ function Landing() {
             value={coachSport}
             onChange={setCoachSport}
             options={[
-              { value: "", label: "All" },
-              { value: "badminton", label: "Badminton" },
-              { value: "basketball", label: "Basketball" },
-              { value: "volleyball", label: "Volleyball" },
+              { value: "", label: t("All") },
+              { value: "badminton", label: t("Badminton") },
+              { value: "basketball", label: t("Basketball") },
+              { value: "volleyball", label: t("Volleyball") },
             ]}
           />
         </Reveal>
@@ -984,14 +1019,14 @@ function Landing() {
                     </Cover>
                   </GlareHover>
                   <div className="flex flex-1 flex-col p-4">
-                    <p className="flex-1 text-sm font-medium">{c.title}</p>
+                    <p className="flex-1 text-sm font-medium">{t(c.title)}</p>
                     <Button
                       size="sm"
                       variant="outline"
                       className="mt-3 w-full"
                       onClick={() => setOpenCoach(c)}
                     >
-                      View details
+                      {t("View details")}
                     </Button>
                   </div>
                 </Card>
@@ -1007,10 +1042,10 @@ function Landing() {
           footer={
             <>
               <a href="#classes" onClick={() => setOpenCoach(null)}>
-                <Button>See open classes</Button>
+                <Button>{t("See open classes")}</Button>
               </a>
               <Button variant="ghost" onClick={() => setOpenCoach(null)}>
-                Close
+                {t("Close")}
               </Button>
             </>
           }
@@ -1025,13 +1060,13 @@ function Landing() {
               />
               <div>
                 <p className="kicker text-2xs text-muted">{sportLabel(openCoach.sport)}</p>
-                <p className="mt-1 text-sm font-medium">{openCoach.title}</p>
-                <p className="mt-3 text-sm text-muted">{openCoach.blurb}</p>
+                <p className="mt-1 text-sm font-medium">{t(openCoach.title)}</p>
+                <p className="mt-3 text-sm text-muted">{t(openCoach.blurb)}</p>
                 <ul className="mt-4 grid gap-1.5 text-sm text-muted">
                   {openCoach.creds.map((x) => (
                     <li key={x} className="flex gap-2">
                       <span className="text-accent">·</span>
-                      {x}
+                      {t(x)}
                     </li>
                   ))}
                 </ul>
@@ -1044,13 +1079,12 @@ function Landing() {
       {/* ── Facilities ───────────────────────────────────────────── */}
       <section id="facilities" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-20">
         <Reveal>
-          <p className="kicker text-2xs text-muted">The building</p>
+          <p className="kicker text-2xs text-muted">{t("The building")}</p>
           <h2 className="mt-2 max-w-xl font-display text-4xl sm:text-5xl">
-            One roof, sixteen surfaces, one desk.
+            {t("One roof, sixteen surfaces, one desk.")}
           </h2>
           <p className="mt-3 max-w-lg text-muted">
-            Everything the schedule can sell you sits in the same hall — so a court, a class and a
-            racket all close out on one tab at reception.
+            {t("Everything the schedule can sell you sits in the same hall — so a court, a class and a racket all close out on one tab at reception.")}
           </p>
         </Reveal>
 
@@ -1059,16 +1093,15 @@ function Landing() {
             <GlareHover className="rounded-[var(--radius-xl)]" duration={1.1}>
               <Cover
                 src={media.hallCourts}
-                alt="The main hall at Arena3"
+                alt={t("The main hall at Arena3")}
                 className="group aspect-[16/9] rounded-[var(--radius-xl)] shadow-[var(--shadow-border)] sm:aspect-[16/7]"
                 imgClassName="transition-transform duration-[1100ms] ease-[var(--ease-smooth)] group-hover:scale-[1.04]"
               >
                 <MediaCaption>
-                  <p className="kicker text-2xs text-on-media-muted">Main hall</p>
-                  <p className="athletic mt-1.5 text-4xl sm:text-5xl">Sixteen playing surfaces</p>
+                  <p className="kicker text-2xs text-on-media-muted">{t("Main hall")}</p>
+                  <p className="athletic mt-1.5 text-4xl sm:text-5xl">{t("Sixteen playing surfaces")}</p>
                   <p className="mt-2 max-w-md text-sm text-on-media-muted">
-                    A nine-metre ceiling, sprung wood underfoot and lighting rated for evening play
-                    right through to close.
+                    {t("A nine-metre ceiling, sprung wood underfoot and lighting rated for evening play right through to close.")}
                   </p>
                 </MediaCaption>
               </Cover>
@@ -1106,11 +1139,10 @@ function Landing() {
         <div className="grid gap-8 md:grid-cols-[1.1fr_0.9fr]">
           <div>
             <Reveal from="left">
-              <p className="kicker text-2xs text-muted">Court rental</p>
-              <h2 className="mt-2 font-display text-4xl">Peak / off-peak</h2>
+              <p className="kicker text-2xs text-muted">{t("Court rental")}</p>
+              <h2 className="mt-2 font-display text-4xl">{t("Peak / off-peak")}</h2>
               <p className="mt-3 text-muted">
-                Mon–Fri is off-peak until 17:00. Weekends run on the weekend sheet. Members either
-                draw down plan hours or take the percentage off.
+                {t("Mon–Fri is off-peak until 17:00. Weekends run on the weekend sheet. Members either draw down plan hours or take the percentage off.")}
               </p>
             </Reveal>
 
@@ -1123,9 +1155,9 @@ function Landing() {
                 <table className="relative z-[2] w-full text-sm">
                   <thead className="kicker text-left text-2xs text-muted">
                     <tr className="border-b border-line">
-                      <th className="px-4 py-3 font-medium">Sport</th>
-                      <th className="px-4 py-3 font-medium">Off-peak</th>
-                      <th className="px-4 py-3 font-medium">Peak</th>
+                      <th className="px-4 py-3 font-medium">{t("Sport")}</th>
+                      <th className="px-4 py-3 font-medium">{t("Off-peak")}</th>
+                      <th className="px-4 py-3 font-medium">{t("Peak")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1180,9 +1212,9 @@ function Landing() {
           opacity={0.13}
         />
         <Reveal>
-          <p className="kicker text-2xs text-muted">Memberships</p>
+          <p className="kicker text-2xs text-muted">{t("Memberships")}</p>
           <h2 className="mt-2 font-display text-4xl sm:text-5xl">
-            <SplitText text="Buy in the app, settle at the desk" splitBy="words" stagger={0.06} />
+            <SplitText text={t("Buy in the app, settle at the desk")} splitBy="words" stagger={0.06} />
           </h2>
         </Reveal>
 
@@ -1211,24 +1243,27 @@ function Landing() {
                     <div className="relative z-[2] flex flex-1 flex-col p-5">
                       {featured ? (
                         <span className="mb-2 inline-flex w-fit items-center gap-1 rounded-full bg-accent/12 px-2.5 py-1 text-2xs font-medium uppercase tracking-wider text-accent-2">
-                          <Sparkles className="size-3" /> Most picked
+                          <Sparkles className="size-3" /> {t("Most picked")}
                         </span>
                       ) : null}
                       <h3 className="font-display text-2xl">{p.name}</h3>
                       <p className="mt-3 font-display text-3xl tabular-nums">{money(p.price_vnd)}</p>
                       <p className="mt-2 flex-1 text-sm text-muted">
-                        {p.duration_days ? `${p.duration_days} days` : "Per session"} ·{" "}
-                        {p.court_hours} court hours · {p.court_discount_pct}% off
+                        {p.duration_days
+                          ? t("{n} days", { n: p.duration_days })
+                          : t("Per session")}{" "}
+                        · {t("{n} court hours", { n: p.court_hours })} ·{" "}
+                        {t("{n}% off", { n: p.court_discount_pct })}
                       </p>
                       <Link to="/register" className="mt-5 block">
                         {/* Only the recommended plan gets the travelling border —
                             on all three it would stop meaning anything. */}
                         {featured ? (
                           <StarBorder className="w-full" innerClassName="bg-surface">
-                            <Button className="w-full">Join to buy</Button>
+                            <Button className="w-full">{t("Join to buy")}</Button>
                           </StarBorder>
                         ) : (
-                          <Button className="w-full">Join to buy</Button>
+                          <Button className="w-full">{t("Join to buy")}</Button>
                         )}
                       </Link>
                     </div>
@@ -1254,11 +1289,10 @@ function Landing() {
       */}
       <section id="classes" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-20">
         <Reveal>
-          <p className="kicker text-2xs text-muted">Open classes</p>
-          <h2 className="mt-2 font-display text-4xl">Enrol while seats last</h2>
+          <p className="kicker text-2xs text-muted">{t("Open classes")}</p>
+          <h2 className="mt-2 font-display text-4xl">{t("Enrol while seats last")}</h2>
           <p className="mt-3 max-w-lg text-muted">
-            Coached ladders run on the same calendar as the courts, so a class never sits on an hour
-            you have already bought. Seats are first come.
+            {t("Coached ladders run on the same calendar as the courts, so a class never sits on an hour you have already bought. Seats are first come.")}
           </p>
         </Reveal>
 
@@ -1303,11 +1337,15 @@ function Landing() {
                     </div>
                     <div className="mt-auto flex items-center justify-between gap-2 pt-3">
                       <span className={`text-xs ${nearlyFull ? "text-hold" : "text-muted"}`}>
-                        {full ? "Full — waitlist open" : `${left} ${left === 1 ? "seat" : "seats"} left`}
+                        {full
+                          ? t("Full — waitlist open")
+                          : left === 1
+                            ? t("1 seat left")
+                            : t("{n} seats left", { n: left })}
                       </span>
                       <Link to="/register">
                         <Button size="sm" variant={full ? "outline" : "primary"}>
-                          {full ? "Join the waitlist" : "Enrol"}
+                          {full ? t("Join the waitlist") : t("Enrol")}
                         </Button>
                       </Link>
                     </div>
@@ -1317,7 +1355,7 @@ function Landing() {
             );
           })}
           {!classes.length ? (
-            <p className="text-sm text-muted">No classes published yet.</p>
+            <p className="text-sm text-muted">{t("No classes published yet.")}</p>
           ) : null}
         </Stagger>
       </section>
@@ -1329,22 +1367,22 @@ function Landing() {
         <Parallax speed={0.09} className="overflow-hidden rounded-[var(--radius-xl)]">
           <Cover
             src={media.exterior}
-            alt="The Arena3 frontage at dusk"
+            alt={t("The Arena3 frontage at dusk")}
             className="min-h-[26rem]"
             scrim="hero"
           >
             <div className="relative flex min-h-[26rem] flex-col justify-end p-6 sm:p-12">
               <Reveal>
                 <p className="athletic max-w-md text-5xl text-on-media on-media sm:text-6xl">
-                  06:00–22:00 · seven days
+                  {t("06:00–22:00 · seven days")}
                 </p>
                 <p className="mt-3 max-w-sm text-on-media-muted on-media">
-                  Reception is staffed the whole time we are open. Walk-ins never need an account.
+                  {t("Reception is staffed the whole time we are open. Walk-ins never need an account.")}
                 </p>
                 <div className="mt-6 flex flex-wrap gap-3">
                                       <Link to="/register">
                       <Button size="lg" className="group bg-on-media text-fg hover:bg-surface">
-                        Create an account
+                        {t("Create an account")}
                         <ArrowUpRight className="size-4 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                       </Button>
                     </Link>
@@ -1354,7 +1392,7 @@ function Landing() {
                       variant="outline"
                       className="border-on-media/40 bg-transparent text-on-media hover:bg-on-media/10"
                     >
-                      Sign in
+                      {t("Sign in")}
                     </Button>
                   </Link>
                 </div>
@@ -1373,40 +1411,39 @@ function Landing() {
               <span className="font-display text-xl italic">Arena3</span>
             </div>
             <p className="mt-4 max-w-xs text-sm text-muted">
-              An indoor sports centre that runs courts, classes and memberships off a single
-              calendar.
+              {t("An indoor sports centre that runs courts, classes and memberships off a single calendar.")}
             </p>
           </div>
 
           <div>
-            <p className="kicker text-2xs text-muted">Visit</p>
+            <p className="kicker text-2xs text-muted">{t("Visit")}</p>
             <ul className="mt-4 grid gap-3 text-sm">
               <li className="flex gap-2.5 text-muted">
                 <Clock className="mt-0.5 size-4 shrink-0 text-accent" strokeWidth={1.75} />
-                06:00–22:00, seven days
+                {t("06:00–22:00, seven days")}
               </li>
               <li className="flex gap-2.5 text-muted">
                 <MapPin className="mt-0.5 size-4 shrink-0 text-accent" strokeWidth={1.75} />
-                Ho Chi Minh City
+                {t("Ho Chi Minh City")}
               </li>
               <li className="flex gap-2.5 text-muted">
                 <Phone className="mt-0.5 size-4 shrink-0 text-accent" strokeWidth={1.75} />
-                Front desk, during opening hours
+                {t("Front desk, during opening hours")}
               </li>
             </ul>
           </div>
 
           <div>
-            <p className="kicker text-2xs text-muted">Explore</p>
+            <p className="kicker text-2xs text-muted">{t("Explore")}</p>
             <ul className="mt-4 grid gap-2.5 text-sm">
               {[
-                ["#schedule", "Today's schedule"],
-                ["#courts", "Courts & pricing"],
-                ["#classes", "Open classes"],
-                ["#how", "How booking works"],
-                ["#facilities", "Facilities"],
-                ["#coaches", "Coaches"],
-                ["#plans", "Membership plans"],
+                ["#schedule", t("Today's schedule")],
+                ["#courts", t("Courts & pricing")],
+                ["#classes", t("Open classes")],
+                ["#how", t("How booking works")],
+                ["#facilities", t("Facilities")],
+                ["#coaches", t("Coaches")],
+                ["#plans", t("Membership plans")],
               ].map(([href, label]) => (
                 <li key={href}>
                   <a href={href} className="link-underline text-muted hover:text-fg">
@@ -1421,7 +1458,7 @@ function Landing() {
         <div className="border-t border-line">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 kicker text-2xs text-subtle">
             <span>© {new Date().getFullYear()} Arena3</span>
-            <span>Badminton · Basketball · Volleyball</span>
+            <span>{t("Badminton · Basketball · Volleyball")}</span>
           </div>
         </div>
       </footer>
@@ -1432,22 +1469,25 @@ function Landing() {
 /** Demo member quotes, keyed to the seeded member profiles. */
 const TESTIMONIALS = [
   {
-    quote:
+    quote: tk(
       "I book between meetings and the court is simply there when I arrive. The five-minute hold is the reason I stopped ringing ahead.",
+    ),
     name: "Nguyễn Văn Nam",
-    meta: "Badminton · A3-2026-0001",
+    meta: tk("Badminton · A3-2026-0001"),
   },
   {
-    quote:
+    quote: tk(
       "The beginner ladder moved me onto a real training plan without it ever feeling like a test — and my knee has been fine since the coach reworked my footwork.",
+    ),
     name: "Trần Mỹ Linh",
-    meta: "Badminton · A3-2026-0002",
+    meta: tk("Badminton · A3-2026-0002"),
   },
   {
-    quote:
+    quote: tk(
       "Plan hours come straight off at the desk. No cash, no working out what counts as peak, no arguing about the price on a Saturday morning.",
+    ),
     name: "Phạm Hoàng Long",
-    meta: "Badminton · A3-2026-0003",
+    meta: tk("Badminton · A3-2026-0003"),
   },
 ];
 
@@ -1466,11 +1506,11 @@ function Testimonials() {
   const step = (d: number) => setI((prev) => (prev + d + n) % n);
 
   return (
-    <section aria-label="What members say" className="mx-auto max-w-6xl px-4 pb-24">
+    <section aria-label={t("What members say")} className="mx-auto max-w-6xl px-4 pb-24">
       <Reveal>
-        <p className="kicker text-2xs text-muted">Members</p>
+        <p className="kicker text-2xs text-muted">{t("Members")}</p>
         <h2 className="mt-2 font-display text-4xl sm:text-5xl">
-          <SplitText text="What the regulars say" splitBy="words" stagger={0.06} />
+          <SplitText text={t("What the regulars say")} splitBy="words" stagger={0.06} />
         </h2>
       </Reveal>
 
@@ -1484,19 +1524,19 @@ function Testimonials() {
             interval={0}
             offset={24}
             className="h-[23rem] sm:h-[19rem]"
-            items={TESTIMONIALS.map((t) => ({
-              key: t.name,
+            items={TESTIMONIALS.map((q) => ({
+              key: q.name,
               node: (
                 <Card className="relative flex h-full flex-col overflow-hidden p-0">
                   <div className="wash wash-accent -right-24 -top-28 size-72 opacity-40" />
                   <blockquote className="relative flex h-full flex-col p-6 sm:p-10">
                     <Quote className="size-8 shrink-0 text-accent/45" strokeWidth={1.5} />
                     <p className="mt-5 max-w-3xl flex-1 font-display text-xl leading-snug sm:text-3xl">
-                      “{t.quote}”
+                      “{t(q.quote)}”
                     </p>
                     <footer className="mt-5 shrink-0">
-                      <p className="athletic text-lg">{t.name}</p>
-                      <p className="kicker mt-1.5 text-2xs text-muted">{t.meta}</p>
+                      <p className="athletic text-lg">{q.name}</p>
+                      <p className="kicker mt-1.5 text-2xs text-muted">{t(q.meta)}</p>
                     </footer>
                   </blockquote>
                 </Card>
@@ -1510,7 +1550,7 @@ function Testimonials() {
         <div className="flex gap-2">
           <button
             type="button"
-            aria-label="Previous quote"
+            aria-label={t("Previous quote")}
             onClick={() => step(-1)}
             className="grid size-10 place-items-center rounded-full border border-line bg-surface text-fg transition-[background-color,border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-accent hover:bg-wood active:scale-95"
           >
@@ -1518,7 +1558,7 @@ function Testimonials() {
           </button>
           <button
             type="button"
-            aria-label="Next quote"
+            aria-label={t("Next quote")}
             onClick={() => step(1)}
             className="grid size-10 place-items-center rounded-full border border-line bg-surface text-fg transition-[background-color,border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-accent hover:bg-wood active:scale-95"
           >
@@ -1530,7 +1570,7 @@ function Testimonials() {
             <button
               key={x.name}
               type="button"
-              aria-label={`Show quote ${k + 1} of ${n}`}
+              aria-label={t("Show quote {k} of {n}", { k: k + 1, n })}
               aria-current={k === i}
               onClick={() => setI(k)}
               className="group grid h-6 place-items-center px-1"

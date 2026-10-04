@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Shell, money } from "@/components/shell";
 import { Button, Card, Skeleton } from "@/components/ui";
 import { apiPost } from "@/lib/arena3/client";
+import { t } from "@/lib/i18n";
 
 /**
  * Where payOS sends the customer back to.
@@ -79,14 +80,13 @@ function Page() {
   }, [paymentId]);
 
   return (
-    <Shell role="member" title="Payment" subtitle="Back from the payment page.">
+    <Shell role="member" title={t("Payment")} subtitle={t("Back from the payment page.")}>
       <Card className="mx-auto max-w-md p-6 text-center">
         {outcome === "checking" ? (
           <div className="grid gap-3">
-            <p className="font-display text-2xl">Checking with the bank…</p>
+            <p className="font-display text-2xl">{t("Checking with the bank…")}</p>
             <p className="text-sm text-muted">
-              This takes a few seconds. Do not pay again — if the money has left your account it will
-              land here.
+              {t("This takes a few seconds. Do not pay again — if the money has left your account it will land here.")}
             </p>
             <Skeleton className="mx-auto h-2 w-40" />
           </div>
@@ -94,17 +94,17 @@ function Page() {
 
         {outcome === "posted" ? (
           <div className="grid gap-2">
-            <p className="font-display text-3xl">Paid</p>
+            <p className="font-display text-3xl">{t("Paid")}</p>
             {amount ? <p className="text-2xl tabular-nums">{money(amount)}</p> : null}
             <p className="text-sm text-muted">
-              Your court is confirmed and the receipt is in your account.
+              {t("Your court is confirmed and the receipt is in your account.")}
             </p>
             <div className="mt-2 flex justify-center gap-2">
               <Link to="/account">
-                <Button variant="outline">See the receipt</Button>
+                <Button variant="outline">{t("See the receipt")}</Button>
               </Link>
               <Link to="/app">
-                <Button>My schedule</Button>
+                <Button>{t("My schedule")}</Button>
               </Link>
             </div>
           </div>
@@ -112,37 +112,36 @@ function Page() {
 
         {outcome === "pending" ? (
           <div className="grid gap-2">
-            <p className="font-display text-2xl">Not confirmed yet</p>
+            <p className="font-display text-2xl">{t("Not confirmed yet")}</p>
             <p className="text-sm text-muted">
-              The bank has not told us about it. If the money has left your account it will post by
-              itself — your receipt will appear in your account. Please do not pay twice.
+              {t("The bank has not told us about it. If the money has left your account it will post by itself — your receipt will appear in your account. Please do not pay twice.")}
             </p>
             <Link to="/account" className="mt-2">
-              <Button variant="outline">Check my receipts</Button>
+              <Button variant="outline">{t("Check my receipts")}</Button>
             </Link>
           </div>
         ) : null}
 
         {outcome === "cancelled" ? (
           <div className="grid gap-2">
-            <p className="font-display text-2xl">Payment cancelled</p>
+            <p className="font-display text-2xl">{t("Payment cancelled")}</p>
             <p className="text-sm text-muted">
-              Nothing was taken. The court is released unless you booked it again.
+              {t("Nothing was taken. The court is released unless you booked it again.")}
             </p>
             <Link to="/app/book" className="mt-2">
-              <Button>Book again</Button>
+              <Button>{t("Book again")}</Button>
             </Link>
           </div>
         ) : null}
 
         {outcome === "unknown" ? (
           <div className="grid gap-2">
-            <p className="font-display text-2xl">We could not find that payment</p>
+            <p className="font-display text-2xl">{t("We could not find that payment")}</p>
             <p className="text-sm text-muted">
-              If money left your account, the front desk can look it up by the time and amount.
+              {t("If money left your account, the front desk can look it up by the time and amount.")}
             </p>
             <Link to="/account" className="mt-2">
-              <Button variant="outline">My receipts</Button>
+              <Button variant="outline">{t("My receipts")}</Button>
             </Link>
           </div>
         ) : null}

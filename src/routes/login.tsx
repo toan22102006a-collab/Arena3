@@ -9,6 +9,8 @@ import { Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { GLBackground, Magnet, ShinyText, SplitText, SpotlightCard } from "@/components/fx";
 import { apiPost, homeFor, setSession, type SessionUser } from "@/lib/arena3/client";
 import { roleLabel } from "@/lib/arena3/labels";
+import { LangSwitch } from "@/components/lang-switch";
+import { t, tServer, tk } from "@/lib/i18n";
 
 export const Route = createFileRoute("/login")({ component: Login });
 
@@ -29,12 +31,12 @@ const DEMO_LOGINS_ON = import.meta.env.PROD
   : import.meta.env.VITE_DEMO_LOGINS !== "off";
 
 const DEMOS: { role: SessionUser["role"]; phone: string; name: string; note: string }[] = [
-  { role: "manager", phone: "0900000001", name: "Arena3 Manager", note: "Pricing · classes · reports" },
-  { role: "receptionist", phone: "0900000002", name: "Front Desk", note: "Search · take payment · walk-ins" },
-  { role: "coach", phone: "0901110011", name: "Coach Khoa", note: "Badminton classes" },
-  { role: "member", phone: "0901230101", name: "Nam", note: "All-access plan · court booked today" },
-  { role: "member", phone: "0901230102", name: "Linh", note: "Plan expires in ~4 days" },
-  { role: "member", phone: "0901230106", name: "Ha", note: "Expired — needs a renewal" },
+  { role: "manager", phone: "0900000001", name: "Arena3 Manager", note: tk("Pricing · classes · reports") },
+  { role: "receptionist", phone: "0900000002", name: "Front Desk", note: tk("Search · take payment · walk-ins") },
+  { role: "coach", phone: "0901110011", name: "Coach Khoa", note: tk("Badminton classes") },
+  { role: "member", phone: "0901230101", name: "Nam", note: tk("All-access plan · court booked today") },
+  { role: "member", phone: "0901230102", name: "Linh", note: tk("Plan expires in ~4 days") },
+  { role: "member", phone: "0901230106", name: "Ha", note: tk("Expired — needs a renewal") },
 ];
 
 function Login() {
@@ -55,10 +57,10 @@ function Login() {
         password: demo ? DEMO_PASSWORD : password,
       });
       setSession(res.token, res.user);
-      toast.success(`Welcome, ${res.user.full_name}`, { id: "login-hello" });
+      toast.success(t("Welcome, {name}", { name: res.user.full_name }), { id: "login-hello" });
       navigate({ to: homeFor(res.user.role) });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not sign you in");
+      toast.error(err instanceof Error ? tServer(err.message) : t("Could not sign you in"));
     } finally {
       setBusy(false);
     }
@@ -84,11 +86,11 @@ function Login() {
           </Link>
           <div className="max-w-sm rounded-[var(--radius-xl)] bg-pass/92 p-6 text-pass-fg">
             <ShinyText className="shiny-on-media text-2xs uppercase tracking-wider" speed={6}>
-              The desk is open
+              {t("The desk is open")}
             </ShinyText>
             <SplitText
               as="p"
-              text="One schedule for courts, classes and cash."
+              text={t("One schedule for courts, classes and cash.")}
               splitBy="words"
               stagger={0.055}
               delay={0.25}
@@ -98,6 +100,7 @@ function Login() {
         </div>
       </div>
       <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
+        <LangSwitch className="absolute right-4 top-2 z-10 lg:top-4" />
         <Cover src={media.hallCourts} alt="" scrim="none" className="mb-6 h-36 rounded-[var(--radius-xl)] lg:hidden">
           <MediaCaption>
             <span className="font-display text-2xl">Arena3</span>
@@ -105,22 +108,22 @@ function Login() {
         </Cover>
         <div className="mb-6 flex items-center gap-2 lg:hidden">
           <ArenaMark />
-          <p className="text-2xs font-medium uppercase tracking-wider text-muted">Sports centre</p>
+          <p className="text-2xs font-medium uppercase tracking-wider text-muted">{t("Sports centre")}</p>
         </div>
-        <h1 className="font-display text-4xl">Sign in</h1>
+        <h1 className="font-display text-4xl">{t("Sign in")}</h1>
         <p className="mt-1 text-sm text-muted">
           {DEMO_LOGINS_ON
-            ? "Sign in with your phone or email — or tap a demo account below."
-            : "Sign in with your phone number or email."}
+            ? t("Sign in with your phone or email — or tap a demo account below.")
+            : t("Sign in with your phone number or email.")}
         </p>
         <Reveal className="mt-6" from="up">
         <SpotlightCard className="rounded-[var(--radius-xl)]" size={360} strength={0.1}>
         <Card className="relative z-[2] p-5">
           <form className="grid gap-4" onSubmit={submit}>
-            <Field label="Phone or email">
+            <Field label={t("Phone or email")}>
               <Input value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" />
             </Field>
-            <Field label="Password">
+            <Field label={t("Password")}>
               <div className="relative">
                 <Input
                   type={show ? "text" : "password"}
@@ -133,7 +136,7 @@ function Login() {
                   type="button"
                   className="absolute right-1 top-1 grid size-9 place-items-center text-muted hover:text-fg"
                   onClick={() => setShow((v) => !v)}
-                  aria-label={show ? "Hide password" : "Show password"}
+                  aria-label={show ? t("Hide password") : t("Show password")}
                 >
                   {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
@@ -141,13 +144,13 @@ function Login() {
             </Field>
             <Magnet radius={140} pull={0.22} wrapperClassName="w-full" className="w-full">
               <Button type="submit" disabled={busy} className="w-full">
-                {busy ? "Signing in…" : "Sign in"}
+                {busy ? t("Signing in…") : t("Sign in")}
               </Button>
             </Magnet>
           </form>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
             <Link to="/register" className="text-accent-2 underline underline-offset-2">
-              Create an account
+              {t("Create an account")}
             </Link>
             {/*
               The reset flow existed on the server with nothing pointing at it,
@@ -155,7 +158,7 @@ function Login() {
               it for them.
             */}
             <Link to="/forgot" className="text-muted hover:underline">
-              Forgot your password?
+              {t("Forgot your password?")}
             </Link>
           </div>
         </Card>
@@ -163,13 +166,13 @@ function Login() {
         </Reveal>
         {DEMO_LOGINS_ON ? (
         <>
-        <p className="mt-8 text-2xs font-semibold uppercase tracking-widest text-muted">Demo accounts</p>
+        <p className="mt-8 text-2xs font-semibold uppercase tracking-widest text-muted">{t("Demo accounts")}</p>
         <Stagger className="mt-3 flex flex-wrap gap-2" gap={0.05}>
           {DEMOS.map((d) => (
             <StaggerItem key={d.phone}>
             <button
               type="button"
-              title={d.note}
+              title={t(d.note)}
               onClick={() => {
                 setLogin(d.phone);
                 void submit(undefined, d);

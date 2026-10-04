@@ -5,6 +5,7 @@ import { NotificationList, type Notification } from "@/components/notifications"
 import { Shell } from "@/components/shell";
 import { Button, EmptyState, Skeleton } from "@/components/ui";
 import { apiGet } from "@/lib/arena3/client";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/app/notifications")({
   component: Page,
@@ -20,7 +21,7 @@ function Page() {
       .then((r) => setItems(r.items))
       .catch((e) => {
         setItems([]);
-        toast.error(e instanceof Error ? e.message : "Could not load your notifications");
+        toast.error(e instanceof Error ? e.message : t("Could not load your notifications"));
       });
   }, []);
 
@@ -29,19 +30,22 @@ function Page() {
   return (
     <Shell
       role="member"
-      title="Notifications"
-      subtitle="Receipts, booking changes and replies from reception. Open one to read it."
+      title={t("Notifications")}
+      subtitle={t("Receipts, booking changes and replies from reception. Open one to read it.")}
     >
       {!items ? (
         <Skeleton className="h-32" />
       ) : !items.length ? (
-        <EmptyState title="Nothing here yet" hint="Receipts and booking updates will show up here as they happen." />
+        <EmptyState
+          title={t("Nothing here yet")}
+          hint={t("Receipts and booking updates will show up here as they happen.")}
+        />
       ) : (
         <>
           {hasRead ? (
             <div className="flex justify-end">
               <Button size="sm" variant="ghost" onClick={() => setOnlyNew((v) => !v)}>
-                {onlyNew ? "Show read ones too" : "Hide read ones"}
+                {onlyNew ? t("Show read ones too") : t("Hide read ones")}
               </Button>
             </div>
           ) : null}

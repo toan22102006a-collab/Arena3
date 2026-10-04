@@ -4,12 +4,13 @@ import { toast } from "sonner";
 import { Cover, MediaCaption, sportPhoto } from "@/components/media";
 import { MyAttendance } from "@/components/my-attendance";
 import { Shell } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Seg, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Seg, ShowMore, Skeleton } from "@/components/ui";
 import { Lift, Stagger, StaggerItem, motion } from "@/components/motion";
 import { GlareHover, SpotlightCard } from "@/components/fx";
 import { cn } from "@/lib/cn";
 import { apiDelete, apiGet, apiPost } from "@/lib/arena3/client";
 import { levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
+import { locale, t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/app/classes")({
   validateSearch: (s: Record<string, unknown>): { sport?: string } => ({
@@ -52,23 +53,33 @@ function Page() {
     void load().catch((e) => toast.error(e.message));
   }, []);
 
-  const shown = (items ?? []).filter((c) => !sport || c.sport === sport);
+  const [limit, setLimit] = useState(6);
+  const matching = (items ?? []).filter((c) => !sport || c.sport === sport);
+  const shown = matching.slice(0, limit);
+  useEffect(() => setLimit(6), [sport]);
   const byClass = Object.fromEntries(mine.map((e) => [e.class_id, e]));
 
   return (
-    <Shell role="member" title="Classes" subtitle="Enrol by sport. When a class is full you join a first-come waitlist.">
+    <Shell
+      role="member"
+      title={t("Classes")}
+      subtitle={t("Enrol by sport. When a class is full you join a first-come waitlist.")}
+    >
       {offers.length ? (
         <Card className="mb-4 border border-hold/30 bg-hold/5">
-          <p className="text-sm font-medium">A waitlist seat opened up</p>
+          <p className="text-sm font-medium">{t("A waitlist seat opened up")}</p>
           {offers.map((o) => (
             <div key={o.id} className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm">
-                {sportLabel(o.sport)} · {levelLabel(o.level)} — claim before{" "}
-                {new Date(o.expires_at).toLocaleTimeString("en-GB", {
-                  timeZone: "Asia/Ho_Chi_Minh",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: false,
+                {t("{sport} · {level} — claim before {time}", {
+                  sport: sportLabel(o.sport),
+                  level: levelLabel(o.level),
+                  time: new Date(o.expires_at).toLocaleTimeString(locale(), {
+                    timeZone: "Asia/Ho_Chi_Minh",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                  }),
                 })}
               </p>
               <Button
@@ -76,14 +87,14 @@ function Page() {
                 onClick={async () => {
                   try {
                     await apiPost(`/waitlist/${o.id}/accept`);
-                    toast.success("Seat claimed");
+                    toast.success(t("Seat claimed"));
                     await load();
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : "This offer has expired");
+                    toast.error(e instanceof Error ? e.message : t("This offer has expired"));
                   }
                 }}
               >
-                Claim seat
+                {t("Claim seat")}
               </Button>
             </div>
           ))}
@@ -94,10 +105,10 @@ function Page() {
           value={sport}
           onChange={setSport}
           options={[
-            { value: "", label: "All" },
-            { value: "badminton", label: "Badminton" },
-            { value: "basketball", label: "Basketball" },
-            { value: "volleyball", label: "Volleyball" },
+            { value: "", label: t("All") },
+            { value: "badminton", label: sportLabel("badminton") },
+            { value: "basketball", label: sportLabel("basketball") },
+            { value: "volleyball", label: sportLabel("volleyball") },
           ]}
         />
       </div>
@@ -118,7 +129,7 @@ function Page() {
               <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={340} strength={0.11}>
               <Card interactive className="relative z-[2] flex h-full flex-col overflow-hidden p-0">
                 <GlareHover>
-                  <Cover src={sportPhoto(c.sport)} alt="" scrim="none" className="h-36">
+                  <Cover src={sportPhoto(c.sport)} alt="" scrim="none" className="h-24 sm:h-28">
                     <MediaCaption className="flex items-end justify-between">
                       <Badge tone="accent" className="bg-surface text-fg">
                         {sportLabel(c.sport)}
@@ -137,7 +148,7 @@ function Page() {
                       head. What decides whether you enrol now or later is the
                       number of seats, so the bar gets a caption. */}
                   <div className="mt-4 flex items-baseline justify-between gap-2 text-2xs uppercase tracking-wider">
-                    <span className="text-muted">{full ? "Full" : `${c.capacity - c.enrolled_count} seats left`}</span>
+                    <span className="text-muted">{full ? t("Full") : t("{n} seats left", { n: c.capacity - c.enrolled_count })}</span>
                     <span className="tabular-nums text-subtle">{pct}%</span>
                   </div>
                   <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-wood">
@@ -160,14 +171,14 @@ function Page() {
                       onClick={async () => {
                         try {
                           await apiDelete(`/enrollments/${enr.id}`);
-                          toast.success("Enrolment cancelled");
+                          toast.success(t("Enrolment cancelled"));
                           await load();
                         } catch (e) {
-                          toast.error(e instanceof Error ? e.message : "Could not cancel");
+                          toast.error(e instanceof Error ? e.message : t("Could not cancel"));
                         }
                       }}
                     >
-                      Leave this class
+                      {t("Leave this class")}
                     </Button>
                   ) : enr?.status === "waitlisted" ? (
                     <Button
@@ -176,14 +187,14 @@ function Page() {
                       onClick={async () => {
                         try {
                           await apiDelete(`/enrollments/${enr.id}`);
-                          toast.success("Left the waitlist");
+                          toast.success(t("Left the waitlist"));
                           await load();
                         } catch (e) {
-                          toast.error(e instanceof Error ? e.message : "Something went wrong");
+                          toast.error(e instanceof Error ? e.message : t("Something went wrong"));
                         }
                       }}
                     >
-                      Waitlisted #{enr.waitlist_pos ?? "—"} · Leave
+                      {t("Waitlisted #{pos} · Leave", { pos: enr.waitlist_pos ?? "—" })}
                     </Button>
                   ) : (
                     <Button
@@ -192,14 +203,14 @@ function Page() {
                       onClick={async () => {
                         try {
                           const r = await apiPost<{ waitlisted?: boolean }>(`/classes/${c.id}/enroll`, {});
-                          toast.success(r.waitlisted ? "Added to the waitlist" : "You are enrolled");
+                          toast.success(r.waitlisted ? t("Added to the waitlist") : t("You are enrolled"));
                           await load();
                         } catch (e) {
-                          toast.error(e instanceof Error ? e.message : "Could not enrol");
+                          toast.error(e instanceof Error ? e.message : t("Could not enrol"));
                         }
                       }}
                     >
-                      {full ? "Join the waitlist" : "Enrol"}
+                      {full ? t("Join the waitlist") : t("Enrol")}
                     </Button>
                   )}
                   </div>
@@ -211,10 +222,11 @@ function Page() {
             );
           })}
           {!shown.length ? (
-            <EmptyState title="No open classes" hint="The manager publishes the weekly timetable." />
+            <EmptyState title={t("No open classes")} hint={t("The manager publishes the weekly timetable.")} />
           ) : null}
         </Stagger>
       )}
+      {items ? <ShowMore shown={shown.length} total={matching.length} step={6} onMore={() => setLimit((n) => n + 6)} /> : null}
       <MyAttendance />
     </Shell>
   );

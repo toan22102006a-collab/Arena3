@@ -5,6 +5,7 @@ import { Shell, when } from "@/components/shell";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Skeleton } from "@/components/ui";
 import { ApiClientError, apiGet, apiPost, apiPatch } from "@/lib/arena3/client";
 import { roleLabel, sportLabel } from "@/lib/arena3/labels";
+import { t, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/manager/staff")({ component: Page });
 
@@ -45,8 +46,8 @@ function Page() {
     setItems(r.items);
   }
   useEffect(() => {
-    const t = setTimeout(() => void load().catch((e) => toast.error(e.message)), q ? 200 : 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void load().catch((e) => toast.error(tServer(e.message))), q ? 200 : 0);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, status, q]);
 
@@ -54,55 +55,63 @@ function Page() {
     try {
       if (what === "lock" || what === "unlock") {
         await apiPatch(`/staff/${s.id}`, { status: what === "lock" ? "locked" : "active" });
-        toast.success(what === "lock" ? `${s.full_name} is locked out` : `${s.full_name} can sign in again`);
+        toast.success(
+          what === "lock"
+            ? t("{name} is locked out", { name: s.full_name })
+            : t("{name} can sign in again", { name: s.full_name }),
+        );
       } else if (what === "reset") {
         const r = await apiPost<{ temp_password: string }>(`/staff/${s.id}/reset-password`);
         setIssued({
           name: s.full_name,
           phone: s.phone,
           password: r.temp_password,
-          why: "Password reset. Every open session for this account was signed out.",
+          why: t("Password reset. Every open session for this account was signed out."),
         });
       } else {
         const r = await apiPost<{ revoked: number }>(`/staff/${s.id}/revoke-sessions`);
-        toast.success(r.revoked ? `Signed ${s.full_name} out of ${r.revoked} session(s)` : "No open sessions");
+        toast.success(
+          r.revoked
+            ? t("Signed {name} out of {n} session(s)", { name: s.full_name, n: r.revoked })
+            : t("No open sessions"),
+        );
       }
       await load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Something went wrong");
+      toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
     }
   }
 
   return (
     <Shell
       role="manager"
-      title="Staff"
-      subtitle="Receptionist and coach logins are issued here and nowhere else. Members sign themselves up."
+      title={t("Staff")}
+      subtitle={t("Receptionist and coach logins are issued here and nowhere else. Members sign themselves up.")}
     >
       <Card className="mb-4 grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_auto]">
-        <Input aria-label="Search staff" placeholder="Search name, phone or email" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Select aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)}>
-          <option value="">All roles</option>
-          <option value="receptionist">Receptionist</option>
-          <option value="coach">Coach</option>
-          <option value="manager">Manager</option>
+        <Input aria-label={t("Search staff")} placeholder={t("Search name, phone or email")} value={q} onChange={(e) => setQ(e.target.value)} />
+        <Select aria-label={t("Role")} value={role} onChange={(e) => setRole(e.target.value)}>
+          <option value="">{t("All roles")}</option>
+          <option value="receptionist">{t("Receptionist")}</option>
+          <option value="coach">{t("Coach")}</option>
+          <option value="manager">{t("Manager")}</option>
         </Select>
-        <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">Any status</option>
-          <option value="active">Active</option>
-          <option value="locked">Locked</option>
+        <Select aria-label={t("Status")} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="">{t("Any status")}</option>
+          <option value="active">{t("Active")}</option>
+          <option value="locked">{t("Locked")}</option>
         </Select>
-        <Button onClick={() => setCreating(true)}>Add staff</Button>
+        <Button onClick={() => setCreating(true)}>{t("Add staff")}</Button>
       </Card>
 
       {!items ? (
         <Skeleton className="h-40" />
       ) : !items.length ? (
         <EmptyState
-          title={role || status || q ? "Nobody matches those filters" : "No staff accounts yet"}
-          hint={role || status || q ? "Clear a filter to see everyone." : "Add the first receptionist or coach to give them a login."}
+          title={role || status || q ? t("Nobody matches those filters") : t("No staff accounts yet")}
+          hint={role || status || q ? t("Clear a filter to see everyone.") : t("Add the first receptionist or coach to give them a login.")}
         >
-          {!(role || status || q) ? <Button onClick={() => setCreating(true)}>Add staff</Button> : null}
+          {!(role || status || q) ? <Button onClick={() => setCreating(true)}>{t("Add staff")}</Button> : null}
         </EmptyState>
       ) : (
         <div className="grid gap-2">
@@ -114,8 +123,8 @@ function Page() {
                   <p className="flex flex-wrap items-center gap-2 font-medium">
                     {s.full_name}
                     <Badge tone={s.role === "manager" ? "ink" : "accent"}>{roleLabel(s.role)}</Badge>
-                    {s.status !== "active" ? <Badge tone="danger">Locked</Badge> : null}
-                    {s.must_change_password ? <Badge tone="hold">Must change password</Badge> : null}
+                    {s.status !== "active" ? <Badge tone="danger">{t("Locked")}</Badge> : null}
+                    {s.must_change_password ? <Badge tone="hold">{t("Must change password")}</Badge> : null}
                   </p>
                   <p className="text-sm tabular-nums text-muted">
                     {s.phone}
@@ -123,17 +132,19 @@ function Page() {
                     {s.role === "coach" && s.sports?.length ? ` · ${s.sports.map(sportLabel).join(", ")}` : ""}
                   </p>
                   <p className="text-xs text-muted">
-                    {s.issued_at ? `Issued by ${s.issued_by ?? "—"} · ${when(s.issued_at)}` : "Seeded account"} ·{" "}
-                    {s.open_sessions} open session{s.open_sessions === 1 ? "" : "s"}
+                    {s.issued_at
+                      ? t("Issued by {name} · {when}", { name: s.issued_by ?? "—", when: when(s.issued_at) })
+                      : t("Seeded account")}{" "}
+                    · {s.open_sessions === 1 ? t("1 open session") : t("{n} open sessions", { n: s.open_sessions })}
                   </p>
                 </div>
                 {managed ? (
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => setEditing(s)}>
-                      Role
+                      {t("Role")}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => void act(s, "reset")}>
-                      Reset password
+                      {t("Reset password")}
                     </Button>
                     <Button
                       size="sm"
@@ -141,15 +152,15 @@ function Page() {
                       disabled={!s.open_sessions}
                       onClick={() => void act(s, "revoke")}
                     >
-                      Sign out everywhere
+                      {t("Sign out everywhere")}
                     </Button>
                     {s.status === "active" ? (
                       <Button size="sm" variant="danger" onClick={() => void act(s, "lock")}>
-                        Lock
+                        {t("Lock")}
                       </Button>
                     ) : (
                       <Button size="sm" onClick={() => void act(s, "unlock")}>
-                        Unlock
+                        {t("Unlock")}
                       </Button>
                     )}
                   </div>
@@ -180,10 +191,10 @@ function Page() {
       <Modal
         open={!!issued}
         onClose={() => setIssued(null)}
-        title="Hand this over now"
+        title={t("Hand this over now")}
         footer={
           <div className="flex justify-end">
-            <Button onClick={() => setIssued(null)}>Done</Button>
+            <Button onClick={() => setIssued(null)}>{t("Done")}</Button>
           </div>
         }
       >
@@ -191,15 +202,15 @@ function Page() {
           <div className="grid gap-3 text-sm">
             <p>{issued.why}</p>
             <dl className="grid grid-cols-[6rem_1fr] gap-y-1">
-              <dt className="text-muted">Account</dt>
+              <dt className="text-muted">{t("Account")}</dt>
               <dd className="font-medium">{issued.name}</dd>
-              <dt className="text-muted">Sign in with</dt>
+              <dt className="text-muted">{t("Sign in with")}</dt>
               <dd className="tabular-nums">{issued.phone}</dd>
-              <dt className="text-muted">Temporary password</dt>
+              <dt className="text-muted">{t("Temporary password")}</dt>
               <dd className="select-all font-mono text-base">{issued.password}</dd>
             </dl>
             <p className="text-xs text-muted">
-              This is the only time it is shown. They will be asked to choose their own at first sign-in.
+              {t("This is the only time it is shown. They will be asked to choose their own at first sign-in.")}
             </p>
           </div>
         ) : null}
@@ -221,7 +232,7 @@ function SportPicker({ value, onChange }: { value: string[]; onChange: (v: strin
             onClick={() => onChange(on ? value.filter((x) => x !== s) : [...value, s])}
             className={`rounded-full px-3 py-1 text-sm ${on ? "bg-accent text-white" : "bg-wood text-muted"}`}
           >
-            {s === "all" ? "Any sport" : sportLabel(s)}
+            {s === "all" ? t("Any sport") : sportLabel(s)}
           </button>
         );
       })}
@@ -251,11 +262,11 @@ function CreateModal({ open, onClose, onDone }: { open: boolean; onClose: () => 
         name: r.staff.full_name,
         phone: r.staff.phone,
         password: r.temp_password,
-        why: `${roleLabel(r.staff.role)} account created.`,
+        why: t("{role} account created.", { role: roleLabel(r.staff.role) }),
       });
     } catch (e) {
-      if (e instanceof ApiClientError && e.body.field) setFe({ field: e.body.field, message: e.message });
-      else toast.error(e instanceof Error ? e.message : "Something went wrong");
+      if (e instanceof ApiClientError && e.body.field) setFe({ field: e.body.field, message: tServer(e.message) });
+      else toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
     } finally {
       setBusy(false);
     }
@@ -265,36 +276,36 @@ function CreateModal({ open, onClose, onDone }: { open: boolean; onClose: () => 
     <Modal
       open={open}
       onClose={onClose}
-      title="Add staff"
+      title={t("Add staff")}
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button disabled={busy} onClick={() => void submit()}>
-            Create account
+            {t("Create account")}
           </Button>
         </div>
       }
     >
       <div className="grid gap-3">
-        <Field label="Role">
+        <Field label={t("Role")}>
           <Select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
-            <option value="receptionist">Receptionist</option>
-            <option value="coach">Coach</option>
+            <option value="receptionist">{t("Receptionist")}</option>
+            <option value="coach">{t("Coach")}</option>
           </Select>
         </Field>
-        <Field label="Full name" hint={bad("full_name")}>
+        <Field label={t("Full name")} hint={bad("full_name")}>
           <Input value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} />
         </Field>
-        <Field label="Phone" hint={bad("phone")}>
+        <Field label={t("Phone")} hint={bad("phone")}>
           <Input inputMode="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
         </Field>
-        <Field label="Email (optional)" hint={bad("email")}>
+        <Field label={t("Email (optional)")} hint={bad("email")}>
           <Input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
         </Field>
         {f.role === "coach" ? (
-          <Field label="Sports they teach" hint={bad("sports")}>
+          <Field label={t("Sports they teach")} hint={bad("sports")}>
             <SportPicker value={sports} onChange={setSports} />
           </Field>
         ) : null}
@@ -320,10 +331,10 @@ function RoleModal({ staff, onClose, onDone }: { staff: Staff | null; onClose: (
     if (!staff) return;
     try {
       await apiPatch(`/staff/${staff.id}`, { role, sports: role === "coach" ? sports : undefined });
-      toast.success(`${staff.full_name} is now ${roleLabel(role).toLowerCase()}. They were signed out.`);
+      toast.success(t("{name} is now {role}. They were signed out.", { name: staff.full_name, role: roleLabel(role).toLowerCase() }));
       onDone();
     } catch (e) {
-      setFe(e instanceof Error ? e.message : "Something went wrong");
+      setFe(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
     }
   }
 
@@ -331,30 +342,30 @@ function RoleModal({ staff, onClose, onDone }: { staff: Staff | null; onClose: (
     <Modal
       open={!!staff}
       onClose={onClose}
-      title={staff ? `Role · ${staff.full_name}` : "Role"}
+      title={staff ? t("Role · {name}", { name: staff.full_name }) : t("Role")}
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
-          <Button onClick={() => void save()}>Save</Button>
+          <Button onClick={() => void save()}>{t("Save")}</Button>
         </div>
       }
     >
       <div className="grid gap-3">
-        <Field label="Role">
+        <Field label={t("Role")}>
           <Select value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="receptionist">Receptionist</option>
-            <option value="coach">Coach</option>
+            <option value="receptionist">{t("Receptionist")}</option>
+            <option value="coach">{t("Coach")}</option>
           </Select>
         </Field>
         {role === "coach" ? (
-          <Field label="Sports they teach">
+          <Field label={t("Sports they teach")}>
             <SportPicker value={sports} onChange={setSports} />
           </Field>
         ) : null}
         {fe ? <p className="text-sm text-danger">{fe}</p> : null}
-        <p className="text-xs text-muted">Changing the role signs them out so the new permissions apply at the next sign-in.</p>
+        <p className="text-xs text-muted">{t("Changing the role signs them out so the new permissions apply at the next sign-in.")}</p>
       </div>
     </Modal>
   );

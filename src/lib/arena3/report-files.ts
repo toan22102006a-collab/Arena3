@@ -58,7 +58,7 @@ function colName(i: number): string {
 function sheetNames(sections: ReportSection[]): string[] {
   const seen = new Set<string>();
   return sections.map((s, i) => {
-    let base = s.name.replace(/[[\]:*?/\\]/g, " ").trim().slice(0, 28) || `Sheet${i + 1}`;
+    const base = s.name.replace(/[[\]:*?/\\]/g, " ").trim().slice(0, 28) || `Sheet${i + 1}`;
     let name = base;
     let n = 2;
     while (seen.has(name.toLowerCase())) name = `${base.slice(0, 26)} ${n++}`;

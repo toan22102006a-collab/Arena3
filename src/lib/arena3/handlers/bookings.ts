@@ -10,10 +10,10 @@ import {
   nextCode,
   readJson,
   str,
-  userDebt,
 } from "../helpers";
 import { isValidVnPhone, normalizePhone } from "../phone";
 import { applyDiscount, lookupPrice, memberDiscount } from "../pricing";
+import { quotePromo, redeemForBooking, restoreIfFullyRefunded } from "../promos";
 import { requireRole, type PublicUser } from "../session";
 import { addDays, ictClock, ictDateString, ictDateTime, ictStamp, roundVnd } from "../time";
 import { one } from "../tx";
@@ -95,15 +95,14 @@ export async function occupancyGet(sql: Sql, request: Request) {
     end_at: string;
     kind: string;
     ref_id: string;
-    convert_group_id: string | null;
   }>(
-    `select court_id, start_at, end_at, kind, ref_id, convert_group_id from occupancies
+    `select court_id, start_at, end_at, kind, ref_id from occupancies
       where start_at < $2 and end_at > $1
       order by court_id, start_at`,
     [start.toISOString(), end.toISOString()],
   );
   const courts = await sql.query(
-    `select id, court_code, sport, status, convertible, pair_court_id from courts order by court_code`,
+    `select id, court_code, sport, status from courts order by court_code`,
   );
   return {
     status: 200,
@@ -116,7 +115,6 @@ export async function occupancyGet(sql: Sql, request: Request) {
         end: r.end_at,
         kind: r.kind,
         ref: r.ref_id,
-        convert_group_id: r.convert_group_id,
       })),
     },
   };
@@ -355,7 +353,7 @@ export async function occupancyDetail(sql: Sql, request: Request, user: PublicUs
 }
 
 export async function courtsList(sql: Sql) {
-  const items = await sql.query(`select id, court_code, sport, status, convertible, pair_court_id from courts order by court_code`);
+  const items = await sql.query(`select id, court_code, sport, status from courts order by court_code`);
   return { status: 200, body: { items } };
 }
 
@@ -389,7 +387,7 @@ export async function courtsPatch(sql: Sql, id: string, request: Request, user: 
   await audit(sql, user.id, "patch_court", "court", id, { from: cur.status, to: status, reason });
   const court = await one(
     sql,
-    `select id, court_code, sport, status, convertible, pair_court_id from courts where id = $1`,
+    `select id, court_code, sport, status from courts where id = $1`,
     [id],
   );
   return { status: 200, body: { court, upcoming: live?.n ?? 0 } };
@@ -407,8 +405,6 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
   await assertBookWindow(sql, start, { walkIn: false, settings });
   const court = await courtById(sql, courtId);
   if (court.status !== "ready") throw err.br("BR-35", "That court is not available.");
-  const debt = await userDebt(sql, user.id);
-  if (debt > settings.debt_limit_vnd) throw err.br("BR-44", "Your balance is over the limit — settle it at the desk.");
   const n = await countSlotsToday(sql, user.id, start);
   if (n >= settings.max_slots_per_day) throw err.br("BR-32", `You can hold at most ${settings.max_slots_per_day} slots a day.`);
   const overlap = await overlapClass(sql, user.id, start, end);
@@ -419,7 +415,22 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
   }
   const disc = await memberDiscount(sql, user.id, court.sport);
   const list = await lookupPrice(sql, { sport: court.sport, courtId, start });
-  const price = applyDiscount(list.price_vnd, disc.pct, settings.round_vnd);
+  const planPrice = applyDiscount(list.price_vnd, disc.pct, settings.round_vnd);
+  // A code is priced into the hold so the member sees what they will pay; the use
+  // is only counted when the money posts (BR-45).
+  const promoCode = str(b.promo_code);
+  const promo = promoCode
+    ? await quotePromo(sql, {
+        code: promoCode,
+        userId: user.id,
+        scope: "court",
+        sport: court.sport,
+        orderVnd: planPrice,
+        planDiscountPct: disc.pct,
+        listVnd: list.price_vnd,
+      })
+    : null;
+  const price = promo ? promo.final_vnd : planPrice;
   const bookingIdRow = await one<{ id: string }>(sql, `select gen_random_uuid() as id`);
   const bookingId = bookingIdRow!.id;
   const holdUntil = new Date(Date.now() + settings.hold_minutes * 60_000);
@@ -438,8 +449,9 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
   const code = await nextCode(sql, "CRT");
   await sql.query(
     `insert into court_bookings
-       (id, code, court_id, user_id, start_at, end_at, status, channel, price_vnd, discount_pct, vat_rate, hold_until, occupancy_id)
-     values ($1,$2,$3,$4,$5,$6,'hold','app',$7,$8,$9,$10,$11)`,
+       (id, code, court_id, user_id, start_at, end_at, status, channel, price_vnd, discount_pct, vat_rate, hold_until, occupancy_id,
+        promo_id, promo_discount_vnd)
+     values ($1,$2,$3,$4,$5,$6,'hold','app',$7,$8,$9,$10,$11,$12,$13)`,
     [
       bookingId,
       code,
@@ -452,12 +464,20 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
       Number(settings.vat_rate),
       holdUntil.toISOString(),
       occId,
+      promo?.promo_id ?? null,
+      promo?.discount_vnd ?? 0,
     ],
   );
   const booking = await one(sql, `select * from court_bookings where id = $1`, [bookingId]);
   return {
     status: 201,
-    body: { booking, hold_until: holdUntil.toISOString(), price, list_price: list.price_vnd },
+    body: {
+      booking,
+      hold_until: holdUntil.toISOString(),
+      price,
+      list_price: list.price_vnd,
+      promo: promo ? { code: promo.code, name: promo.name, discount_vnd: promo.discount_vnd } : null,
+    },
   };
 }
 
@@ -534,10 +554,14 @@ export async function settleHeldBooking(
   } catch {
     throw err.holdExpired();
   }
+  // Plan hours carry no money, so no code applies; otherwise the code is spent now.
+  if (opts.payAmount > 0) await redeemForBooking(sql, booking.id, booking.user_id, pay!.id);
   await sql.query(
     `update court_bookings
         set status = 'confirmed', quota_hours = $2, price_vnd = $3,
-            hold_until = null, transfer_requested_at = null
+            hold_until = null, transfer_requested_at = null,
+            promo_id = case when $3::int > 0 then promo_id else null end,
+            promo_discount_vnd = case when $3::int > 0 then promo_discount_vnd else 0 end
       where id = $1`,
     [booking.id, opts.quotaHours, opts.payAmount],
   );
@@ -796,6 +820,8 @@ export async function bookingsCancel(sql: Sql, id: string, user: PublicUser) {
          values ($1,$2,'cash',$3,0,$4,'booking',$5,$6) returning *`,
         [payCode, booking.user_id, amount, st, id, user.id],
       );
+      // A full refund gives the member their use of the code back (BR-45).
+      await restoreIfFullyRefunded(sql, "booking", id);
     }
   }
   await enqueue(sql, "inapp", "booking_cancelled", booking.user_id, { id }, `booking_cancelled|${id}`);
@@ -830,6 +856,7 @@ export async function bookingsReschedule(sql: Sql, id: string, request: Request,
     start_at: string;
     price_vnd: number;
     discount_pct: number;
+    promo_discount_vnd: number;
     quota_hours: string | number;
     occupancy_id: string | null;
     code: string;
@@ -875,7 +902,8 @@ export async function bookingsReschedule(sql: Sql, id: string, request: Request,
   // Plan hours pay for any slot; money only moves between slots of equal price.
   if (!(Number(booking.quota_hours) > 0)) {
     const list = await lookupPrice(sql, { sport: court.sport, courtId, start });
-    const price = applyDiscount(list.price_vnd, booking.discount_pct, settings.round_vnd);
+    const price =
+      applyDiscount(list.price_vnd, booking.discount_pct, settings.round_vnd) - (booking.promo_discount_vnd ?? 0);
     if (price !== booking.price_vnd) {
       throw err.conflictState(
         "That slot is priced differently from the one you paid for. Cancel this booking and book the new slot instead.",

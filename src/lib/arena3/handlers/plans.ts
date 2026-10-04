@@ -2,6 +2,7 @@ import type { Sql } from "@/lib/db";
 import { err } from "../errors";
 import { addDays, ictDateString } from "../time";
 import { audit, bool, num, readJson, str } from "../helpers";
+import { quotePromo } from "../promos";
 import { limit, RULES } from "../ratelimit";
 import { requireRole, type PublicUser } from "../session";
 import { one } from "../tx";
@@ -204,23 +205,36 @@ export async function subscriptionsCreate(sql: Sql, request: Request, user: Publ
   );
   const start = today;
   const end = addDays(today, duration);
+  // The code is priced into the order now; the use is counted when it is paid (BR-45).
+  const promoCode = str(b.promo_code);
+  const promo = promoCode
+    ? await quotePromo(sql, {
+        code: promoCode,
+        userId,
+        scope: "plan",
+        sport: plan.sport_scope,
+        planId: plan.id,
+        orderVnd: plan.price_vnd,
+      })
+    : null;
+  const amountDue = plan.price_vnd - (promo?.discount_vnd ?? 0);
   if (pending) {
     await sql.query(
       `update subscriptions set plan_id = $2, start_on = $3, end_on = $4,
-              court_hours_left = $5, session_left = $6
+              court_hours_left = $5, session_left = $6, promo_id = $7, promo_discount_vnd = $8
         where id = $1`,
-      [pending.id, plan.id, start, end, plan.court_hours, plan.session_quota],
+      [pending.id, plan.id, start, end, plan.court_hours, plan.session_quota, promo?.promo_id ?? null, promo?.discount_vnd ?? 0],
     );
     const row = await one(sql, `select * from subscriptions where id = $1`, [pending.id]);
-    return { status: 201, body: { subscription: row, preview_end: end } };
+    return { status: 201, body: { subscription: row, preview_end: end, amount_due_vnd: amountDue, promo } };
   }
   const row = await one(
     sql,
     `insert into subscriptions
-       (user_id, plan_id, sport_scope, start_on, end_on, status, court_hours_left, session_left)
-     values ($1,$2,$3,$4,$5,'pending',$6,$7)
+       (user_id, plan_id, sport_scope, start_on, end_on, status, court_hours_left, session_left, promo_id, promo_discount_vnd)
+     values ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9)
      returning *`,
-    [userId, plan.id, plan.sport_scope, start, end, plan.court_hours, plan.session_quota],
+    [userId, plan.id, plan.sport_scope, start, end, plan.court_hours, plan.session_quota, promo?.promo_id ?? null, promo?.discount_vnd ?? 0],
   );
-  return { status: 201, body: { subscription: row, preview_end: end } };
+  return { status: 201, body: { subscription: row, preview_end: end, amount_due_vnd: amountDue, promo } };
 }

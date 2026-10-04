@@ -19,14 +19,15 @@ export type Settings = {
   cancel_class_hours: number;
   noshow_grace_minutes: number;
   checkin_before_minutes: number;
-  debt_limit_vnd: number;
   refund_manager_vnd: number;
   freeze_max_days_year: number;
   minor_age: number;
   vat_rate: string | number;
   round_vnd: number;
   waitlist_offer_hours: number;
-  deposit_pct_activates: number | null;
+  self_checkin_enabled: boolean;
+  gate_dedup_minutes: number;
+  at_risk_idle_days: number;
   tax_code: string | null;
   legal_name: string | null;
   address: string | null;
@@ -38,9 +39,10 @@ export async function getSettings(sql: Sql): Promise<Settings> {
     `select timezone, currency, open_time::text, close_time::text, slot_minutes, hold_minutes,
             transfer_hold_minutes,
             book_ahead_days, max_slots_per_day, cancel_court_hours, cancel_class_hours,
-            noshow_grace_minutes, checkin_before_minutes, debt_limit_vnd, refund_manager_vnd,
+            noshow_grace_minutes, checkin_before_minutes, refund_manager_vnd,
             freeze_max_days_year, minor_age, vat_rate, round_vnd, waitlist_offer_hours,
-            deposit_pct_activates, tax_code, legal_name, address
+            self_checkin_enabled, gate_dedup_minutes, at_risk_idle_days,
+            tax_code, legal_name, address
        from center_settings where id = 1`,
   );
   if (!row) throw err.validation("center_settings is missing.");
@@ -333,15 +335,6 @@ export function ageYears(dob: string): number {
   return age;
 }
 
-export async function subscriptionDebt(sql: Sql, subId: string): Promise<number> {
-  const row = await one<{ debt_vnd: string | number }>(
-    sql,
-    `select debt_vnd from v_subscription_debt where subscription_id = $1`,
-    [subId],
-  );
-  return Number(row?.debt_vnd ?? 0);
-}
-
 /** Active sub covering `sport`. Unlimited (session_left null) wins over quota. */
 export async function classSubscription(
   sql: Sql,
@@ -358,18 +351,6 @@ export async function classSubscription(
       limit 1`,
     [userId, sport],
   );
-}
-
-export async function userDebt(sql: Sql, userId: string): Promise<number> {
-  const row = await one<{ debt: string | number }>(
-    sql,
-    `select coalesce(sum(d.debt_vnd),0) as debt
-       from v_subscription_debt d
-       join subscriptions s on s.id = d.subscription_id
-      where s.user_id = $1 and d.debt_vnd > 0`,
-    [userId],
-  );
-  return Number(row?.debt ?? 0);
 }
 
 export type Ctx = { sql: Sql; request: Request; user: PublicUser | null };

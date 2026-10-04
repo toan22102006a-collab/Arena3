@@ -16,7 +16,8 @@ type IntRule = { kind: "int"; min: number; max: number };
 type DecimalRule = { kind: "decimal"; min: number; max: number };
 type TimeRule = { kind: "time" };
 type TextRule = { kind: "text"; max: number };
-export type SettingRule = IntRule | DecimalRule | TimeRule | TextRule;
+type BoolRule = { kind: "bool" };
+export type SettingRule = IntRule | DecimalRule | TimeRule | TextRule | BoolRule;
 
 const int = (min: number, max: number): IntRule => ({ kind: "int", min, max });
 
@@ -35,7 +36,9 @@ export const SETTING_RULES: Record<string, SettingRule> = {
   cancel_class_hours: int(0, 168),
   noshow_grace_minutes: int(0, 120),
   checkin_before_minutes: int(0, 240),
-  debt_limit_vnd: int(0, INT4_MAX),
+  self_checkin_enabled: { kind: "bool" },
+  gate_dedup_minutes: int(1, 720),
+  at_risk_idle_days: int(1, 90),
   refund_manager_vnd: int(0, INT4_MAX),
   minor_age: int(1, 100),
   vat_rate: { kind: "decimal", min: 0, max: 100 },
@@ -60,7 +63,9 @@ const SETTING_LABEL: Record<string, string> = {
   cancel_class_hours: "Class cancellation window",
   noshow_grace_minutes: "No-show grace",
   checkin_before_minutes: "Check-in window",
-  debt_limit_vnd: "Debt ceiling",
+  self_checkin_enabled: "Self check-in",
+  gate_dedup_minutes: "Gate repeat window",
+  at_risk_idle_days: "At-risk idle days",
   refund_manager_vnd: "Refund approval threshold",
   minor_age: "Minor age",
   vat_rate: "VAT rate",
@@ -124,8 +129,8 @@ export function parseClock(field: string, label: string, v: unknown): string {
  * validated — present-but-blank is an error for numbers (never a silent null)
  * and a deliberate "clear it" for the optional text fields.
  */
-export function parseSettingsPatch(body: Record<string, unknown>): Record<string, string | number | null> {
-  const out: Record<string, string | number | null> = {};
+export function parseSettingsPatch(body: Record<string, unknown>): Record<string, string | number | boolean | null> {
+  const out: Record<string, string | number | boolean | null> = {};
   for (const key of SETTING_KEYS) {
     if (body[key] === undefined) continue;
     const rule = SETTING_RULES[key];
@@ -134,6 +139,10 @@ export function parseSettingsPatch(body: Record<string, unknown>): Record<string
     if (rule.kind === "int") out[key] = parseInteger(key, label, v, rule.min, rule.max);
     else if (rule.kind === "decimal") out[key] = parseDecimal(key, label, v, rule.min, rule.max);
     else if (rule.kind === "time") out[key] = parseClock(key, label, v);
+    else if (rule.kind === "bool") {
+      if (typeof v !== "boolean") throw err.field(key, `${label} must be on or off.`);
+      out[key] = v;
+    }
     else {
       if (v === null || v === undefined) {
         out[key] = null;

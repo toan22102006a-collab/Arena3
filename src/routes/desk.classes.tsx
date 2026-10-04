@@ -3,9 +3,10 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ClassDetailModal } from "@/components/class-detail";
 import { Shell } from "@/components/shell";
-import { Button, Card, EmptyState, Skeleton, StatusBadge } from "@/components/ui";
+import { Button, Card, EmptyState, ShowMore, Skeleton, StatusBadge } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/motion";
 import { apiGet } from "@/lib/arena3/client";
+import { t, tServer } from "@/lib/i18n";
 import { levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
 
 export const Route = createFileRoute("/desk/classes")({
@@ -29,22 +30,23 @@ type Row = {
 function Page() {
   const [items, setItems] = useState<Row[] | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
+  const [limit, setLimit] = useState(8);
 
   useEffect(() => {
     void apiGet<{ items: Row[] }>("/classes")
       .then((r) => setItems(r.items))
-      .catch((e) => toast.error(e.message));
+      .catch((e) => toast.error(tServer(e.message)));
   }, []);
 
   return (
-    <Shell role="receptionist" title="Classes" subtitle="Open a class to see its sessions, court, coach and who is enrolled.">
+    <Shell role="receptionist" title={t("Classes")} subtitle={t("Open a class to see its sessions, court, coach and who is enrolled.")}>
       {!items ? (
         <Skeleton className="h-36" />
       ) : !items.length ? (
-        <EmptyState title="No classes are open" hint="The manager publishes classes from the Classes screen." />
+        <EmptyState title={t("No classes are open")} hint={t("The manager publishes classes from the Classes screen.")} />
       ) : (
         <Stagger className="grid gap-3 md:grid-cols-2" gap={0.06}>
-          {items.map((c) => (
+          {items.slice(0, limit).map((c) => (
             <StaggerItem key={c.id}>
               <Card className="h-full">
                 <div className="flex items-center justify-between gap-2">
@@ -62,13 +64,14 @@ function Page() {
                 </p>
                 {c.rrule ? <p className="text-sm">{rruleLabel(c.rrule)}</p> : null}
                 <Button className="mt-3" variant="outline" onClick={() => setDetail(c.id)}>
-                  Sessions &amp; students
+                  {t("Sessions & students")}
                 </Button>
               </Card>
             </StaggerItem>
           ))}
         </Stagger>
       )}
+      {items?.length ? <ShowMore shown={Math.min(limit, items.length)} total={items.length} step={8} onMore={() => setLimit((n) => n + 8)} /> : null}
       <ClassDetailModal classId={detail} onClose={() => setDetail(null)} />
     </Shell>
   );

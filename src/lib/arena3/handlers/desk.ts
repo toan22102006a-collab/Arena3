@@ -11,8 +11,8 @@ import {
   num,
   readJson,
   str,
-  subscriptionDebt,
 } from "../helpers";
+import { quotePromo, redeemForBooking, redeemPromo, restoreIfFullyRefunded, type PromoQuote } from "../promos";
 import { methodLabelVi } from "../labels";
 import { renderInvoicePdf } from "../pdf";
 import { validatePriceRules } from "../rules";
@@ -88,7 +88,7 @@ export async function shiftClose(sql: Sql, id: string, request: Request, user: P
   };
 }
 
-async function activateSubscription(sql: Sql, subId: string) {
+export async function activateSubscription(sql: Sql, subId: string) {
   const sub = await one<{
     id: string;
     status: string;
@@ -205,6 +205,8 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
   let buyer = user.full_name;
   let buyerPhone: string | null = null;
   let userId: string | null = null;
+  let quote: PromoQuote | null = null;
+  let subPromo: { id: string; discount: number } | null = null;
   if (ref_type === "booking") {
     // The receipt is made out to whoever the booking is for — the member, or
     // the walk-in's typed name and phone — never to the receptionist taking it.
@@ -216,34 +218,65 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
     // Locked for the rest of the transaction: two taps on "Take payment" queue
     // here, and the second sees what the first left behind instead of both
     // reading the same balance.
-    const sub = await one<{ user_id: string; plan_id: string; status: string; price_vnd: number }>(
+    const sub = await one<{
+      user_id: string;
+      plan_id: string;
+      status: string;
+      price_vnd: number;
+      court_discount_pct: number;
+      sport_scope: string;
+      promo_id: string | null;
+      promo_discount_vnd: number;
+    }>(
       sql,
-      `select s.user_id, s.plan_id, s.status::text as status, p.price_vnd
+      `select s.user_id, s.plan_id, s.status::text as status, s.promo_id, s.promo_discount_vnd,
+              p.price_vnd, p.court_discount_pct, p.sport_scope::text as sport_scope
          from subscriptions s join membership_plans p on p.id = s.plan_id
         where s.id = $1 for update of s`,
       [ref_id],
     );
     if (!sub) throw err.notFound("No such plan.");
-    if (sub.status === "pending") {
-      const owed = await subscriptionDebt(sql, ref_id);
-      if (owed <= 0) throw err.conflictState("This plan order is already paid for.");
-      if (amount > owed) {
-        throw err.field("amount_vnd", `That is more than the ${owed.toLocaleString("en-US")}đ still owed.`);
-      }
-    } else if (sub.status === "active") {
-      // An active plan being paid for again is a renewal, and a renewal is one
-      // whole period: a part payment must not buy one, nor must a second tap.
-      if (amount !== sub.price_vnd) {
-        throw err.field(
-          "amount_vnd",
-          `A renewal is one full period: ${sub.price_vnd.toLocaleString("en-US")}đ.`,
-        );
-      }
-    } else if (sub.status === "frozen") {
-      throw err.br("BR-14", "This plan is frozen — unfreeze it before taking payment.");
-    } else {
+    if (sub.status === "frozen") throw err.br("BR-14", "This plan is frozen — unfreeze it before taking payment.");
+    if (sub.status !== "pending" && sub.status !== "active") {
       throw err.conflictState("That plan is not waiting for payment.");
     }
+    // No debt and no deposit (BR-12): a plan is paid in one go for exactly what it
+    // costs after any code, or it stays pending and grants nothing.
+    if (sub.status === "pending") {
+      const paid = await one<{ n: number }>(
+        sql,
+        `select count(*)::int as n from payments
+          where ref_type = 'subscription' and ref_id = $1 and amount_vnd > 0 and status = 'posted'`,
+        [ref_id],
+      );
+      if ((paid?.n ?? 0) > 0) throw err.conflictState("This plan order is already paid for.");
+    }
+    let discount = sub.status === "pending" ? sub.promo_discount_vnd : 0;
+    let promoId: string | null = sub.status === "pending" ? sub.promo_id : null;
+    const code = str(b.promo_code);
+    if (code && !(sub.status === "pending" && promoId)) {
+      quote = await quotePromo(sql, {
+        code,
+        userId: sub.user_id,
+        scope: "plan",
+        sport: sub.sport_scope,
+        planId: sub.plan_id,
+        orderVnd: sub.price_vnd,
+      });
+      discount = quote.discount_vnd;
+      promoId = quote.promo_id;
+    }
+    const expected = sub.price_vnd - discount;
+    if (amount !== expected) {
+      throw err.field(
+        "amount_vnd",
+        sub.status === "active"
+          ? `A renewal is one full period: ${expected.toLocaleString("en-US")}đ.`
+          : `A plan is paid in full: ${expected.toLocaleString("en-US")}đ. Partial payments are not taken.`,
+        { expected_vnd: expected },
+      );
+    }
+    subPromo = promoId && discount > 0 ? { id: promoId, discount } : null;
     userId = sub.user_id;
     const u = await one<{ full_name: string }>(sql, `select full_name from users where id = $1`, [userId]);
     buyer = u?.full_name ?? buyer;
@@ -256,21 +289,18 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
     [payCode, userId, shiftId, method, amount, Number(settings.vat_rate), ref_type, ref_id, user.id],
   );
   if (ref_type === "subscription") {
-    const plan = await one<{ price_vnd: number; status: string }>(
-      sql,
-      `select p.price_vnd, s.status::text as status from subscriptions s join membership_plans p on p.id = s.plan_id where s.id = $1`,
-      [ref_id],
-    );
-    const debt = await subscriptionDebt(sql, ref_id);
-    const deposit = settings.deposit_pct_activates;
-    // An active plan reaching this point was paid a whole period (checked
-    // above), so it renews; a pending one activates only once enough is in.
-    const paidEnough =
-      plan!.status === "active" ||
-      (deposit != null && deposit > 0
-        ? (plan!.price_vnd - debt) / plan!.price_vnd >= deposit / 100
-        : debt <= 0);
-    if (paidEnough) await activateSubscription(sql, ref_id);
+    if (subPromo) {
+      await sql.query(`update subscriptions set promo_id = $2, promo_discount_vnd = $3 where id = $1`, [
+        ref_id,
+        subPromo.id,
+        subPromo.discount,
+      ]);
+      await redeemPromo(sql, { promoId: subPromo.id, userId, paymentId: pay!.id, discountVnd: subPromo.discount });
+    }
+    // Paid in full (checked above), so a pending plan activates and an active one renews.
+    await activateSubscription(sql, ref_id);
+  } else if (ref_type === "booking") {
+    await redeemForBooking(sql, ref_id, userId, pay!.id);
   }
   const item = await describePayment(sql, ref_type, ref_id);
   const invoiceId = await issueInvoice(sql, {
@@ -365,7 +395,8 @@ export async function paymentsRefund(sql: Sql, id: string, request: Request, use
     [payCode, orig.user_id, signed, orig.vat_rate, orig.ref_type, orig.ref_id, user.id],
   );
   await audit(sql, user.id, "refund", "payment", (row as { id: string }).id, null, { reason });
-  return { status: 201, body: { payment: row } };
+  const restored = await restoreIfFullyRefunded(sql, orig.ref_type, orig.ref_id);
+  return { status: 201, body: { payment: row, promo_restored: restored } };
 }
 
 type PendingRefund = {
@@ -423,6 +454,14 @@ async function decideRefund(
   if (note && note.length > 500) throw err.field("reason", "The note must be at most 500 characters.");
   const next = approve ? "posted" : "refund_rejected";
   await sql.query(`update payments set status = $2 where id = $1`, [id, next]);
+  if (approve) {
+    const ref = await one<{ ref_type: string; ref_id: string }>(
+      sql,
+      `select ref_type, ref_id from payments where id = $1`,
+      [id],
+    );
+    if (ref) await restoreIfFullyRefunded(sql, ref.ref_type, ref.ref_id);
+  }
   await audit(
     sql,
     user.id,
@@ -520,15 +559,18 @@ export async function paymentsPending(sql: Sql, request: Request, user: PublicUs
   const orders = await sql.query(
     `select s.id, s.sport_scope, s.start_on::text as ordered_on, s.end_on::text as end_on,
             u.id as user_id, u.full_name, u.phone, u.member_code,
-            pl.name as plan_name, pl.price_vnd,
+            pl.name as plan_name, pl.price_vnd, pl.id as plan_id,
+            s.promo_discount_vnd, pr.code as promo_code,
             coalesce(sum(p.amount_vnd) filter (where p.status = 'posted'), 0)::int as paid_vnd
        from subscriptions s
        join users u on u.id = s.user_id
        join membership_plans pl on pl.id = s.plan_id
+       left join promotions pr on pr.id = s.promo_id
        left join payments p on p.ref_type = 'subscription' and p.ref_id = s.id
       where s.status = 'pending'
       group by s.id, s.sport_scope, s.start_on, s.end_on,
-               u.id, u.full_name, u.phone, u.member_code, pl.name, pl.price_vnd
+               u.id, u.full_name, u.phone, u.member_code, pl.name, pl.price_vnd, pl.id,
+               s.promo_discount_vnd, pr.code
       order by s.start_on asc, u.full_name asc`,
   );
 
@@ -917,7 +959,7 @@ export async function settingsPatch(sql: Sql, request: Request, user: PublicUser
     sql,
     `select open_time::text, close_time::text, hold_minutes, book_ahead_days, max_slots_per_day,
             cancel_court_hours, cancel_class_hours, noshow_grace_minutes, checkin_before_minutes,
-            debt_limit_vnd, refund_manager_vnd, minor_age, vat_rate, legal_name, tax_code, address,
+            refund_manager_vnd, self_checkin_enabled, gate_dedup_minutes, at_risk_idle_days, minor_age, vat_rate, legal_name, tax_code, address,
             freeze_max_days_year, waitlist_offer_hours
        from center_settings where id = 1`,
   );

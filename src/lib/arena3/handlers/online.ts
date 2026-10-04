@@ -14,13 +14,16 @@ import {
   cancelPaymentLink,
   createPaymentLink,
   describeForGateway,
+  gatewayAmount,
   payosConfigured,
   readPaymentLink,
   verifyWebhook,
 } from "../payos";
 import { requireRole, type PublicUser } from "../session";
 import { one } from "../tx";
+import { redeemPromo } from "../promos";
 import { settleHeldBooking } from "./bookings";
+import { activateSubscription } from "./desk";
 
 /**
  * Online payment through payOS.
@@ -71,7 +74,7 @@ async function settleOnline(
 
   // Never trust an amount from outside. A confirmation for less than the price
   // is a partial payment, not a paid booking.
-  if (paid.amountPaid < pay.amount_vnd) {
+  if (paid.amountPaid < gatewayAmount(pay.amount_vnd)) {
     return { posted: false, reason: `paid ${paid.amountPaid} of ${pay.amount_vnd}` };
   }
 
@@ -109,26 +112,31 @@ async function settleOnline(
   }
 
   if (pay.ref_type === "subscription") {
-    const sub = await one<{ user_id: string; plan_id: string }>(
-      sql,
-      `select user_id, plan_id from subscriptions where id = $1`,
-      [pay.ref_id],
-    );
+    const sub = await one<{
+      user_id: string;
+      plan_id: string;
+      promo_id: string | null;
+      promo_discount_vnd: number;
+    }>(sql, `select user_id, plan_id, promo_id, promo_discount_vnd from subscriptions where id = $1`, [
+      pay.ref_id,
+    ]);
     if (!sub) throw err.notFound("That plan order no longer exists.");
     const plan = await one<{ name: string; duration_days: number; price_vnd: number }>(
       sql,
       `select name, duration_days, price_vnd from membership_plans where id = $1`,
       [sub.plan_id],
     );
-    await sql.query(
-      `update subscriptions
-          set status = 'active',
-              start_on = coalesce(start_on, (now() at time zone 'Asia/Ho_Chi_Minh')::date),
-              end_on = coalesce(start_on, (now() at time zone 'Asia/Ho_Chi_Minh')::date)
-                       + ($2::int * interval '1 day')
-        where id = $1`,
-      [pay.ref_id, plan?.duration_days ?? 30],
-    );
+    if (sub.promo_id && sub.promo_discount_vnd > 0) {
+      await redeemPromo(sql, {
+        promoId: sub.promo_id,
+        userId: sub.user_id,
+        paymentId: pay.id,
+        discountVnd: sub.promo_discount_vnd,
+      });
+    }
+    // The same activation the front desk uses: the plan starts the day it is paid,
+    // and its hours and sessions are credited (BR-12, BR-18).
+    await activateSubscription(sql, pay.ref_id);
     const buyer = await one<{ full_name: string }>(sql, `select full_name from users where id = $1`, [
       sub.user_id,
     ]);
@@ -226,9 +234,9 @@ export async function onlineCreate(sql: Sql, request: Request, user: PublicUser)
     // Members order plans in the app but pay at the desk, so raising a link for
     // one is reception's job.
     if (!staff) throw err.forbidden("Ask the front desk to take payment for a plan.");
-    const sub = await one<{ user_id: string; plan_id: string; status: string }>(
+    const sub = await one<{ user_id: string; plan_id: string; status: string; promo_discount_vnd: number }>(
       sql,
-      `select user_id, plan_id, status from subscriptions where id = $1`,
+      `select user_id, plan_id, status, promo_discount_vnd from subscriptions where id = $1`,
       [refId],
     );
     if (!sub) throw err.notFound();
@@ -240,7 +248,7 @@ export async function onlineCreate(sql: Sql, request: Request, user: PublicUser)
       `select price_vnd from membership_plans where id = $1`,
       [sub.plan_id],
     );
-    amount = plan?.price_vnd ?? 0;
+    amount = Math.max(0, (plan?.price_vnd ?? 0) - sub.promo_discount_vnd);
     payerId = sub.user_id;
     label = "plan";
   } else {

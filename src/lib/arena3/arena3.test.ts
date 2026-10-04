@@ -19,7 +19,10 @@ import {
   ticketBody,
   validateMetrics,
   validatePriceRules,
+  computeDiscount,
+  normalizeCode,
 } from "./rules.ts";
+import { signCheckinToken, verifyCheckinToken } from "./checkin.ts";
 
 describe("phone", () => {
   it("normalizes VN mobiles to +84", () => {
@@ -189,19 +192,19 @@ describe("settings validation (B-01)", () => {
     assert.fail("expected a 400");
   };
   it("takes numbers typed as strings", () => {
-    const p = parseSettingsPatch({ hold_minutes: "15", debt_limit_vnd: 500000, open_time: "6:00", tax_code: " 0312 " });
-    assert.deepEqual(p, { hold_minutes: 15, debt_limit_vnd: 500000, open_time: "06:00", tax_code: "0312" });
+    const p = parseSettingsPatch({ hold_minutes: "15", gate_dedup_minutes: 90, open_time: "6:00", tax_code: " 0312 " });
+    assert.deepEqual(p, { hold_minutes: 15, gate_dedup_minutes: 90, open_time: "06:00", tax_code: "0312" });
   });
   it("never turns a blank number into null", () => {
     assert.equal(fieldOf(() => parseSettingsPatch({ hold_minutes: "" })), "hold_minutes");
-    assert.equal(fieldOf(() => parseSettingsPatch({ debt_limit_vnd: null })), "debt_limit_vnd");
+    assert.equal(fieldOf(() => parseSettingsPatch({ gate_dedup_minutes: null })), "gate_dedup_minutes");
     assert.equal(fieldOf(() => parseSettingsPatch({ book_ahead_days: Number.NaN })), "book_ahead_days");
   });
   it("rejects text, fractions and out-of-range integers", () => {
     assert.equal(fieldOf(() => parseSettingsPatch({ hold_minutes: "abc" })), "hold_minutes");
     assert.equal(fieldOf(() => parseSettingsPatch({ hold_minutes: "1.5" })), "hold_minutes");
-    assert.equal(fieldOf(() => parseSettingsPatch({ debt_limit_vnd: 2_147_483_648 })), "debt_limit_vnd");
-    assert.equal(fieldOf(() => parseSettingsPatch({ debt_limit_vnd: -1 })), "debt_limit_vnd");
+    assert.equal(fieldOf(() => parseSettingsPatch({ gate_dedup_minutes: 2_147_483_648 })), "gate_dedup_minutes");
+    assert.equal(fieldOf(() => parseSettingsPatch({ gate_dedup_minutes: -1 })), "gate_dedup_minutes");
   });
   it("rejects text longer than its column", () => {
     assert.equal(fieldOf(() => parseSettingsPatch({ tax_code: "1".repeat(21) })), "tax_code");
@@ -321,5 +324,46 @@ describe("F4 homework checklist (FR-TRN-07)", () => {
     assert.equal(homeworkComplete(3, [0, 1, 2], false), true);
     assert.equal(homeworkComplete(0, [], false), false);
     assert.equal(homeworkComplete(0, [], true), true);
+  });
+});
+
+describe("promo discount (BR-46)", () => {
+  it("rounds a percentage once to the nearest 1,000đ", () => {
+    assert.equal(computeDiscount({ kind: "percent", value: 10, max_discount_vnd: null }, 155_000), 16_000);
+    assert.equal(computeDiscount({ kind: "percent", value: 10, max_discount_vnd: null }, 154_000), 15_000);
+  });
+  it("caps by max_discount_vnd and never leaves under 1,000đ to pay", () => {
+    assert.equal(computeDiscount({ kind: "percent", value: 50, max_discount_vnd: 20_000 }, 200_000), 20_000);
+    assert.equal(computeDiscount({ kind: "amount", value: 50_000, max_discount_vnd: null }, 30_000), 29_000);
+  });
+  it("normalises codes", () => {
+    assert.equal(normalizeCode(" sum mer10 "), "SUMMER10");
+    assert.equal(normalizeCode(null), "");
+  });
+});
+
+describe("check-in token (BR-71)", () => {
+  it("round-trips a member token", () => {
+    const { token, ttl_seconds } = signCheckinToken("member", "u1", 1_000_000);
+    assert.equal(ttl_seconds, 60);
+    const v = verifyCheckinToken(token, 1_000_000 + 30_000);
+    assert.equal(v.kind, "member");
+    assert.equal(v.sub, "u1");
+  });
+  it("refuses an expired token", () => {
+    const { token } = signCheckinToken("member", "u1", 1_000_000);
+    assert.throws(() => verifyCheckinToken(token, 1_000_000 + 61_000), ApiError);
+  });
+  it("refuses a tampered token", () => {
+    const { token } = signCheckinToken("member", "u1", Date.now());
+    const [body, mac] = token.split(".");
+    const forged = Buffer.from(JSON.stringify({ k: "member", s: "u2", j: "x", e: 9_999_999_999 })).toString("base64url");
+    assert.throws(() => verifyCheckinToken(`${forged}.${mac}`), ApiError);
+    assert.throws(() => verifyCheckinToken(`${body}.AAAA`), ApiError);
+    assert.throws(() => verifyCheckinToken(42), ApiError);
+  });
+  it("takes a desk code wrapped in a URL", () => {
+    const { token } = signCheckinToken("desk", "front-desk", Date.now());
+    assert.equal(verifyCheckinToken(`https://x.test/in?d=${token}`).kind, "desk");
   });
 });

@@ -9,6 +9,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { GLBackground, Magnet, ShinyText } from "@/components/fx";
 import { apiPost } from "@/lib/arena3/client";
 import { cn } from "@/lib/cn";
+import { t, tk } from "@/lib/i18n";
 
 export const Route = createFileRoute("/app/assistant")({ component: Page });
 
@@ -28,22 +29,25 @@ const MAX_CHARS = 800;
 /** Where the remaining-characters line starts showing itself. */
 const COUNTER_FROM = MAX_CHARS - 120;
 
+// The chip's English text is what gets sent to the assistant; only the label drawn is translated.
 const CHIPS = [
-  "What are your opening hours?",
-  "Which plans are on sale?",
-  "Who coaches badminton?",
-  "How do I cancel a court?",
+  tk("What are your opening hours?"),
+  tk("Which plans are on sale?"),
+  tk("Who coaches badminton?"),
+  tk("How do I cancel a court?"),
 ];
 
 const WELCOME: Msg = {
   role: "bot",
-  text: "Ask about the timetable, plans, coaches, cancelling, or waitlists. Every answer is grounded in the centre's own data. Type «ticket: …» to send a note to the desk.",
+  text: tk(
+    "Ask about the timetable, plans, coaches, cancelling, or waitlists. Every answer is grounded in the centre's own data. Type «ticket: …» to send a note to the desk.",
+  ),
 };
 
 function sourceLabel(s?: Msg["source"]) {
   if (s === "gemini") return "Gemini";
   if (s === "xai") return "Grok";
-  if (s === "rules") return "in-house";
+  if (s === "rules") return t("in-house");
   return null;
 }
 
@@ -73,14 +77,18 @@ function Page() {
       const r = await apiPost<{ reply: string; source?: Msg["source"] }>("/assistant", { message, history });
       setLog((l) => [...l, { role: "bot", text: r.reply, source: r.source }]);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "The assistant is switched off");
+      toast.error(e instanceof Error ? e.message : t("The assistant is switched off"));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Shell role="member" title="Assistant" subtitle="Gemini answers, grounded in Arena3's own timetable, plans and coaches.">
+    <Shell
+      role="member"
+      title={t("Assistant")}
+      subtitle={t("Gemini answers, grounded in Arena3's own timetable, plans and coaches.")}
+    >
       {/* The dot field tracks the cursor behind the thread — it makes an empty
           conversation feel awake without competing with the messages. */}
       <GLBackground
@@ -102,8 +110,8 @@ function Page() {
             <AssistantMark className="size-4" strokeWidth={1.9} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium leading-tight">Arena3 assistant</p>
-            <p className="text-2xs text-muted">Grounded in this centre's timetable and prices</p>
+            <p className="text-sm font-medium leading-tight">{t("Arena3 assistant")}</p>
+            <p className="text-2xs text-muted">{t("Grounded in this centre's timetable and prices")}</p>
           </div>
           {log.length > 1 ? (
             <Button
@@ -114,7 +122,7 @@ function Page() {
                 setQ("");
               }}
             >
-              Clear
+              {t("Clear")}
             </Button>
           ) : null}
         </div>
@@ -134,9 +142,11 @@ function Page() {
             )}
           >
             <p className={cn("text-2xs uppercase tracking-wider", m.role === "me" ? "text-accent-fg/70" : "text-muted")}>
-              {m.role === "me" ? "You" : "Assistant"}
+              {m.role === "me" ? t("You") : t("Assistant")}
             </p>
-            <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm leading-relaxed">{m.text}</p>
+            <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm leading-relaxed">
+              {m === WELCOME ? t(m.text) : m.text}
+            </p>
             {m.role === "bot" && sourceLabel(m.source) ? (
               <p className="mt-2 text-2xs uppercase tracking-wider text-muted">{sourceLabel(m.source)}</p>
             ) : null}
@@ -151,10 +161,10 @@ function Page() {
             className="mr-auto max-w-[85%] rounded-[var(--radius-lg)] bg-surface px-4 py-3 shadow-[var(--shadow-border)]"
           >
             <ShinyText className="shiny-muted text-2xs uppercase tracking-wider" speed={2.4}>
-              Assistant
+              {t("Assistant")}
             </ShinyText>
             <p className="mt-1 flex items-center gap-1 text-sm text-muted">
-              Typing
+              {t("Typing")}
               {[0, 1, 2].map((i) => (
                 <motion.span
                   key={i}
@@ -185,7 +195,7 @@ function Page() {
                   onClick={() => void send(c)}
                   className="rounded-full border border-line bg-surface px-3 py-2 text-xs font-medium text-fg transition-[background-color,border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-accent hover:bg-wood active:scale-95"
                 >
-                  {c}
+                  {t(c)}
                 </button>
               ))}
             </motion.div>
@@ -201,7 +211,7 @@ function Page() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value.slice(0, MAX_CHARS))}
-              placeholder="Ask about prices, opening hours, coaches…"
+              placeholder={t("Ask about prices, opening hours, coaches…")}
               disabled={busy}
               // maxLength stops typing; the slice above stops a paste, which
               // maxLength does not always catch on every browser.
@@ -210,7 +220,7 @@ function Page() {
               className="h-11 min-w-0 flex-1 rounded-[var(--radius-pill)] border border-line bg-bg px-4 text-sm text-fg placeholder:text-subtle outline-none transition-[box-shadow,border-color] duration-150 focus:border-accent/40 focus:ring-2 focus:ring-accent/25"
             />
             <Magnet radius={110} pull={0.25} wrapperClassName="shrink-0">
-              <Button type="submit" disabled={busy || q.trim().length < 2} aria-label="Send" className="size-11 shrink-0 px-0">
+              <Button type="submit" disabled={busy || q.trim().length < 2} aria-label={t("Send")} className="size-11 shrink-0 px-0">
                 <Send className="size-4" />
               </Button>
             </Magnet>
@@ -229,23 +239,29 @@ function Page() {
               )}
             >
               {q.length >= MAX_CHARS
-                ? "That is as long as a question can be."
-                : `${MAX_CHARS - q.length} characters left`}
+                ? t("That is as long as a question can be.")
+                : t("{n} characters left", { n: MAX_CHARS - q.length })}
             </p>
           ) : null}
         </div>
       </div>
 
       <p className="mx-auto mt-3 max-w-2xl text-2xs text-muted">
-        No medical advice. Booking still happens on{" "}
-        <Link to="/app/book" className="underline">
-          Book
-        </Link>{" "}
-        and{" "}
-        <Link to="/app/classes" className="underline">
-          Classes
-        </Link>
-        .
+        {t("No medical advice. Booking still happens on {book} and {classes}.")
+          .split(/(\{book\}|\{classes\})/)
+          .map((part, i) =>
+            part === "{book}" ? (
+              <Link key={i} to="/app/book" className="underline">
+                {t("Book")}
+              </Link>
+            ) : part === "{classes}" ? (
+              <Link key={i} to="/app/classes" className="underline">
+                {t("Classes")}
+              </Link>
+            ) : (
+              part
+            ),
+          )}
       </p>
     </Shell>
   );

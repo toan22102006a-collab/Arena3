@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { SectionTitle } from "@/components/section";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Shell, money } from "@/components/shell";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
-import { SplitText, SpotlightCard } from "@/components/fx";
+import { SpotlightCard } from "@/components/fx";
 import { ApiClientError, apiGet, apiPost } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
+import { t, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/desk/gear")({ component: Page });
 
@@ -45,7 +47,7 @@ function Page() {
     setItemId((cur) => cur || eq.items[0]?.id || "");
   }
   useEffect(() => {
-    void load().catch((e) => toast.error(e.message));
+    void load().catch((e) => toast.error(tServer(e.message)));
   }, []);
 
   useEffect(() => {
@@ -53,12 +55,12 @@ function Page() {
       setHits([]);
       return;
     }
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       void apiGet<{ items: Hit[] }>(`/members?q=${encodeURIComponent(q)}`)
         .then((r) => setHits(r.items))
-        .catch((e) => toast.error(e.message));
+        .catch((e) => toast.error(tServer(e.message)));
     }, 180);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [q, who, member]);
 
   const item = items.find((i) => i.id === itemId);
@@ -75,15 +77,15 @@ function Page() {
         qty: shown,
         ...(who === "member" ? { user_id: member?.id } : { phone }),
       });
-      toast.success(`Rented out · ${money(r.rent_vnd)}`);
+      toast.success(t("Rented out · {amount}", { amount: money(r.rent_vnd) }));
       setQty(1);
       setPhone("");
       setMember(null);
       setQ("");
       await load();
     } catch (e) {
-      if (e instanceof ApiClientError && e.body.field) setFieldError({ field: e.body.field, message: e.message });
-      else toast.error(e instanceof Error ? e.message : "Something went wrong");
+      if (e instanceof ApiClientError && e.body.field) setFieldError({ field: e.body.field, message: tServer(e.message) });
+      else toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
       void load().catch(() => {});
     }
   }
@@ -91,12 +93,12 @@ function Page() {
   return (
     <Shell
       role="receptionist"
-      title="Gear"
-      subtitle="Rent to a member's account or to a guest by phone — stock comes down on the way out, back up on return."
+      title={t("Gear")}
+      subtitle={t("Rent to a member's account or to a guest by phone — stock comes down on the way out, back up on return.")}
     >
       <Reveal from="down">
         <Card className="mb-4 grid gap-3 md:grid-cols-[1.2fr_1.6fr_auto_auto]">
-          <Field label="Item">
+          <Field label={t("Item")}>
             <Select
               value={itemId}
               onChange={(e) => {
@@ -106,13 +108,13 @@ function Page() {
             >
               {items.map((i) => (
                 <option key={i.id} value={i.id} disabled={i.stock < 1}>
-                  {i.name} · {i.stock ? `${i.stock} left` : "none left"} · {money(i.rent_vnd)}
+                  {i.name} · {i.stock ? t("{n} left", { n: i.stock }) : t("none left")} · {money(i.rent_vnd)}
                 </option>
               ))}
             </Select>
           </Field>
           <div className="grid content-start gap-2">
-            <div className="flex gap-1 text-sm" role="tablist" aria-label="Who is renting">
+            <div className="flex gap-1 text-sm" role="tablist" aria-label={t("Who is renting")}>
               {(["member", "guest"] as const).map((k) => (
                 <button
                   key={k}
@@ -125,7 +127,7 @@ function Page() {
                   }}
                   className={`rounded-full px-3 py-1 ${who === k ? "bg-accent text-white" : "bg-wood text-muted"}`}
                 >
-                  {k === "member" ? "Member" : "Guest"}
+                  {k === "member" ? t("Member") : t("Guest")}
                 </button>
               ))}
             </div>
@@ -139,14 +141,14 @@ function Page() {
                     </span>
                   </span>
                   <button type="button" className="text-muted underline" onClick={() => setMember(null)}>
-                    Change
+                    {t("Change")}
                   </button>
                 </div>
               ) : (
                 <div className="relative">
                   <Input
-                    aria-label="Find a member"
-                    placeholder="Search name, phone or member code"
+                    aria-label={t("Find a member")}
+                    placeholder={t("Search name, phone or member code")}
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                   />
@@ -175,9 +177,9 @@ function Page() {
               )
             ) : (
               <Input
-                aria-label="Guest phone"
+                aria-label={t("Guest phone")}
                 inputMode="tel"
-                placeholder="Guest phone, e.g. 09xx xxx xxx"
+                placeholder={t("Guest phone, e.g. 09xx xxx xxx")}
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
               />
@@ -186,12 +188,12 @@ function Page() {
               <p className="text-xs text-danger">{fieldError.message}</p>
             ) : null}
           </div>
-          <Field label="Qty">
+          <Field label={t("Qty")}>
             <div className="flex items-center gap-1">
               <Button
                 size="sm"
                 variant="outline"
-                aria-label="One fewer"
+                aria-label={t("One fewer")}
                 disabled={shown <= 1}
                 onClick={() => setQty(shown - 1)}
               >
@@ -203,7 +205,7 @@ function Page() {
               <Button
                 size="sm"
                 variant="outline"
-                aria-label="One more"
+                aria-label={t("One more")}
                 disabled={shown >= max}
                 onClick={() => setQty(shown + 1)}
               >
@@ -213,7 +215,7 @@ function Page() {
           </Field>
           <div className="flex items-end">
             <Button className="w-full" disabled={!canRent} onClick={() => void rent()}>
-              Rent out
+              {t("Rent out")}
             </Button>
           </div>
         </Card>
@@ -224,10 +226,10 @@ function Page() {
             <Lift className="h-full">
               <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={280} strength={0.1}>
                 <Card interactive className="relative z-[2] h-full p-4">
-                  <p className="text-2xs uppercase tracking-wider text-muted">{i.sport ? sportLabel(i.sport) : "General"}</p>
+                  <p className="text-2xs uppercase tracking-wider text-muted">{i.sport ? sportLabel(i.sport) : t("General")}</p>
                   <p className="font-medium">{i.name}</p>
                   <p className="text-sm text-muted">
-                    {i.stock} in stock · {money(i.rent_vnd)} each
+                    {t("{n} in stock · {amount} each", { n: i.stock, amount: money(i.rent_vnd) })}
                   </p>
                 </Card>
               </SpotlightCard>
@@ -235,7 +237,7 @@ function Page() {
           </StaggerItem>
         ))}
       </Stagger>
-      <SplitText as="h2" text="Out on loan" className="mt-8 font-display text-2xl" />
+      <SectionTitle text={t("Out on loan")} className="mt-8 font-display text-2xl" />
       <Stagger className="mt-3 grid gap-2" gap={0.05}>
         {loans.map((l) => (
           <StaggerItem key={l.id}>
@@ -245,7 +247,7 @@ function Page() {
                   {l.name} × {l.qty}
                 </p>
                 <p className="text-xs text-muted">
-                  {l.member_name ? `${l.member_name}${l.member_code ? ` · ${l.member_code}` : ""} · ` : "Guest · "}
+                  {l.member_name ? `${l.member_name}${l.member_code ? ` · ${l.member_code}` : ""} · ` : `${t("Guest")} · `}
                   {l.phone}
                 </p>
               </div>
@@ -255,20 +257,20 @@ function Page() {
                 onClick={async () => {
                   try {
                     await apiPost(`/equipment/loans/${l.id}/return`);
-                    toast.success("Returned");
+                    toast.success(t("Returned"));
                     await load();
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : "Something went wrong");
+                    toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
                     void load().catch(() => {});
                   }
                 }}
               >
-                Take it back
+                {t("Take it back")}
               </Button>
             </Card>
           </StaggerItem>
         ))}
-        {!loans.length ? <p className="text-sm text-muted">Nothing is out right now.</p> : null}
+        {!loans.length ? <p className="text-sm text-muted">{t("Nothing is out right now.")}</p> : null}
       </Stagger>
     </Shell>
   );

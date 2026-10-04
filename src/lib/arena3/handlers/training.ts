@@ -607,7 +607,26 @@ export async function meTraining(sql: Sql, user: PublicUser) {
  * Training plans (FR-TRN-04)                                          *
  * ------------------------------------------------------------------ */
 
-type Block = { order: number; title: string; minutes: number; phase?: string };
+const INTENSITIES = ["light", "medium", "hard"] as const;
+
+type Block = {
+  order: number;
+  title: string;
+  minutes: number;
+  phase?: string;
+  intensity?: string;
+  description?: string;
+  equipment?: string;
+  target?: string;
+};
+
+/** A block's free-text fields: trimmed, capped, and left out when empty. */
+function blockText(b: Record<string, unknown>, key: "description" | "equipment" | "target", max: number, i: number) {
+  const v = (str(b[key]) ?? "").trim();
+  if (!v) return undefined;
+  if (v.length > max) throw err.field("blocks", `Block ${i + 1}: keep ${key} under ${max} characters.`, { index: i });
+  return v;
+}
 
 function cleanPayload(raw: unknown): Record<string, unknown> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -626,9 +645,23 @@ function cleanPayload(raw: unknown): Record<string, unknown> {
       throw err.field("blocks", `Block ${i + 1}: minutes is a whole number from 1 to 180.`, { index: i });
     }
     const out: Block = { order: i + 1, title, minutes };
-    if (b.phase !== undefined && b.phase !== null && b.phase !== "") {
-      out.phase = oneOf(PLAN_PHASES, b.phase, "phase");
+    // Type, intensity and description are part of a block (BR-74); only the
+    // equipment and the measurable target are optional.
+    if (b.phase === undefined || b.phase === null || b.phase === "") {
+      throw err.field("blocks", `Block ${i + 1} needs a type (warm-up, technique…).`, { index: i });
     }
+    out.phase = oneOf(PLAN_PHASES, b.phase, "phase");
+    if (b.intensity === undefined || b.intensity === null || b.intensity === "") {
+      throw err.field("blocks", `Block ${i + 1} needs an intensity.`, { index: i });
+    }
+    out.intensity = oneOf(INTENSITIES, b.intensity, "intensity");
+    const description = blockText(b, "description", 600, i);
+    if (!description) throw err.field("blocks", `Block ${i + 1} needs a short description of how it runs.`, { index: i });
+    const equipment = blockText(b, "equipment", 200, i);
+    const target = blockText(b, "target", 200, i);
+    if (description) out.description = description;
+    if (equipment) out.equipment = equipment;
+    if (target) out.target = target;
     return out;
   });
   const out: Record<string, unknown> = { blocks };
@@ -639,6 +672,61 @@ function cleanPayload(raw: unknown): Record<string, unknown> {
   return out;
 }
 
+function totalMinutes(payload: Record<string, unknown>): number {
+  return ((payload.blocks as Block[]) ?? []).reduce((n, b) => n + b.minutes, 0);
+}
+
+/** Warn (never block) when the blocks and the session length are more than 15 minutes apart (FR-TRN-04). */
+async function durationWarnings(sql: Sql, sessionId: string | null, payload: Record<string, unknown>) {
+  if (!sessionId) return [];
+  const s = await one<{ start_at: string; end_at: string }>(
+    sql,
+    `select start_at, end_at from sessions where id = $1`,
+    [sessionId],
+  );
+  if (!s) return [];
+  const sessionMinutes = Math.round((new Date(s.end_at).getTime() - new Date(s.start_at).getTime()) / 60_000);
+  const total = totalMinutes(payload);
+  if (Math.abs(total - sessionMinutes) <= 15) return [];
+  return [
+    {
+      kind: "duration_mismatch",
+      total_minutes: total,
+      session_minutes: sessionMinutes,
+      message: `The blocks add up to ${total} min but the session is ${sessionMinutes} min.`,
+    },
+  ];
+}
+
+/** Tell the students a plan reaches that it is out, or that it has changed (BR-75). */
+async function notifyPlan(
+  sql: Sql,
+  plan: { id: string; class_id: string | null; user_id: string | null; session_id: string | null; title: string | null },
+  version: number,
+  kind: "published" | "updated",
+) {
+  const ids = plan.user_id
+    ? [plan.user_id]
+    : plan.class_id
+      ? (
+          await sql.query<{ user_id: string }>(
+            `select user_id from enrollments where class_id = $1 and status = 'confirmed'`,
+            [plan.class_id],
+          )
+        ).map((r) => r.user_id)
+      : [];
+  for (const uid of ids) {
+    await enqueue(
+      sql,
+      "inapp",
+      "training_plan",
+      uid,
+      { plan_id: plan.id, title: plan.title, session_id: plan.session_id, version, change: kind },
+      `training_plan:${plan.id}:${version}:${kind}:${uid}`,
+    );
+  }
+}
+
 export async function trainingCreate(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["coach", "manager"]);
   await requireFlag(sql, "F4");
@@ -646,7 +734,15 @@ export async function trainingCreate(sql: Sql, request: Request, user: PublicUse
   const classId = str(b.class_id) || null;
   const userId = str(b.user_id) || null;
   const sessionId = str(b.session_id) || null;
-  if (!classId && !userId) throw err.field("class_id", "Choose a class or a student for this plan.");
+  const isTemplate = b.is_template === true;
+  if (isTemplate) {
+    if (classId || userId || sessionId) throw err.field("class_id", "A template is not tied to a class, student or session.");
+    const pl = (b.payload ?? {}) as Record<string, unknown>;
+    oneOf(SPORTS, pl.sport, "sport");
+    oneOf(LEVELS, pl.level, "level");
+  } else if (!classId && !userId) {
+    throw err.field("class_id", "Choose a class or a student for this plan.");
+  }
   if (classId) assertClassStaff(await loadClass(sql, uuidField(classId, "class_id")), user);
   if (userId) await loadStudent(sql, uuidField(userId, "user_id"), user);
   if (sessionId) {
@@ -663,35 +759,51 @@ export async function trainingCreate(sql: Sql, request: Request, user: PublicUse
   if (title.length > 120) throw err.field("title", "Keep the title under 120 characters.");
   const source = str(b.source) === "ai" ? "ai" : "coach";
   const payload = cleanPayload(b.payload);
-  const row = await one(
+  const published = !isTemplate && b.published !== false;
+  const row = await one<{
+    id: string;
+    class_id: string | null;
+    user_id: string | null;
+    session_id: string | null;
+    title: string | null;
+  }>(
     sql,
-    `insert into training_plans (scope, class_id, user_id, session_id, title, source, published, payload, created_by)
-     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
+    `insert into training_plans (scope, class_id, user_id, session_id, title, source, published, payload, created_by, is_template)
+     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
      returning *`,
     [
-      userId ? "user" : "class",
+      isTemplate ? "template" : userId ? "user" : "class",
       classId,
       userId,
       sessionId,
       title || null,
       source,
-      b.published !== false,
+      published,
       JSON.stringify(payload),
       user.id,
+      isTemplate,
     ],
   );
-  return { status: 201, body: row };
+  if (row && published) await notifyPlan(sql, row, 1, "published");
+  return { status: 201, body: { ...row, warnings: await durationWarnings(sql, sessionId, payload) } };
 }
 
 /** Publish or unpublish a plan, or fix its title/blocks. Only its author, the class's coaches or a manager. */
 export async function trainingPatch(sql: Sql, id: string, request: Request, user: PublicUser) {
   requireRole(user, ["coach", "manager"]);
   await requireFlag(sql, "F4");
-  const plan = await one<{ id: string; class_id: string | null; user_id: string | null; created_by: string | null }>(
-    sql,
-    `select id, class_id, user_id, created_by from training_plans where id = $1 for update`,
-    [pathId(id)],
-  );
+  const plan = await one<{
+    id: string;
+    class_id: string | null;
+    user_id: string | null;
+    session_id: string | null;
+    created_by: string | null;
+    title: string | null;
+    published: boolean;
+    is_template: boolean;
+    version: number;
+    payload: Record<string, unknown>;
+  }>(sql, `select * from training_plans where id = $1 for update`, [pathId(id)]);
   if (!plan) throw err.notFound();
   if (user.role !== "manager" && plan.created_by !== user.id) {
     if (plan.class_id) assertClassStaff(await loadClass(sql, plan.class_id), user);
@@ -710,13 +822,144 @@ export async function trainingPatch(sql: Sql, id: string, request: Request, user
     params.push(title || null);
     sets.push(`title = $${params.length}`);
   }
+  let newPayload: Record<string, unknown> | null = null;
+  let version = plan.version;
   if (b.payload !== undefined) {
-    params.push(JSON.stringify(cleanPayload(b.payload)));
+    newPayload = cleanPayload(b.payload);
+    // A session that already has results keeps the plan it was run with (BR-75).
+    if (plan.session_id && (await one(sql, `select 1 as ok from session_results where session_id = $1 limit 1`, [plan.session_id]))) {
+      throw err.br("BR-75", "That session already has results, so its plan can no longer change. Copy it to a new session instead.");
+    }
+    // Editing something students can already see makes a new version; the old one is kept.
+    if (plan.published && !plan.is_template) {
+      await sql.query(
+        `insert into training_plan_versions (plan_id, version, title, payload, edited_by)
+         values ($1,$2,$3,$4::jsonb,$5) on conflict (plan_id, version) do nothing`,
+        [plan.id, plan.version, plan.title, JSON.stringify(plan.payload), user.id],
+      );
+      version = plan.version + 1;
+      params.push(version);
+      sets.push(`version = $${params.length}`);
+    }
+    params.push(JSON.stringify(newPayload));
     sets.push(`payload = $${params.length}::jsonb`);
   }
   if (sets.length === 0) throw err.field("published", "Nothing to change.");
-  const row = await one(sql, `update training_plans set ${sets.join(", ")} where id = $1 returning *`, params);
-  return { status: 200, body: row };
+  if (plan.is_template && b.published === true) throw err.conflictState("A template is not published to students.");
+  const row = await one<{
+    id: string;
+    class_id: string | null;
+    user_id: string | null;
+    session_id: string | null;
+    title: string | null;
+    published: boolean;
+    payload: Record<string, unknown>;
+  }>(sql, `update training_plans set ${sets.join(", ")} where id = $1 returning *`, params);
+  if (row && !plan.is_template) {
+    if (row.published && !plan.published) await notifyPlan(sql, row, version, "published");
+    else if (row.published && newPayload) await notifyPlan(sql, row, version, "updated");
+  }
+  const warnings = row ? await durationWarnings(sql, row.session_id, row.payload) : [];
+  return { status: 200, body: { ...row, warnings } };
+}
+
+/** Reusable plans by sport and level (FR-TRN-04). Coaches see all templates; they carry no student data. */
+export async function templatesList(sql: Sql, request: Request, user: PublicUser) {
+  requireRole(user, ["coach", "manager"]);
+  await requireFlag(sql, "F4");
+  const url = new URL(request.url);
+  const sport = url.searchParams.get("sport");
+  const level = url.searchParams.get("level");
+  const items = await sql.query(
+    `select id, title, payload, version, created_by, created_at from training_plans
+      where is_template and ($1::text is null or payload->>'sport' = $1) and ($2::text is null or payload->>'level' = $2)
+      order by payload->>'sport', payload->>'level', title nulls last limit 100`,
+    [sport, level],
+  );
+  return { status: 200, body: { items } };
+}
+
+/** Save a plan as a template (a copy; the original is untouched). */
+export async function templateSave(sql: Sql, id: string, request: Request, user: PublicUser) {
+  requireRole(user, ["coach", "manager"]);
+  await requireFlag(sql, "F4");
+  const src = await one<{ title: string | null; payload: Record<string, unknown>; created_by: string | null; class_id: string | null }>(
+    sql,
+    `select title, payload, created_by, class_id from training_plans where id = $1`,
+    [pathId(id)],
+  );
+  if (!src) throw err.notFound();
+  if (user.role !== "manager" && src.created_by !== user.id) {
+    if (src.class_id) assertClassStaff(await loadClass(sql, src.class_id), user);
+    else throw err.forbidden("That plan is not yours.");
+  }
+  const b = await readJson(request);
+  const payload = { ...src.payload } as Record<string, unknown>;
+  payload.sport = oneOf(SPORTS, b.sport ?? payload.sport, "sport");
+  payload.level = oneOf(LEVELS, b.level ?? payload.level, "level");
+  const title = (str(b.title) ?? src.title ?? "").trim().slice(0, 120);
+  const row = await one(
+    sql,
+    `insert into training_plans (scope, title, source, published, payload, created_by, is_template)
+     values ('template',$1,'coach',false,$2::jsonb,$3,true) returning *`,
+    [title || null, JSON.stringify(cleanPayload(payload)), user.id],
+  );
+  return { status: 201, body: row };
+}
+
+/** Start a draft for a class, student or session from a template (FR-TRN-04). */
+export async function plansFromTemplate(sql: Sql, request: Request, user: PublicUser) {
+  requireRole(user, ["coach", "manager"]);
+  await requireFlag(sql, "F4");
+  const b = await readJson(request);
+  const tpl = await one<{ id: string; title: string | null; payload: Record<string, unknown> }>(
+    sql,
+    `select id, title, payload from training_plans where id = $1 and is_template`,
+    [uuidField(b.template_id, "template_id")],
+  );
+  if (!tpl) throw err.notFound("That template does not exist.");
+  const classId = str(b.class_id) || null;
+  const userId = str(b.user_id) || null;
+  const sessionId = str(b.session_id) || null;
+  if (!classId && !userId) throw err.field("class_id", "Choose a class or a student for this plan.");
+  if (classId) assertClassStaff(await loadClass(sql, uuidField(classId, "class_id")), user);
+  if (userId) await loadStudent(sql, uuidField(userId, "user_id"), user);
+  if (sessionId) {
+    const s = await one<{ class_id: string }>(sql, `select class_id from sessions where id = $1`, [uuidField(sessionId, "session_id")]);
+    if (!s || s.class_id !== classId) throw err.field("session_id", "That session is not in this class.");
+    if (await one(sql, `select 1 as ok from session_results where session_id = $1 limit 1`, [sessionId])) {
+      throw err.br("BR-75", "That session already has results — a plan can no longer be added.");
+    }
+  }
+  const row = await one<Record<string, unknown>>(
+    sql,
+    `insert into training_plans (scope, class_id, user_id, session_id, title, source, published, payload, created_by, parent_id)
+     values ($1,$2,$3,$4,$5,'coach',false,$6::jsonb,$7,$8) returning *`,
+    [userId ? "user" : "class", classId, userId, sessionId, tpl.title, JSON.stringify(tpl.payload), user.id, tpl.id],
+  );
+  return { status: 201, body: { ...row, warnings: await durationWarnings(sql, sessionId, tpl.payload) } };
+}
+
+/** Earlier versions of a plan, newest first. */
+export async function planVersions(sql: Sql, id: string, user: PublicUser) {
+  requireRole(user, ["coach", "manager"]);
+  await requireFlag(sql, "F4");
+  const plan = await one<{ class_id: string | null; created_by: string | null }>(
+    sql,
+    `select class_id, created_by from training_plans where id = $1`,
+    [pathId(id)],
+  );
+  if (!plan) throw err.notFound();
+  if (user.role !== "manager" && plan.created_by !== user.id) {
+    if (plan.class_id) assertClassStaff(await loadClass(sql, plan.class_id), user);
+    else throw err.forbidden("That plan is not yours.");
+  }
+  const items = await sql.query(
+    `select version, title, payload, edited_by, created_at from training_plan_versions
+      where plan_id = $1 order by version desc`,
+    [pathId(id)],
+  );
+  return { status: 200, body: { items } };
 }
 
 /**
@@ -778,132 +1021,11 @@ export async function plansDuplicateWeek(sql: Sql, classId: string, request: Req
     const n = await sql.query(
       `insert into training_plans (scope, class_id, user_id, session_id, title, source, published, payload, created_by)
        select scope, class_id, user_id, $2, title, source, false, payload, $3
-         from training_plans where session_id = $1
+         from training_plans where session_id = $1 and not is_template
        returning id`,
       [src.id, target.id, user.id],
     );
     copied += n.length;
   }
   return { status: 200, body: { copied, skipped } };
-}
-
-/* ------------------------------------------------------------------ *
- * Gate check-in (FR-TRN-02, BR-54)                                    *
- * ------------------------------------------------------------------ */
-
-const GATE_REPEAT_MS = 5 * 60_000;
-
-/**
- * Let a member in at the door.
- *
- * It writes a `gate` attendance row and nothing else: a class register is the
- * coach's call (BR-54), so walking through the gate never marks anyone present
- * at a session. Scanning twice within five minutes returns the first scan.
- */
-export async function gateCheckin(sql: Sql, request: Request, user: PublicUser) {
-  requireRole(user, ["receptionist", "manager"]);
-  await requireFlag(sql, "F4");
-  const b = await readJson(request);
-  const id = str(b.member_id) || null;
-  const code = str(b.code) || null;
-  const phone = str(b.phone) || null;
-  if (!id && !code && !phone) throw err.field("code", "Scan a code or type a member code or phone number.");
-  let member: { id: string; full_name: string; member_code: string | null; status: string } | undefined;
-  const cols = `select id, full_name, member_code, status::text as status from users where role = 'member'`;
-  if (id) member = await one(sql, `${cols} and id = $1`, [uuidField(id, "member_id")]);
-  else if (code) member = await one(sql, `${cols} and upper(member_code) = upper($1)`, [code]);
-  else member = await one(sql, `${cols} and phone = $1`, [normalizePhone(phone as string)]);
-  if (!member) throw err.notFound("No member matches that.");
-  if (member.status !== "active") throw err.conflictState("This account is not active.", { member_status: member.status });
-
-  const recent = await one<{ at: string }>(
-    sql,
-    `select at from attendance where user_id = $1 and kind = 'gate' and at > $2 order by at desc limit 1`,
-    [member.id, new Date(Date.now() - GATE_REPEAT_MS).toISOString()],
-  );
-  let checkedInAt: string;
-  if (recent) checkedInAt = recent.at;
-  else {
-    const row = await one<{ at: string }>(
-      sql,
-      `insert into attendance (kind, user_id) values ('gate', $1) returning at`,
-      [member.id],
-    );
-    checkedInAt = row?.at ?? new Date().toISOString();
-  }
-
-  const today = ictDateString();
-  const dayStart = ictDateTime(today, "00:00").toISOString();
-  const dayEnd = ictDateTime(addDays(today, 1), "00:00").toISOString();
-  const plans = await sql.query<{
-    id: string;
-    name: string;
-    sport_scope: string;
-    status: string;
-    end_on: string;
-    session_left: number | null;
-    court_hours_left: string;
-  }>(
-    `select s.id, p.name, s.sport_scope::text as sport_scope, s.status::text as status, s.end_on::text as end_on,
-            s.session_left, s.court_hours_left
-       from subscriptions s join membership_plans p on p.id = s.plan_id
-      where s.user_id = $1 and s.status in ('active','frozen')
-      order by s.end_on`,
-    [member.id],
-  );
-  const warnings: { kind: string; message: string }[] = [];
-  if (plans.length === 0) warnings.push({ kind: "no_plan", message: "No active membership." });
-  for (const p of plans) {
-    const left = Math.round((ictDateTime(p.end_on, "00:00").getTime() - ictDateTime(today, "00:00").getTime()) / DAY_MS);
-    if (p.status === "frozen") warnings.push({ kind: "frozen", message: `${p.name} is frozen.` });
-    else if (left <= 7) {
-      warnings.push({ kind: "expiring", message: `${p.name} ends in ${left} day${left === 1 ? "" : "s"}.` });
-    }
-    if (p.session_left !== null && p.session_left <= 0) {
-      warnings.push({ kind: "no_sessions", message: `${p.name} has no sessions left.` });
-    }
-  }
-  const bookings = await sql.query(
-    `select b.id, b.code, b.start_at, b.end_at, c.court_code, b.status::text as status
-       from court_bookings b join courts c on c.id = b.court_id
-      where b.user_id = $1 and b.status in ('confirmed','in_use') and b.start_at >= $2 and b.start_at < $3
-      order by b.start_at`,
-    [member.id, dayStart, dayEnd],
-  );
-  const sessions = await sql.query(
-    `select s.id, s.start_at, s.end_at, cl.sport::text as sport, cl.level, c.court_code
-       from sessions s
-       join classes cl on cl.id = s.class_id
-       join courts c on c.id = s.court_id
-       join enrollments e on e.class_id = cl.id and e.user_id = $1 and e.status = 'confirmed'
-      where s.status = 'scheduled' and s.start_at >= $2 and s.start_at < $3
-      order by s.start_at`,
-    [member.id, dayStart, dayEnd],
-  );
-  if (!recent) await audit(sql, user.id, "gate_checkin", "user", member.id);
-  return {
-    status: 200,
-    body: {
-      member: { id: member.id, full_name: member.full_name, member_code: member.member_code },
-      checked_in_at: checkedInAt,
-      duplicate: !!recent,
-      plans,
-      warnings,
-      today: { bookings, sessions },
-    },
-  };
-}
-
-export async function gateCheckins(sql: Sql, user: PublicUser) {
-  requireRole(user, ["receptionist", "manager"]);
-  await requireFlag(sql, "F4");
-  const today = ictDateString();
-  const items = await sql.query(
-    `select a.id, a.at, u.id as user_id, u.full_name, u.member_code
-       from attendance a join users u on u.id = a.user_id
-      where a.kind = 'gate' and a.at >= $1 and a.at < $2
-      order by a.at desc limit 100`,
-    [ictDateTime(today, "00:00").toISOString(), ictDateTime(addDays(today, 1), "00:00").toISOString()],
-  );
-  return { status: 200, body: { items } };
 }

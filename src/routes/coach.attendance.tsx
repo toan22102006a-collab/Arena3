@@ -1,4 +1,5 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Check, Clock, FileCheck2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { sessionDay } from "@/components/class-detail";
@@ -9,6 +10,7 @@ import { Stagger, StaggerItem, motion } from "@/components/motion";
 import { SplitText } from "@/components/fx";
 import { apiGet, apiPost } from "@/lib/arena3/client";
 import { levelLabel } from "@/lib/arena3/labels";
+import { t, tServer, tk } from "@/lib/i18n";
 import type { CoachSession } from "./coach.index";
 
 export const Route = createFileRoute("/coach/attendance")({
@@ -30,11 +32,12 @@ type AttRow = {
 
 type AttMeta = { locked: boolean; lock_at: string | null; status: string };
 
+// Colour and icon say the answer before the word does: green tick, amber clock, red cross, grey note.
 const RESULTS = [
-  { v: "present", l: "Present" },
-  { v: "late", l: "Late" },
-  { v: "absent", l: "Absent" },
-  { v: "excused", l: "Excused" },
+  { v: "present", l: tk("Present"), Icon: Check, on: "bg-accent" },
+  { v: "late", l: tk("Late"), Icon: Clock, on: "bg-hold" },
+  { v: "absent", l: tk("Absent"), Icon: X, on: "bg-danger" },
+  { v: "excused", l: tk("Excused"), Icon: FileCheck2, on: "bg-fg" },
 ];
 
 function Page() {
@@ -53,7 +56,7 @@ function Page() {
   useEffect(() => {
     void apiGet<{ items: SessionRow[] }>("/coach/schedule")
       .then((r) => setItems(r.items))
-      .catch((e) => toast.error(e.message));
+      .catch((e) => toast.error(tServer(e.message)));
     void apiGet<{ flags: Record<string, boolean> }>("/flags")
       .then((r) => setFlags(r.flags))
       .catch(() => undefined)
@@ -86,7 +89,7 @@ function Page() {
         setMarks({});
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Something went wrong");
+      toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
     }
   }
 
@@ -103,23 +106,26 @@ function Page() {
         items: Object.entries(marks).map(([user_id, result]) => ({ user_id, result })),
         ...(locked ? { reason } : {}),
       });
-      toast.success(locked ? "Register corrected" : "Register saved");
+      toast.success(locked ? t("Register corrected") : t("Register saved"));
       setReason("");
       await openSession(open);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Attendance is switched off (flag F4)");
+      toast.error(e instanceof Error ? tServer(e.message) : t("Attendance is switched off (flag F4)"));
     }
   }
 
   return (
-    <Shell role="coach" title="Attendance" subtitle="Pick a session, mark who came, then plan the next one.">
+    <Shell role="coach" title={t("Attendance")} subtitle={t("Pick a session, mark who came, then plan the next one.")}>
       {!items ? (
         <Skeleton className="h-24" />
       ) : !items.length ? (
-        <EmptyState title="No sessions to take a register for" hint="Sessions appear here once a class you teach is published." />
+        <EmptyState
+          title={t("No sessions to take a register for")}
+          hint={t("Sessions appear here once a class you teach is published.")}
+        />
       ) : (
         <Card className="grid gap-3 md:grid-cols-2">
-          <Field label="Session">
+          <Field label={t("Session")}>
             <Select
               value={open?.id ?? ""}
               onChange={(e) => void navigate({ to: "/coach/attendance", search: { session: e.target.value } })}
@@ -133,7 +139,11 @@ function Page() {
           </Field>
           {open ? (
             <p className="self-end text-sm text-muted">
-              {levelLabel(open.level)} · {open.enrolled_count}/{open.capacity} students
+              {t("{level} · {enrolled}/{capacity} students", {
+                level: levelLabel(open.level),
+                enrolled: open.enrolled_count,
+                capacity: open.capacity,
+              })}
             </p>
           ) : null}
         </Card>
@@ -141,20 +151,36 @@ function Page() {
       {open && att.length ? (
         <div className="mt-8">
           <div className="flex flex-wrap items-center gap-3">
-            <SplitText as="h2" text={`Register · ${levelLabel(open.level)}`} className="font-display text-2xl" />
-            {locked ? <Badge tone="hold">Locked</Badge> : null}
+            <SplitText as="h2" text={t("Register · {level}", { level: levelLabel(open.level) })} className="font-display text-2xl" />
+            {locked ? <Badge tone="hold">{t("Locked")}</Badge> : null}
           </div>
           {locked ? (
             <p className="mt-1 text-sm text-muted">
-              This register closed {meta?.lock_at ? `${sessionDay(meta.lock_at)} at ${hhmm(meta.lock_at)}` : "after the session"}.{" "}
-              {isManager ? "You can still correct it — say why below." : "Ask a manager to correct it."}
+              {meta?.lock_at
+                ? t("This register closed {day} at {time}.", { day: sessionDay(meta.lock_at), time: hhmm(meta.lock_at) })
+                : t("This register closed after the session.")}{" "}
+              {isManager ? t("You can still correct it — say why below.") : t("Ask a manager to correct it.")}
             </p>
           ) : null}
-          <Stagger className="mt-3 grid gap-2" gap={0.04}>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+            <p className="tabular-nums text-muted" aria-live="polite">
+              {RESULTS.map((r) => `${t(r.l)} ${att.filter((u) => marks[u.id] === r.v).length}`).join(" · ")} · {t("of {n}", { n: att.length })}
+            </p>
+            {!blocked ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setMarks(Object.fromEntries(att.map((u) => [u.id, "present"])))}
+              >
+                {t("Mark everyone present")}
+              </Button>
+            ) : null}
+          </div>
+          <Card className="mt-2 overflow-hidden p-0">
+            <ul className="divide-y divide-line/70">
             {att.map((u) => (
-              <StaggerItem key={u.id}>
-              <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-                <div>
+              <li key={u.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-2.5">
+                <div className="min-w-0">
                   <p className="font-medium">
                     {f4 ? (
                       <Link
@@ -170,7 +196,7 @@ function Page() {
                   </p>
                   <p className="text-xs text-muted">{u.member_code}</p>
                   {u.health_notes ? (
-                    <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-danger">{u.health_notes}</p>
+                    <p className="mt-0.5 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-danger">{u.health_notes}</p>
                   ) : null}
                 </div>
                 <div className="flex flex-wrap gap-1">
@@ -179,29 +205,33 @@ function Page() {
                       key={r.v}
                       type="button"
                       disabled={blocked}
+                      aria-pressed={marks[u.id] === r.v}
                       onClick={() => setMarks((m) => ({ ...m, [u.id]: r.v }))}
-                      className={`relative min-h-9 rounded-[var(--radius-sm)] px-2 text-xs font-medium transition-colors duration-200 active:scale-95 disabled:opacity-60 ${
+                      className={`relative min-h-11 rounded-[var(--radius-sm)] px-3 text-xs font-medium transition-colors duration-200 active:scale-95 disabled:opacity-60 ${
                         marks[u.id] === r.v ? "text-bg" : "bg-wood text-muted hover:bg-wood/70"
                       }`}
                     >
                       {marks[u.id] === r.v ? (
                         <motion.span
                           layoutId={`att-${u.id}`}
-                          className="absolute inset-0 rounded-[var(--radius-sm)] bg-fg"
+                          className={`absolute inset-0 rounded-[var(--radius-sm)] ${r.on}`}
                           transition={{ type: "spring", stiffness: 420, damping: 34 }}
                         />
                       ) : null}
-                      <span className="relative">{r.l}</span>
+                      <span className="relative inline-flex items-center gap-1">
+                        <r.Icon aria-hidden className="size-3.5" />
+                        {t(r.l)}
+                      </span>
                     </button>
                   ))}
                 </div>
-              </Card>
-              </StaggerItem>
+              </li>
             ))}
-          </Stagger>
+            </ul>
+          </Card>
           {locked && isManager ? (
             <div className="mt-3 max-w-md">
-              <Field label="Reason for the correction">
+              <Field label={t("Reason for the correction")}>
                 <Input value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} />
               </Field>
             </div>
@@ -211,13 +241,15 @@ function Page() {
             disabled={blocked || (locked && reason.trim().length < 3) || meta?.status === "cancelled"}
             onClick={saveRegister}
           >
-            {locked ? "Save correction" : "Save register"}
+            {locked ? t("Save correction") : t("Save register")}
           </Button>
         </div>
       ) : null}
 
       {open && !att.length ? (
-        <p className="mt-6 text-sm text-muted">Nobody is enrolled in this session yet, so there is no register to take.</p>
+        <p className="mt-6 text-sm text-muted">
+          {t("Nobody is enrolled in this session yet, so there is no register to take.")}
+        </p>
       ) : null}
 
       {open && f4 ? <ResultsPanel sessionId={open.id} cancelled={open.status === "cancelled"} /> : null}

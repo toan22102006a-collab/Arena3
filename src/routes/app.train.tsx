@@ -1,26 +1,28 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { SectionTitle } from "@/components/section";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { sessionDay } from "@/components/class-detail";
 import { Shell, hhmm } from "@/components/shell";
 import { Badge, Card, EmptyState, Select, Skeleton } from "@/components/ui";
 import { Lift, Stagger, StaggerItem, motion } from "@/components/motion";
-import { SpotlightCard, SplitText } from "@/components/fx";
+import { SpotlightCard } from "@/components/fx";
 import { apiGet, apiPut } from "@/lib/arena3/client";
 import { formatDate, levelLabel, sportLabel } from "@/lib/arena3/labels";
+import { t, tk } from "@/lib/i18n";
 
 export const Route = createFileRoute("/app/train")({ component: Page });
 
 const GOALS: Record<string, string> = {
-  weight: "Lose weight",
-  technique: "Improve technique",
-  compete: "Compete",
-  fun: "Have fun",
+  weight: tk("Lose weight"),
+  technique: tk("Improve technique"),
+  compete: tk("Compete"),
+  fun: tk("Have fun"),
 };
 const METRIC_LABEL: Record<string, string> = {
-  smash_count: "Smashes",
-  freethrow_pct: "Free throws",
-  serve_pct: "Serves in",
+  smash_count: tk("Smashes"),
+  freethrow_pct: tk("Free throws"),
+  serve_pct: tk("Serves in"),
 };
 
 type PlanBlock = { title: string; minutes: number; phase?: string };
@@ -70,7 +72,7 @@ type Progress = {
   }>;
 };
 
-const say = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong");
+const say = (e: unknown) => (e instanceof Error ? e.message : t("Something went wrong"));
 
 function Page() {
   const [d, setD] = useState<Progress | null>(null);
@@ -91,7 +93,7 @@ function Page() {
     try {
       await apiPut("/me/training-goal", { goal: goal || null });
       setD((x) => (x ? { ...x, goal: goal || null } : x));
-      toast.success("Goal saved");
+      toast.success(t("Goal saved"));
     } catch (e) {
       toast.error(say(e));
     }
@@ -106,7 +108,7 @@ function Page() {
     try {
       const r = await apiPut<{ completed: boolean }>(`/me/homework/${hw.id}`, { done_items: done });
       if (r.completed) {
-        toast.success("Homework done — nice work");
+        toast.success(t("Homework done — nice work"));
         setTimeout(() => setD((x) => x && { ...x, homework: x.homework.filter((h) => h.id !== hw.id) }), 700);
       }
     } catch (e) {
@@ -116,25 +118,29 @@ function Page() {
   }
 
   return (
-    <Shell role="member" title="My progress" subtitle="Your plans, homework and what your coach has noticed. AI only suggests — a coach approves what reaches you.">
+    <Shell
+      role="member"
+      title={t("My progress")}
+      subtitle={t("Your plans, homework and what your coach has noticed. AI only suggests — a coach approves what reaches you.")}
+    >
       {!d ? (
         <Skeleton className="h-40" />
       ) : (
         <div className="grid gap-10">
           <Card className="grid gap-4 md:grid-cols-2">
             <div>
-              <p className="kicker text-2xs text-muted">Your goal</p>
-              <Select className="mt-1.5" aria-label="Your goal" value={d.goal ?? ""} onChange={(e) => void setGoal(e.target.value)}>
-                <option value="">Not set</option>
+              <p className="kicker text-2xs text-muted">{t("Your goal")}</p>
+              <Select className="mt-1.5" aria-label={t("Your goal")} value={d.goal ?? ""} onChange={(e) => void setGoal(e.target.value)}>
+                <option value="">{t("Not set")}</option>
                 {Object.entries(GOALS).map(([k, v]) => (
                   <option key={k} value={k}>
-                    {v}
+                    {t(v)}
                   </option>
                 ))}
               </Select>
             </div>
             <div>
-              <p className="kicker text-2xs text-muted">Your level</p>
+              <p className="kicker text-2xs text-muted">{t("Your level")}</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {d.levels.length ? (
                   d.levels.map((l) => (
@@ -143,14 +149,14 @@ function Page() {
                     </Badge>
                   ))
                 ) : (
-                  <span className="text-sm text-muted">Your coach sets this after a few sessions.</span>
+                  <span className="text-sm text-muted">{t("Your coach sets this after a few sessions.")}</span>
                 )}
               </div>
             </div>
           </Card>
 
           <section>
-            <SplitText as="h2" text="Up next" className="font-display text-2xl" />
+            <SectionTitle text={t("Up next")}className="font-display text-2xl" />
             {d.next_sessions.length ? (
               <Stagger className="mt-3 grid gap-3 md:grid-cols-2" gap={0.07}>
                 {d.next_sessions.map((s) => (
@@ -164,7 +170,7 @@ function Page() {
                           {s.plans.length ? (
                             s.plans.map((p) => (
                               <div key={p.id} className="mt-3">
-                                <h3 className="font-display text-xl">{p.title || p.payload.goal || "Session plan"}</h3>
+                                <h3 className="font-display text-xl">{p.title || p.payload.goal || t("Session plan")}</h3>
                                 <ol className="mt-2 grid gap-1 text-sm">
                                   {(p.payload.blocks ?? []).map((b, i) => (
                                     <motion.li
@@ -183,7 +189,7 @@ function Page() {
                               </div>
                             ))
                           ) : (
-                            <p className="mt-3 text-sm text-muted">Your coach hasn't posted a plan for this one yet.</p>
+                            <p className="mt-3 text-sm text-muted">{t("Your coach hasn't posted a plan for this one yet.")}</p>
                           )}
                         </Card>
                       </SpotlightCard>
@@ -193,20 +199,20 @@ function Page() {
               </Stagger>
             ) : (
               <div className="mt-3">
-                <EmptyState title="No sessions coming up" hint="Join a class and its plans show up here." />
+                <EmptyState title={t("No sessions coming up")} hint={t("Join a class and its plans show up here.")} />
               </div>
             )}
           </section>
 
           <section>
-            <SplitText as="h2" text="Homework" className="font-display text-2xl" />
+            <SectionTitle text={t("Homework")}className="font-display text-2xl" />
             {d.homework.length ? (
               <div className="mt-3 grid gap-3">
                 {d.homework.map((h) => (
                   <Card key={h.id}>
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <h3 className="font-medium">{h.title}</h3>
-                      <span className="text-xs text-muted">{h.due_on ? `Due ${formatDate(h.due_on)}` : "No due date"}</span>
+                      <span className="text-xs text-muted">{h.due_on ? t("Due {date}", { date: formatDate(h.due_on) }) : t("No due date")}</span>
                     </div>
                     {h.body ? <p className="mt-1 whitespace-pre-wrap text-sm text-muted [overflow-wrap:anywhere]">{h.body}</p> : null}
                     <ul className="mt-3 grid gap-1">
@@ -228,33 +234,42 @@ function Page() {
                 ))}
               </div>
             ) : (
-              <p className="mt-3 text-sm text-muted">Nothing to do right now.</p>
+              <p className="mt-3 text-sm text-muted">{t("Nothing to do right now.")}</p>
             )}
           </section>
 
           <section>
-            <SplitText as="h2" text="Coach reviews" className="font-display text-2xl" />
+            <SectionTitle text={t("Coach reviews")}className="font-display text-2xl" />
             <div className="mt-3 grid gap-2">
               {d.reviews.length ? (
                 d.reviews.map((r) => (
                   <Card key={r.id} className="p-4">
                     <p className="text-xs text-muted">
-                      {formatDate(r.created_at)} · {sportLabel(r.sport)} · last {r.period_weeks} weeks · {r.coach_name}
+                      {t("{date} · {sport} · last {n} weeks · {coach}", {
+                        date: formatDate(r.created_at),
+                        sport: sportLabel(r.sport),
+                        n: r.period_weeks,
+                        coach: r.coach_name,
+                      })}
                     </p>
                     <p className="mt-1 text-sm">
-                      Technique {r.technique}/5 · Fitness {r.fitness}/5 · Attitude {r.attitude}/5
+                      {t("Technique {a}/5 · Fitness {b}/5 · Attitude {c}/5", {
+                        a: r.technique,
+                        b: r.fitness,
+                        c: r.attitude,
+                      })}
                     </p>
                     {r.comment ? <p className="mt-1 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{r.comment}</p> : null}
                   </Card>
                 ))
               ) : (
-                <p className="text-sm text-muted">No reviews yet.</p>
+                <p className="text-sm text-muted">{t("No reviews yet.")}</p>
               )}
             </div>
           </section>
 
           <section>
-            <SplitText as="h2" text="Recent sessions" className="font-display text-2xl" />
+            <SectionTitle text={t("Recent sessions")}className="font-display text-2xl" />
             <div className="mt-3 grid gap-2">
               {d.results.length ? (
                 d.results.map((r) => (
@@ -263,14 +278,14 @@ function Page() {
                       {formatDate(r.start_at)} · {sportLabel(r.sport)}
                     </p>
                     <p className="mt-1 text-sm">
-                      {r.plan_pct == null ? "Session logged" : `${r.plan_pct}% of the plan`}
-                      {Object.entries(r.metrics ?? {}).map(([k, v]) => ` · ${METRIC_LABEL[k] ?? k} ${v}`)}
+                      {r.plan_pct == null ? t("Session logged") : t("{n}% of the plan", { n: r.plan_pct })}
+                      {Object.entries(r.metrics ?? {}).map(([k, v]) => ` · ${METRIC_LABEL[k] ? t(METRIC_LABEL[k]) : k} ${v}`)}
                     </p>
                     {r.note ? <p className="mt-1 text-sm text-muted">{r.note}</p> : null}
                   </Card>
                 ))
               ) : (
-                <p className="text-sm text-muted">Your coach's notes from each session appear here.</p>
+                <p className="text-sm text-muted">{t("Your coach's notes from each session appear here.")}</p>
               )}
             </div>
           </section>

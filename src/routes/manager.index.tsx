@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Banknote, Clock, Hourglass, Layers, PiggyBank, TrendingUp, Undo2, Wallet } from "lucide-react";
+import { CardTitle } from "@/components/section";
 import { useEffect, useState } from "react";
 import {
   Area,
@@ -20,6 +22,7 @@ import { Button, Card, DateField, Select, Seg, Skeleton, Stat, type Trend } from
 import { CountUp, Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
 import { GLBackground, GlareHover, SplitText, SpotlightCard } from "@/components/fx";
 import { apiGet } from "@/lib/arena3/client";
+import { t, tServer } from "@/lib/i18n";
 import { addDaysISO, formatDate, methodLabel, sourceLabel, todayISO } from "@/lib/arena3/labels";
 
 export const Route = createFileRoute("/manager/")({
@@ -63,13 +66,13 @@ function monthStart(iso: string) {
  * rule keyed on the sign would paint a week of refunds green.
  */
 function delta(cur: number, prev: number, upIsGood: boolean): Trend {
-  if (prev === 0 && cur === 0) return { pct: 0, label: "Same as the previous period", good: null };
-  if (prev === 0) return { pct: null, label: "New this period", good: upIsGood };
+  if (prev === 0 && cur === 0) return { pct: 0, label: t("Same as the previous period"), good: null };
+  if (prev === 0) return { pct: null, label: t("New this period"), good: upIsGood };
   const pct = Math.round(((cur - prev) / Math.abs(prev)) * 1000) / 10;
   const sign = pct > 0 ? "+" : "";
   return {
     pct,
-    label: `${sign}${pct}% vs the previous period`,
+    label: t("{pct}% vs the previous period", { pct: `${sign}${pct}` }),
     good: pct === 0 ? null : pct > 0 === upIsGood,
   };
 }
@@ -154,7 +157,7 @@ function Page() {
     setMap(m);
   }
   useEffect(() => {
-    void load().catch((e) => toast.error(e.message));
+    void load().catch((e) => toast.error(tServer(e.message)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to, method]);
 
@@ -177,8 +180,8 @@ function Page() {
   return (
     <Shell
       role="manager"
-      title="Reports"
-      subtitle={`Revenue = payments taken − refunds. Court usage for ${formatDate(to)}.`}
+      title={t("Reports")}
+      subtitle={t("Revenue = payments taken − refunds. Court usage for {date}.", { date: formatDate(to) })}
     >
       <GLBackground
         variant="dotgrid"
@@ -190,10 +193,10 @@ function Page() {
         radius={130}
         opacity={0.12}
       />
-      <GlareHover className="mb-5 rounded-[var(--radius-xl)]" duration={1.1}>
+      <GlareHover className="mb-5 hidden rounded-[var(--radius-xl)] sm:block" duration={1.1}>
         <Cover src={media.hallCourts} alt="" scrim="none" className="h-32 rounded-[var(--radius-xl)]">
           <MediaCaption>
-            <p className="font-display text-2xl">Close the books for this period</p>
+            <p className="font-display text-2xl">{t("Close the books for this period")}</p>
           </MediaCaption>
         </Cover>
       </GlareHover>
@@ -202,33 +205,37 @@ function Page() {
           value={period}
           onChange={applyPeriod}
           options={[
-            { value: "today", label: "Today" },
-            { value: "week", label: "7 days" },
-            { value: "month", label: "This month" },
-            { value: "custom", label: "Custom" },
+            { value: "today", label: t("Today") },
+            { value: "week", label: t("7 days") },
+            { value: "month", label: t("This month") },
+            { value: "custom", label: t("Custom") },
           ]}
         />
-        <span className="text-2xs uppercase tracking-wider text-muted">From</span>
+      {period === "custom" ? (
+        <>
+        <span className="text-2xs uppercase tracking-wider text-muted">{t("From")}</span>
         <DateField
           value={from}
           onChange={(v) => {
             setPeriod("custom");
             setFrom(v);
           }}
-          aria-label="From date"
+          aria-label={t("From date")}
         />
-        <span className="text-2xs uppercase tracking-wider text-muted">To</span>
+        <span className="text-2xs uppercase tracking-wider text-muted">{t("To")}</span>
         <DateField
           value={to}
           onChange={(v) => {
             setPeriod("custom");
             setTo(v);
           }}
-          aria-label="To date"
+          aria-label={t("To date")}
         />
+        </>
+      ) : null}
         <div className="w-40">
-          <Select aria-label="Payment method" value={method} onChange={(e) => setMethod(e.target.value)}>
-            <option value="">All methods</option>
+          <Select aria-label={t("Payment method")} value={method} onChange={(e) => setMethod(e.target.value)}>
+            <option value="">{t("All methods")}</option>
             {["cash", "transfer", "card", "gateway", "quota"].map((m) => (
               <option key={m} value={m}>
                 {methodLabel(m)}
@@ -243,28 +250,28 @@ function Page() {
           onClick={() => {
             if (!rev || !occ) return;
             downloadCsv(`arena3-report-${from}_${to}.csv`, [
-              ["From", formatDate(from), "To", formatDate(to)],
+              [t("From"), formatDate(from), t("To"), formatDate(to)],
               [
-                "Revenue",
+                t("Revenue"),
                 rev.totals.revenue_vnd,
-                "Refunds",
+                t("Refunds"),
                 rev.totals.refund_vnd ?? 0,
-                "Plan hours used",
+                t("Plan hours used"),
                 rev.totals.quota_hours,
               ],
               [],
-              ["Method", "Amount"],
+              [t("Method"), t("Amount")],
               ...Object.entries(rev.by_method).map(([k, v]) => [methodLabel(k), v]),
               [],
-              ["Source", "Amount"],
+              [t("Source"), t("Amount")],
               ...Object.entries(rev.by_source).map(([k, v]) => [sourceLabel(k), v]),
               [],
-              ["Court", "Minutes", "%"],
+              [t("Court"), t("Minutes"), "%"],
               ...(occ.items ?? []).map((c) => [c.court_code, c.minutes, c.pct]),
             ]);
           }}
         >
-          Export CSV
+          {t("Export CSV")}
         </Button>
       </div>
       {!rev ? (
@@ -277,21 +284,27 @@ function Page() {
         <Stagger className="grid gap-3 md:grid-cols-3" gap={0.08}>
           <StaggerItem>
           <Stat
-            label="Revenue"
+            label={t("Revenue")}
+            icon={Banknote}
+            note={t("Payments taken, minus refunds")}
             value={money(rev.totals.revenue_vnd)}
             trend={prev ? delta(rev.totals.revenue_vnd, prev.totals.revenue_vnd, true) : undefined}
           />
           </StaggerItem>
           <StaggerItem>
           <Stat
-            label="Refunds"
+            label={t("Refunds")}
+            icon={Undo2}
+            note={t("Money handed back to members")}
             value={money(rev.totals.refund_vnd ?? 0)}
             trend={prev ? delta(rev.totals.refund_vnd ?? 0, prev.totals.refund_vnd ?? 0, false) : undefined}
           />
           </StaggerItem>
           <StaggerItem>
           <Stat
-            label="Plan hours used"
+            label={t("Plan hours used")}
+            icon={Hourglass}
+            note={t("Court hours members drew from their plans")}
             value={rev.totals.quota_hours}
             trend={prev ? delta(rev.totals.quota_hours, prev.totals.quota_hours, true) : undefined}
           />
@@ -303,9 +316,7 @@ function Page() {
         <Reveal className="mt-6">
           <SpotlightCard className="rounded-[var(--radius-xl)]" size={520} strength={0.09}>
             <Card className="relative z-[2]">
-              <p className="text-2xs font-medium uppercase tracking-wider text-muted">
-                Revenue per day
-              </p>
+<CardTitle icon={TrendingUp} title={t("Revenue per day")} hint={t("Each point is one day's takings, after refunds.")} />
               {chartReady ? (
                 <div className="mt-3 h-56">
                   <ResponsiveContainer width="100%" height="100%">
@@ -332,11 +343,11 @@ function Page() {
                         width={44}
                         tickFormatter={compactVnd}
                       />
-                      <Tooltip {...TOOLTIP} labelFormatter={(l) => `Day ${l}`} />
+                      <Tooltip {...TOOLTIP} labelFormatter={(l) => t("Day {d}", { d: String(l) })} />
                       <Area
                         type="monotone"
                         dataKey="vnd"
-                        name="Revenue"
+                        name={t("Revenue")}
                         stroke="var(--color-accent)"
                         strokeWidth={2}
                         fill="url(#revFill)"
@@ -357,7 +368,7 @@ function Page() {
       <Reveal className="mt-6 grid gap-3 md:grid-cols-2">
         <SpotlightCard className="rounded-[var(--radius-xl)]" size={380} strength={0.09}>
         <Card className="relative z-[2] h-full">
-          <p className="text-2xs font-medium uppercase tracking-wider text-muted">By payment method</p>
+          <CardTitle icon={Wallet} title={t("By payment method")} hint={t("How members paid: cash, transfer, card or online.")} />
           {chartReady && chartData.length ? (
             <div className="mt-3 h-52">
               <ResponsiveContainer width="100%" height="100%">
@@ -373,18 +384,18 @@ function Page() {
                     tickFormatter={compactVnd}
                   />
                   <Tooltip {...TOOLTIP} cursor={{ fill: "var(--color-wood)", opacity: 0.5 }} />
-                  <Bar dataKey="vnd" name="Revenue" fill="var(--color-accent)" radius={[4, 4, 0, 0]} maxBarSize={44} />
+                  <Bar dataKey="vnd" name={t("Revenue")} fill="var(--color-accent)" radius={[4, 4, 0, 0]} maxBarSize={44} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <p className="mt-4 text-sm text-muted">Nothing recorded yet.</p>
+            <p className="mt-4 text-sm text-muted">{t("Nothing recorded yet.")}</p>
           )}
         </Card>
         </SpotlightCard>
         <SpotlightCard className="rounded-[var(--radius-xl)]" size={380} strength={0.09}>
         <Card className="relative z-[2] h-full">
-          <p className="text-2xs font-medium uppercase tracking-wider text-muted">By source</p>
+          <CardTitle icon={Layers} title={t("By source")} hint={t("What the money was for: court rental or plans.")} />
           {chartReady && sourceData.length ? (
             <div className="mt-3 h-52">
               <ResponsiveContainer width="100%" height="100%">
@@ -414,12 +425,12 @@ function Page() {
                     width={92}
                   />
                   <Tooltip {...TOOLTIP} cursor={{ fill: "var(--color-wood)", opacity: 0.5 }} />
-                  <Bar dataKey="vnd" name="Revenue" fill="var(--color-accent)" radius={[0, 4, 4, 0]} maxBarSize={22} />
+                  <Bar dataKey="vnd" name={t("Revenue")} fill="var(--color-accent)" radius={[0, 4, 4, 0]} maxBarSize={22} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <p className="mt-4 text-sm text-muted">Nothing recorded yet.</p>
+            <p className="mt-4 text-sm text-muted">{t("Nothing recorded yet.")}</p>
           )}
         </Card>
         </SpotlightCard>
@@ -428,14 +439,14 @@ function Page() {
       {rev ? (
         <Reveal className="mt-6 grid gap-3 md:grid-cols-2">
           <Card>
-            <p className="text-2xs font-medium uppercase tracking-wider text-muted">Where the money came from</p>
+            <CardTitle icon={PiggyBank} title={t("Where the money came from")} hint={t("The same revenue split by what was sold, with refunds shown.")} />
             {Object.keys(rev.by_source).length || Object.keys(rev.refunds_by_source ?? {}).length ? (
               <table className="mt-3 w-full text-sm">
                 <thead className="text-left text-2xs uppercase tracking-wider text-muted">
                   <tr>
-                    <th className="pb-1 font-medium">Source</th>
-                    <th className="pb-1 text-right font-medium">Taken</th>
-                    <th className="pb-1 text-right font-medium">Refunded</th>
+                    <th className="pb-1 font-medium">{t("Source")}</th>
+                    <th className="pb-1 text-right font-medium">{t("Taken")}</th>
+                    <th className="pb-1 text-right font-medium">{t("Refunded")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -450,22 +461,22 @@ function Page() {
               </table>
             ) : (
               <p className="mt-3 text-sm text-muted">
-                Nothing taken in this period yet. Takings appear here once reception records a payment.
+                {t("Nothing taken in this period yet. Takings appear here once reception records a payment.")}
               </p>
             )}
             <p className="mt-3 text-xs text-muted">
-              Class places come out of a plan and gear hire is not charged as a payment, so neither has a line of its own.
+              {t("Class places come out of a plan and gear hire is not charged as a payment, so neither has a line of its own.")}
             </p>
           </Card>
           <Card>
-            <p className="text-2xs font-medium uppercase tracking-wider text-muted">By cashier shift</p>
+            <CardTitle icon={Clock} title={t("By cashier shift")} hint={t("Takings for each shift a cashier opened at the desk.")} />
             {rev.by_shift?.length ? (
               <table className="mt-3 w-full text-sm">
                 <thead className="text-left text-2xs uppercase tracking-wider text-muted">
                   <tr>
-                    <th className="pb-1 font-medium">Shift</th>
-                    <th className="pb-1 text-right font-medium">Taken</th>
-                    <th className="pb-1 text-right font-medium">Refunded</th>
+                    <th className="pb-1 font-medium">{t("Shift")}</th>
+                    <th className="pb-1 text-right font-medium">{t("Taken")}</th>
+                    <th className="pb-1 text-right font-medium">{t("Refunded")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -474,14 +485,14 @@ function Page() {
                       <td className="py-1.5">
                         {s.shift_id ? (
                           <>
-                            <span className="font-medium">{s.cashier ?? "Reception"}</span>
+                            <span className="font-medium">{s.cashier ?? t("Reception")}</span>
                             <span className="block text-xs text-muted">
                               {s.opened_at ? when(s.opened_at) : ""}
-                              {s.closed_at ? ` – ${when(s.closed_at)}` : " – still open"}
+                              {s.closed_at ? ` – ${when(s.closed_at)}` : ` – ${t("still open")}`}
                             </span>
                           </>
                         ) : (
-                          <span className="text-muted">Not taken at the desk (online)</span>
+                          <span className="text-muted">{t("Not taken at the desk (online)")}</span>
                         )}
                       </td>
                       <td className="py-1.5 text-right tabular-nums">{money(s.takings_vnd)}</td>
@@ -491,7 +502,7 @@ function Page() {
                 </tbody>
               </table>
             ) : (
-              <p className="mt-3 text-sm text-muted">No payments in this period, so there are no shifts to show.</p>
+              <p className="mt-3 text-sm text-muted">{t("No payments in this period, so there are no shifts to show.")}</p>
             )}
           </Card>
         </Reveal>
@@ -502,7 +513,7 @@ function Page() {
 
       <SplitText
         as="h2"
-        text={`Court usage · ${formatDate(to)}`}
+        text={t("Court usage · {date}", { date: formatDate(to) })}
         className="mt-8 font-display text-2xl"
       />
       <Stagger className="mt-3 grid gap-2 md:grid-cols-2" gap={0.05}>

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { SectionTitle } from "@/components/section";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Shell } from "@/components/shell";
@@ -6,6 +7,8 @@ import { Badge, Button, Card, EmptyState, Input, Skeleton } from "@/components/u
 import { Stagger, StaggerItem } from "@/components/motion";
 import { SplitText } from "@/components/fx";
 import { ApiClientError, apiGet } from "@/lib/arena3/client";
+import { roleLabel } from "@/lib/arena3/labels";
+import { locale, t, tk, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/manager/audit")({
   component: Page,
@@ -49,16 +52,98 @@ function detail(v: unknown): string | null {
   }
 }
 
-/**
- * Turn `approve_refund` into `Approve refund`.
- *
- * The action names are written for the handlers that record them, and there is
- * no point maintaining a second hand-written map that drifts every time
- * somebody audits a new thing.
- */
+// The action names are written for the handlers that record them. Known ones get a
+// friendly, translatable label; a new one falls back to its own name, tidied.
+const ACTION_LABEL: Record<string, string> = {
+  assistant: tk("Assistant question"),
+  attendance: tk("Attendance recorded"),
+  attendance_correct: tk("Attendance corrected"),
+  cancel_booking: tk("Cancel booking"),
+  cancel_class: tk("Cancel class"),
+  cancel_session: tk("Cancel session"),
+  change_coach: tk("Change coach"),
+  change_password: tk("Change password"),
+  change_staff_role: tk("Change staff role"),
+  close_shift: tk("Close shift"),
+  contact_logged: tk("Contact logged"),
+  create_class: tk("Create class"),
+  create_member: tk("Create member"),
+  create_payment: tk("Create payment"),
+  create_plan: tk("Create plan"),
+  create_promo: tk("Create promo"),
+  create_staff: tk("Create staff"),
+  decline_plan_order: tk("Decline plan order"),
+  edit_class: tk("Edit class"),
+  freeze_sub: tk("Freeze subscription"),
+  gate_checkin: tk("Gate check-in"),
+  gate_checkin_override: tk("Gate check-in override"),
+  loan_out: tk("Loan out"),
+  loan_return: tk("Loan return"),
+  lock_staff: tk("Lock staff"),
+  online_link: tk("Online payment link"),
+  online_paid: tk("Online payment"),
+  online_paid_webhook: tk("Online payment confirmed"),
+  patch_court: tk("Update court"),
+  patch_flags: tk("Update features"),
+  patch_plan: tk("Update plan"),
+  patch_promo: tk("Update promo"),
+  patch_settings: tk("Update settings"),
+  pause: tk("Pause"),
+  put_plan_on_sale: tk("Put plan on sale"),
+  refund: tk("Refund"),
+  refund_approved: tk("Refund approved"),
+  refund_pending: tk("Refund pending"),
+  refund_rejected: tk("Refund rejected"),
+  register: tk("Register"),
+  replace_prices: tk("Replace prices"),
+  reschedule_booking: tk("Reschedule booking"),
+  reschedule_session: tk("Reschedule session"),
+  reset_member_password: tk("Reset member password"),
+  reset_staff_password: tk("Reset staff password"),
+  resume: tk("Resume"),
+  revoke_staff_sessions: tk("Revoke staff sessions"),
+  student_level: tk("Student level"),
+  ticket_close: tk("Close ticket"),
+  ticket_reply: tk("Reply to ticket"),
+  transfer_confirm: tk("Confirm transfer"),
+  transfer_reject: tk("Reject transfer"),
+  unfreeze_sub: tk("Unfreeze subscription"),
+  unlock_staff: tk("Unlock staff"),
+  update_member: tk("Update member"),
+  walk_in: tk("Walk-in booking"),
+  withdraw_plan_from_sale: tk("Withdraw plan from sale"),
+};
+
 function actionLabel(a: string): string {
+  const known = ACTION_LABEL[a];
+  if (known) return t(known);
   const words = a.replace(/_/g, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+const ENTITY_LABEL: Record<string, string> = {
+  attendance: tk("attendance"),
+  booking: tk("booking"),
+  chat: tk("chat"),
+  class: tk("class"),
+  court: tk("court"),
+  equipment: tk("equipment"),
+  flags: tk("features"),
+  payment: tk("payment"),
+  plan: tk("plan"),
+  price_rules: tk("price rules"),
+  promotion: tk("promotion"),
+  session: tk("session"),
+  settings: tk("settings"),
+  shift: tk("shift"),
+  subscription: tk("subscription"),
+  ticket: tk("ticket"),
+  user: tk("user"),
+};
+
+function entityLabel(e: string): string {
+  const known = ENTITY_LABEL[e];
+  return known ? t(known) : e;
 }
 
 /**
@@ -77,7 +162,7 @@ function toneFor(action: string): "danger" | "hold" | "muted" {
 function when(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat(locale(), {
     timeZone: "Asia/Ho_Chi_Minh",
     day: "2-digit",
     month: "short",
@@ -128,8 +213,8 @@ function Page() {
       })
       .catch((e) => {
         setData({ items: [], more: false, actions: [], entities: [], actors: [] });
-        if (e instanceof ApiClientError && e.body.field) setError(e.message);
-        else toast.error(e instanceof Error ? e.message : "Could not load the audit log");
+        if (e instanceof ApiClientError && e.body.field) setError(tServer(e.message));
+        else toast.error(e instanceof Error ? tServer(e.message) : t("Could not load the audit log"));
       });
   }, [action, actor, entity, from, to, limit]);
 
@@ -178,17 +263,17 @@ function Page() {
   return (
     <Shell
       role="manager"
-      title="Audit"
-      subtitle="Who changed what, newest first. Hiding an entry only tidies this screen; the log itself is never edited."
+      title={t("Audit")}
+      subtitle={t("Who changed what, newest first. Hiding an entry only tidies this screen; the log itself is never edited.")}
     >
       <div className="mb-4 flex flex-wrap items-end gap-2">
         <select
           value={action}
           onChange={(e) => pick(setAction)(e.target.value)}
           className={selectCls}
-          aria-label="Filter by action"
+          aria-label={t("Filter by action")}
         >
-          <option value="">All actions</option>
+          <option value="">{t("All actions")}</option>
           {choices.actions.map((a) => (
             <option key={a} value={a}>
               {actionLabel(a)}
@@ -199,12 +284,12 @@ function Page() {
           value={actor}
           onChange={(e) => pick(setActor)(e.target.value)}
           className={selectCls}
-          aria-label="Filter by person"
+          aria-label={t("Filter by person")}
         >
-          <option value="">Anyone</option>
+          <option value="">{t("Anyone")}</option>
           {choices.actors.map((a) => (
             <option key={a.id} value={a.id}>
-              {a.full_name} · {a.role}
+              {a.full_name} · {roleLabel(a.role)}
             </option>
           ))}
         </select>
@@ -212,17 +297,17 @@ function Page() {
           value={entity}
           onChange={(e) => pick(setEntity)(e.target.value)}
           className={selectCls}
-          aria-label="Filter by what was changed"
+          aria-label={t("Filter by what was changed")}
         >
-          <option value="">Anything</option>
+          <option value="">{t("Anything")}</option>
           {choices.entities.map((a) => (
             <option key={a} value={a}>
-              {a}
+              {entityLabel(a)}
             </option>
           ))}
         </select>
         <label className="grid gap-0.5 text-2xs uppercase tracking-wider text-muted">
-          From
+          {t("From")}
           <input
             type="date"
             value={from}
@@ -232,7 +317,7 @@ function Page() {
           />
         </label>
         <label className="grid gap-0.5 text-2xs uppercase tracking-wider text-muted">
-          To
+          {t("To")}
           <input
             type="date"
             value={to}
@@ -244,8 +329,8 @@ function Page() {
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search this list"
-          aria-label="Search the log"
+          placeholder={t("Search this list")}
+          aria-label={t("Search the log")}
           className="max-w-[12rem]"
         />
         {filtered ? (
@@ -263,11 +348,11 @@ function Page() {
               setQ("");
             }}
           >
-            Clear filters
+            {t("Clear filters")}
           </Button>
         ) : null}
         <span className="ml-auto text-2xs uppercase tracking-wider text-muted">
-          {data ? `${rows.length} shown` : "Loading"}
+          {data ? t("{n} shown", { n: rows.length }) : t("Loading")}
         </span>
       </div>
       {error ? (
@@ -277,18 +362,18 @@ function Page() {
       ) : null}
       {hiddenHere ? (
         <p className="mb-3 text-xs text-muted">
-          {hiddenHere} hidden on this screen.{" "}
+          {t("{n} hidden on this screen.", { n: hiddenHere })}{" "}
           <button type="button" className="underline" onClick={() => setShowHidden((v) => !v)}>
-            {showHidden ? "Hide them again" : "Show them"}
+            {showHidden ? t("Hide them again") : t("Show them")}
           </button>
           {" · "}
           <button type="button" className="underline" onClick={restoreAll}>
-            Restore all
+            {t("Restore all")}
           </button>
         </p>
       ) : null}
 
-      <SplitText as="h2" text="Activity" className="mb-3 font-display text-2xl" />
+      <SectionTitle text={tk("Activity")} className="mb-3 font-display text-2xl" />
 
       {!data ? (
         <div className="grid gap-2">
@@ -312,12 +397,12 @@ function Page() {
                     className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left"
                   >
                     <Badge tone={toneFor(e.action)}>{actionLabel(e.action)}</Badge>
-                    <span className="text-sm font-medium">{e.actor_name ?? "System"}</span>
+                    <span className="text-sm font-medium">{e.actor_name ?? t("System")}</span>
                     {e.actor_role ? (
-                      <span className="text-2xs uppercase tracking-wider text-muted">{e.actor_role}</span>
+                      <span className="text-2xs uppercase tracking-wider text-muted">{roleLabel(e.actor_role)}</span>
                     ) : null}
                     <span className="text-sm text-muted">
-                      {e.entity}
+                      {entityLabel(e.entity)}
                       {e.entity_id ? <span className="tabular-nums"> · {e.entity_id.slice(0, 8)}</span> : null}
                     </span>
                     <span className="ml-auto text-xs tabular-nums text-muted">{when(e.at)}</span>
@@ -328,24 +413,24 @@ function Page() {
                         <div className="grid gap-2 md:grid-cols-2">
                           {before ? (
                             <div>
-                              <p className="mb-1 uppercase tracking-wider text-muted">Before</p>
+                              <p className="mb-1 uppercase tracking-wider text-muted">{t("Before")}</p>
                               <pre className="max-h-48 overflow-auto rounded-[var(--radius-sm)] bg-wood p-2">{before}</pre>
                             </div>
                           ) : null}
                           {after ? (
                             <div>
-                              <p className="mb-1 uppercase tracking-wider text-muted">After</p>
+                              <p className="mb-1 uppercase tracking-wider text-muted">{t("After")}</p>
                               <pre className="max-h-48 overflow-auto rounded-[var(--radius-sm)] bg-wood p-2">{after}</pre>
                             </div>
                           ) : null}
                         </div>
                       ) : (
-                        <p className="text-muted">No before/after was recorded for this entry.</p>
+                        <p className="text-muted">{t("No before/after was recorded for this entry.")}</p>
                       )}
                       {!hidden.includes(e.id) ? (
                         <div>
                           <Button size="sm" variant="ghost" onClick={() => hide(e.id)}>
-                            Hide from this screen
+                            {t("Hide from this screen")}
                           </Button>
                         </div>
                       ) : null}
@@ -358,11 +443,11 @@ function Page() {
         </Stagger>
       ) : (
         <EmptyState
-          title={filtered ? "Nothing matches that" : "Nothing recorded yet"}
+          title={filtered ? t("Nothing matches that") : t("Nothing recorded yet")}
           hint={
             filtered
-              ? "Clear the filters, or widen the dates."
-              : "Entries appear here as staff take payments, change prices and refund."
+              ? t("Clear the filters, or widen the dates.")
+              : t("Entries appear here as staff take payments, change prices and refund.")
           }
         />
       )}
@@ -373,7 +458,7 @@ function Page() {
             onClick={() => setLimit((n) => Math.min(n + PAGE_SIZE, 200))}
             disabled={limit >= 200}
           >
-            {limit >= 200 ? "Narrow the filters to see older entries" : "Show more"}
+            {limit >= 200 ? t("Narrow the filters to see older entries") : t("Show more")}
           </Button>
         </div>
       ) : null}

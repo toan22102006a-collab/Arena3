@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button, Modal } from "./ui";
 import { money } from "./shell";
 import { apiPost } from "@/lib/arena3/client";
+import { t, tServer } from "@/lib/i18n";
 
 /**
  * Take an online payment through payOS.
@@ -41,7 +42,7 @@ const POLL_MS = 3000;
 export function PayOnlineButton({
   refType,
   refId,
-  label = "Pay online",
+  label,
   size = "sm",
   variant = "outline",
   onPaid,
@@ -91,7 +92,7 @@ export function PayOnlineButton({
       setPhase("waiting");
     } catch (e) {
       setPhase("idle");
-      toast.error(e instanceof Error ? e.message : "Could not start the payment");
+      toast.error(e instanceof Error ? tServer(e.message) : t("Could not start the payment"));
     }
   }
 
@@ -112,9 +113,9 @@ export function PayOnlineButton({
         } else if (r.status === "expired" || r.status === "failed") {
           stopPolling();
           setPhase("failed");
-          setNote(r.status === "expired" ? "The link expired." : "The customer cancelled.");
+          setNote(r.status === "expired" ? t("The link expired.") : t("The customer cancelled."));
         } else if (r.status === "underpaid") {
-          setNote(`Not the full amount yet — ${r.detail ?? ""}`);
+          setNote(t("Not the full amount yet — {detail}", { detail: tServer(r.detail ?? "") }));
         }
       } catch {
         // A poll that fails is not a payment that failed; keep asking.
@@ -139,16 +140,16 @@ export function PayOnlineButton({
   return (
     <>
       <Button size={size} variant={variant} onClick={() => void raise()} disabled={phase === "raising"}>
-        {phase === "raising" ? "Starting…" : label}
+        {phase === "raising" ? t("Starting…") : (label ?? t("Pay online"))}
       </Button>
 
       <Modal
         open={phase === "waiting" || phase === "paid" || phase === "failed"}
         onClose={close}
-        title={phase === "paid" ? "Paid" : phase === "failed" ? "Not paid" : "Scan to pay"}
+        title={phase === "paid" ? t("Paid") : phase === "failed" ? t("Not paid") : t("Scan to pay")}
         footer={
           <Button variant={phase === "paid" ? "primary" : "outline"} onClick={close}>
-            {phase === "paid" ? "Done" : "Close"}
+            {phase === "paid" ? t("Done") : t("Close")}
           </Button>
         }
       >
@@ -162,26 +163,26 @@ export function PayOnlineButton({
             */}
             <p className="text-sm text-muted">
               {raised.raised_by === "member"
-                ? "Scan this with your banking app, or open the payment page below."
-                : "Ask the customer to scan this with their banking app."}
+                ? t("Scan this with your banking app, or open the payment page below.")
+                : t("Ask the customer to scan this with their banking app.")}
             </p>
             {qrPng ? (
               <img
                 src={qrPng}
-                alt="Payment QR code"
+                alt={t("Payment QR code")}
                 className="mx-auto size-64 rounded-[var(--radius-md)] border border-line bg-surface"
               />
             ) : (
               <div className="mx-auto grid size-64 place-items-center rounded-[var(--radius-md)] border border-line text-sm text-muted">
-                No QR — use the payment page
+                {t("No QR — use the payment page")}
               </div>
             )}
             <p className="font-display text-3xl tabular-nums">{money(raised.amount_vnd)}</p>
             <p className="text-2xs uppercase tracking-wider text-muted">{raised.payment_code}</p>
             <p className="text-sm text-muted">
               {raised.raised_by === "member"
-                ? "We are waiting for your bank. Do not pay twice — this confirms by itself."
-                : "Waiting for the bank to confirm. This posts by itself — there is nothing to press."}
+                ? t("We are waiting for your bank. Do not pay twice — this confirms by itself.")
+                : t("Waiting for the bank to confirm. This posts by itself — there is nothing to press.")}
             </p>
             {note ? <p className="text-sm text-hold">{note}</p> : null}
             <a
@@ -190,7 +191,7 @@ export function PayOnlineButton({
               rel="noreferrer noopener"
               className="text-sm underline underline-offset-4"
             >
-              Open the payment page instead
+              {t("Open the payment page instead")}
             </a>
           </div>
         ) : null}
@@ -200,16 +201,16 @@ export function PayOnlineButton({
             <p className="font-display text-3xl tabular-nums">{money(raised.amount_vnd)}</p>
             <p className="text-sm text-muted">
               {raised.raised_by === "member"
-                ? "Paid. Your court is confirmed and the receipt is in your account."
-                : "Confirmed by payOS and posted automatically. The receipt is on the member’s account."}
+                ? t("Paid. Your court is confirmed and the receipt is in your account.")
+                : t("Confirmed by payOS and posted automatically. The receipt is on the member’s account.")}
             </p>
           </div>
         ) : null}
 
         {phase === "failed" ? (
           <div className="grid gap-2 text-center">
-            <p className="text-sm">{note ?? "The payment did not go through."}</p>
-            <p className="text-sm text-muted">Nothing was taken. Try again, or take payment at the till.</p>
+            <p className="text-sm">{note ?? t("The payment did not go through.")}</p>
+            <p className="text-sm text-muted">{t("Nothing was taken. Try again, or take payment at the till.")}</p>
           </div>
         ) : null}
       </Modal>

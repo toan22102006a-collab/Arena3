@@ -230,7 +230,7 @@ async function main() {
   } else {
     expect(
       hold.status === 422 || hold.status === 409,
-      "hold rejected by business rule (debt/quota/conflict)",
+      "hold rejected by business rule (quota/conflict)",
       hold,
     );
   }

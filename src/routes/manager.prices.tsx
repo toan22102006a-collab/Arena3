@@ -7,6 +7,9 @@ import { Stagger, StaggerItem } from "@/components/motion";
 import { StarBorder } from "@/components/fx";
 import { ApiClientError, apiGet, apiPut } from "@/lib/arena3/client";
 import { DAY_KIND_LABEL, sportLabel } from "@/lib/arena3/labels";
+import { t, tk, tServer } from "@/lib/i18n";
+import { SectionTitle } from "@/components/section";
+import { Banknote, ChevronDown, Percent, Ticket } from "lucide-react";
 
 export const Route = createFileRoute("/manager/prices")({
   component: Page,
@@ -55,7 +58,7 @@ function Page() {
     setItems((await apiGet<{ items: Rule[] }>("/price-rules")).items);
   }
   useEffect(() => {
-    void load().catch((e) => toast.error(e.message));
+    void load().catch((e) => toast.error(tServer(e.message)));
     void apiGet<{ items: Plan[] }>("/plans")
       .then((r) => setPlans(r.items))
       .catch(() => setPlans([]));
@@ -98,11 +101,11 @@ function Page() {
     setMessage("");
     try {
       await apiPut("/price-rules", { items });
-      toast.success("Pricing saved");
+      toast.success(t("Pricing saved"));
       await load();
     } catch (e) {
       if (e instanceof ApiClientError && typeof e.body.index === "number") setBad(e.body.index);
-      setMessage(e instanceof Error ? e.message : "Something went wrong");
+      setMessage(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
     } finally {
       setSaving(false);
     }
@@ -113,23 +116,31 @@ function Page() {
   return (
     <Shell
       role="manager"
-      title="Pricing"
-      subtitle="A new price only applies to new transactions — bookings and plans already sold keep theirs."
+      title={t("Pricing")}
+      subtitle={t("A new price only applies to new transactions — bookings and plans already sold keep theirs.")}
     >
       <section aria-labelledby="court-rates">
-        <h2 id="court-rates" className="mb-2 font-display text-2xl">
-          Court rates
-        </h2>
-        <p className="mb-3 text-sm text-muted">Price per hour, by sport, day and time of day. Peak hours are the busy evening slots.</p>
+        <SectionTitle
+          id="court-rates"
+          icon={Banknote}
+          text={tk("Court rates")}
+          hint={t("Price per hour, by sport, day and time of day. Peak hours are the busy evening slots.")}
+          className="mb-3"
+        />
         {!items ? (
           <Skeleton className="h-40" />
         ) : !items.length ? (
-          <EmptyState title="No court rates yet" hint="Without a rate a court cannot be quoted, so no booking can be made." />
+          <EmptyState title={t("No court rates yet")} hint={t("Without a rate a court cannot be quoted, so no booking can be made.")} />
         ) : (
           <div className="grid gap-5">
-            {groups.map(([sport, rows]) => (
-              <div key={sport}>
-                <h3 className="mb-2 text-sm font-medium uppercase tracking-wider text-muted">{sportLabel(sport)}</h3>
+            {groups.map(([sport, rows], gi) => (
+              <details key={sport} open={gi === 0 || rows.some((x) => x.index === bad)} className="group">
+                <summary className="mb-2 flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-md)] bg-surface px-3 text-sm font-medium uppercase tracking-wider text-muted [&::-webkit-details-marker]:hidden">
+                  <span>
+                    {sportLabel(sport)} <span className="normal-case tracking-normal">· {t("{n} rates", { n: rows.length })}</span>
+                  </span>
+                  <ChevronDown aria-hidden="true" className="size-4 transition-transform group-open:rotate-180" />
+                </summary>
                 <Stagger className="grid gap-2" gap={0.03}>
                   {rows.map(({ rule: r, index }) => (
                     <StaggerItem key={r.id}>
@@ -141,19 +152,23 @@ function Page() {
                         <span className="text-sm">
                           {DAY_KIND_LABEL[r.day_kind] ?? r.day_kind}
                           {r.court_id ? (
-                            <span className="block text-xs text-muted">{courtCodes[r.court_id] ?? "One court"} only</span>
+                            <span className="block text-xs text-muted">{t("{court} only", { court: courtCodes[r.court_id] ?? t("One court") })}</span>
                           ) : null}
                         </span>
                         <span className="text-sm tabular-nums">
                           {r.start_local.slice(0, 5)}–{r.end_local.slice(0, 5)}
                         </span>
                         <span>
-                          <Badge tone={r.is_peak ? "accent" : "muted"}>{r.is_peak ? "Peak" : "Off-peak"}</Badge>
+                          <Badge tone={r.is_peak ? "accent" : "muted"}>{r.is_peak ? t("Peak") : t("Off-peak")}</Badge>
                         </span>
                         <Input
                           type="number"
                           min={0}
-                          aria-label={`${sportLabel(r.sport)} ${DAY_KIND_LABEL[r.day_kind] ?? r.day_kind} ${r.start_local.slice(0, 5)} price`}
+                          aria-label={t("{sport} {day} {time} price", {
+                            sport: sportLabel(r.sport),
+                            day: DAY_KIND_LABEL[r.day_kind] ?? r.day_kind,
+                            time: r.start_local.slice(0, 5),
+                          })}
                           value={Number.isNaN(r.price_vnd) ? "" : r.price_vnd}
                           onChange={(e) => edit(index, e.target.value)}
                         />
@@ -164,7 +179,7 @@ function Page() {
                     </StaggerItem>
                   ))}
                 </Stagger>
-              </div>
+              </details>
             ))}
           </div>
         )}
@@ -175,26 +190,29 @@ function Page() {
         ) : null}
         <StarBorder className="mt-4" speed={4}>
           <Button disabled={saving || !items?.length} onClick={() => void save()}>
-            {saving ? "Saving…" : "Save new prices"}
+            {saving ? t("Saving…") : t("Save new prices")}
           </Button>
         </StarBorder>
       </section>
 
       <section aria-labelledby="plan-prices" className="mt-10">
         <div className="mb-2 flex items-end justify-between gap-3">
-          <h2 id="plan-prices" className="font-display text-2xl">
-            Membership plans
-          </h2>
+          <SectionTitle
+            id="plan-prices"
+            icon={Ticket}
+            text={tk("Membership plans")}
+            hint={t("What each plan on sale costs and what it includes.")}
+          />
           <Link to="/manager/plans" className="text-sm underline">
-            Edit plans
+            {t("Edit plans")}
           </Link>
         </div>
         {!plans ? (
           <Skeleton className="h-24" />
         ) : !onSale.length ? (
-          <EmptyState title="No plan is on sale" hint="Members cannot buy a plan until you put one on sale.">
+          <EmptyState title={t("No plan is on sale")} hint={t("Members cannot buy a plan until you put one on sale.")}>
             <Link to="/manager/plans" className="text-sm underline">
-              Go to plans
+              {t("Go to plans")}
             </Link>
           </EmptyState>
         ) : (
@@ -204,8 +222,8 @@ function Page() {
                 <span>
                   <span className="block text-sm font-medium">{p.name}</span>
                   <span className="block text-xs text-muted">
-                    {sportLabel(p.sport_scope)} · {p.duration_days ? `${p.duration_days} days` : "per session"} ·{" "}
-                    {p.court_hours} court hours · {p.court_discount_pct}% off courts
+                    {sportLabel(p.sport_scope)} · {p.duration_days ? t("{n} days", { n: p.duration_days }) : t("per session")} ·{" "}
+                    {t("{n} court hours", { n: p.court_hours })} · {t("{pct}% off courts", { pct: p.court_discount_pct })}
                   </span>
                 </span>
                 <span className="text-sm tabular-nums">{money(p.price_vnd)}</span>
@@ -216,21 +234,25 @@ function Page() {
       </section>
 
       <section aria-labelledby="vat" className="mt-10">
-        <h2 id="vat" className="mb-2 font-display text-2xl">
-          VAT
-        </h2>
+        <SectionTitle
+          id="vat"
+          icon={Percent}
+          text={tk("VAT")}
+          hint={t("The tax rate printed on every receipt.")}
+          className="mb-3"
+        />
         <Card className="flex items-center justify-between gap-3 p-4">
           <span className="text-sm">
             {vat == null ? (
-              "VAT rate not available."
+              t("VAT rate not available.")
             ) : (
               <>
-                VAT rate on receipts: <span className="font-medium tabular-nums">{vat}%</span>
+                {t("VAT rate on receipts:")} <span className="font-medium tabular-nums">{vat}%</span>
               </>
             )}
           </span>
           <Link to="/manager/settings" className="text-sm underline">
-            Change in Settings
+            {t("Change in Settings")}
           </Link>
         </Card>
       </section>

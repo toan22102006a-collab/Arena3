@@ -34,7 +34,7 @@ export const COACHES: CoachCard[] = [
     sport: "basketball",
     title: "Head basketball coach",
     blurb:
-      "Beginner program on BR-01: footwork, release, reading the floor. A convertible court — classes never sit on a sold slot.",
+      "Beginner program on BR-01: footwork, release, reading the floor. Classes never sit on a sold slot.",
     creds: ["Beginner Mon/Wed 17:00", "Court BR-01", "Vertical · coordination"],
     photo: media.coachAnh,
   },

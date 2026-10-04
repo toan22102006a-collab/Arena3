@@ -148,37 +148,6 @@ export async function inviteWaitlist(sql: Sql, classId: string) {
   await enqueue(sql, "inapp", "waitlist_offer", next.user_id, { offer_id: offer!.id, class_id: classId }, `wl|${offer!.id}`);
 }
 
-export async function convertSlot(sql: Sql, request: Request, user: PublicUser) {
-  requireRole(user, ["manager", "receptionist"]);
-  const b = await readJson(request);
-  const court_id = str(b.court_id);
-  const start_at = str(b.start_at);
-  const end_at = str(b.end_at);
-  if (!court_id || !start_at || !end_at) throw err.validation("court_id, start_at and end_at are required.");
-  const ref = crypto.randomUUID();
-  try {
-    const occ = await one<{ occupancy_attach_convert: string }>(
-      sql,
-      `select occupancy_attach_convert($1::uuid, $2::timestamptz, $3::timestamptz, $4::uuid) as occupancy_attach_convert`,
-      [court_id, start_at, end_at, ref],
-    );
-    await audit(sql, user.id, "convert_court", "occupancy", occ!.occupancy_attach_convert);
-    return { status: 201, body: { occupancy_id: occ!.occupancy_attach_convert, ref } };
-  } catch (e) {
-    if (isConflictSlot(e)) throw err.conflictSlot("Cannot convert — the paired court is busy.");
-    const msg = e instanceof Error ? e.message : "";
-    if (msg.includes("COURT_NOT_CONVERTIBLE")) throw err.br("BR-39G", "That court cannot be converted.");
-    throw e;
-  }
-}
-
-export async function convertRelease(sql: Sql, groupId: string, user: PublicUser) {
-  requireRole(user, ["manager", "receptionist"]);
-  await sql.query(`select occupancy_release_convert($1::uuid)`, [groupId]);
-  await audit(sql, user.id, "convert_release", "occupancy", groupId);
-  return { status: 200, body: { ok: true } };
-}
-
 export async function equipmentList(sql: Sql) {
   const items = await sql.query(`select * from equipment_items order by name`);
   return { status: 200, body: { items } };
@@ -405,7 +374,8 @@ export async function trainingList(sql: Sql, request: Request, user: PublicUser)
     `select p.*, s.start_at as session_start
        from training_plans p
        left join sessions s on s.id = p.session_id
-      where ($1::uuid is null or p.class_id = $1)
+      where not p.is_template
+        and ($1::uuid is null or p.class_id = $1)
         and (
           case
             when $2::boolean then

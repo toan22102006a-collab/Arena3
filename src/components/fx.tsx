@@ -368,10 +368,23 @@ export function SplitText({
   // spans at all, so screen readers and text selection behave normally.
   if (reduced) return <Tag className={className}>{text}</Tag>;
 
-  const units = splitBy === "words" ? text.split(/(\s+)/) : Array.from(text);
+  // Graphemes, not code points, so a Vietnamese letter and its tone marks stay in one unit.
+  const graphemes = (w: string): string[] =>
+    typeof Intl !== "undefined" && "Segmenter" in Intl
+      ? Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(w), (g) => g.segment)
+      : Array.from(w);
+  const words = text.normalize("NFC").split(/(\s+)/);
   // Whitespace is not a unit, so it must not consume a stagger step — otherwise
   // a word-split headline pauses in its own gaps and arrives unevenly.
   let step = 0;
+  const unit = (u: string, key: number | string) => (
+    // The mask is `overflow-hidden` on an inline-block; spaces stay outside it or the gap collapses.
+    <span key={key} aria-hidden className="inline-block overflow-hidden align-bottom py-[0.28em] -my-[0.28em]">
+      <span className="split-unit" style={{ "--split-delay": `${delay + step++ * stagger}s` } as CSSProperties}>
+        {u}
+      </span>
+    </span>
+  );
 
   return (
     <Tag
@@ -388,21 +401,18 @@ export function SplitText({
       {/* aria-label is not allowed on a generic span/p; the real string is read
           from this hidden copy while the animated units stay aria-hidden. */}
       <span className="sr-only">{text}</span>
-      {units.map((u, i) =>
-        // Whitespace stays outside the clipping mask, otherwise `overflow-hidden`
-        // on a space collapses the gap between words.
-        /^\s+$/.test(u) ? (
+      {words.map((w, i) =>
+        /^\s+$/.test(w) ? (
           <span key={i} aria-hidden>
-            {u === " " ? " " : u}
+            {" "}
           </span>
+        ) : splitBy === "words" ? (
+          unit(w, i)
         ) : (
-          <span key={i} aria-hidden className="inline-block overflow-hidden align-bottom pb-[0.12em]">
-            <span
-              className="split-unit"
-              style={{ "--split-delay": `${delay + step++ * stagger}s` } as CSSProperties}
-            >
-              {u}
-            </span>
+          // Each word is one unbreakable box, so a line can only wrap at a space — otherwise the
+          // break can fall between two letter boxes and strand a space at the start of a line.
+          <span key={i} aria-hidden className="inline-block whitespace-nowrap">
+            {graphemes(w).map((g, j) => unit(g, j))}
           </span>
         ),
       )}

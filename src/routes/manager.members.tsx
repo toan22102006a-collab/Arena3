@@ -1,10 +1,11 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Shell, money } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Input, Select, Skeleton, StatusBadge } from "@/components/ui";
+import { Shell } from "@/components/shell";
+import { Badge, Card, EmptyState, FilterChip, Input, Pagination, Select, Skeleton, StatusBadge } from "@/components/ui";
 import { apiGet } from "@/lib/arena3/client";
 import { formatDate, sportLabel } from "@/lib/arena3/labels";
+import { locale, t, tk, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/manager/members")({
   component: Page,
@@ -20,17 +21,16 @@ type Row = {
   sport_scope: string | null;
   end_on: string | null;
   plan_state: "active" | "expiring" | "expired" | "none";
-  debt_vnd: number;
   classes: number;
 };
 
 const PAGE = 25;
 
 const PLAN_LABEL: Record<Row["plan_state"], string> = {
-  active: "Plan active",
-  expiring: "Ends within a week",
-  expired: "Plan expired",
-  none: "No plan",
+  active: tk("Plan active"),
+  expiring: tk("Ends within a week"),
+  expired: tk("Plan expired"),
+  none: tk("No plan"),
 };
 
 /** FR-MEM-04: every member, filtered by who they are and where their plan stands. */
@@ -45,8 +45,8 @@ function Page() {
   // Typing waits a beat so one search is one request, and any filter change goes back to page one.
   const [term, setTerm] = useState("");
   useEffect(() => {
-    const t = setTimeout(() => setTerm(q.trim()), 250);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setTerm(q.trim()), 250);
+    return () => clearTimeout(timer);
   }, [q]);
   useEffect(() => setOffset(0), [term, status, sport, plan]);
 
@@ -59,99 +59,104 @@ function Page() {
     if (plan) params.set("plan", plan);
     apiGet<{ items: Row[]; total: number }>(`/directory/members?${params}`)
       .then((r) => live && setData(r))
-      .catch((e) => live && toast.error(e instanceof Error ? e.message : "Could not load members"));
+      .catch((e) => live && toast.error(e instanceof Error ? tServer(e.message) : t("Could not load members")));
     return () => {
       live = false;
     };
   }, [term, status, sport, plan, offset]);
 
   const total = data?.total ?? 0;
-  const from = total ? offset + 1 : 0;
-  const to = Math.min(offset + PAGE, total);
+
+  const PLAN_CHIPS: Array<{ value: string; label: string }> = [
+    { value: "", label: t("Everyone") },
+    { value: "active", label: t("Plan active") },
+    { value: "expiring", label: t("Ends this week") },
+    { value: "expired", label: t("Expired") },
+    { value: "none", label: t("No plan") },
+  ];
 
   return (
-    <Shell role="manager" title="Members" subtitle="Everyone with an account. Open a member for their plan, classes, balance and attendance.">
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <Shell role="manager" title={t("Members")} subtitle={t("Everyone with an account. Open a member for their plan, classes, balance and attendance.")}>
+      <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0" role="group" aria-label={t("Plan state")}>
+        {PLAN_CHIPS.map((c) => (
+          <FilterChip key={c.value || "all"} active={plan === c.value} onClick={() => setPlan(c.value)} label={c.label} />
+        ))}
+      </div>
+      <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_10rem_10rem]">
         <Input
-          placeholder="Name, phone or member code"
+          placeholder={t("Name, phone or member code")}
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          aria-label="Search members"
+          aria-label={t("Search members")}
         />
-        <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Account status">
-          <option value="">Any account status</option>
-          <option value="active">Active</option>
-          <option value="locked">Locked</option>
-          <option value="disabled">Disabled</option>
+        <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label={t("Account status")}>
+          <option value="">{t("Any status")}</option>
+          <option value="active">{t("Active")}</option>
+          <option value="locked">{t("Locked")}</option>
+          <option value="disabled">{t("Disabled")}</option>
         </Select>
-        <Select value={sport} onChange={(e) => setSport(e.target.value)} aria-label="Sport">
-          <option value="">Any sport</option>
+        <Select value={sport} onChange={(e) => setSport(e.target.value)} aria-label={t("Sport")}>
+          <option value="">{t("Any sport")}</option>
           {["badminton", "basketball", "volleyball"].map((s) => (
             <option key={s} value={s}>
               {sportLabel(s)}
             </option>
           ))}
         </Select>
-        <Select value={plan} onChange={(e) => setPlan(e.target.value)} aria-label="Plan state">
-          <option value="">Any plan state</option>
-          <option value="active">Plan active</option>
-          <option value="expiring">Ends within a week</option>
-          <option value="expired">Plan expired</option>
-          <option value="none">No plan</option>
-        </Select>
       </div>
 
       {!data ? (
         <Skeleton className="h-48" />
       ) : !data.items.length ? (
-        <EmptyState title="No members match" hint="Loosen a filter or check the spelling." />
+        <EmptyState title={t("No members match")} hint={t("Loosen a filter or check the spelling.")} />
       ) : (
         <>
-          <div className="grid gap-2">
-            {data.items.map((m) => (
-              <Card key={m.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link to="/desk/member/$id" params={{ id: m.id }} className="font-medium hover:underline">
-                      {m.full_name}
-                    </Link>
-                    {m.status !== "active" ? <StatusBadge status={m.status} /> : null}
-                  </div>
-                  <p className="text-sm tabular-nums text-muted">
-                    {m.member_code ?? "—"} · {m.phone}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <Badge tone={m.plan_state === "active" ? "accent" : m.plan_state === "expiring" ? "hold" : "muted"}>
-                    {PLAN_LABEL[m.plan_state]}
-                  </Badge>
-                  {m.plan_name ? (
-                    <span className="text-muted">
-                      {m.plan_name}
-                      {m.end_on ? ` · until ${formatDate(m.end_on)}` : ""}
-                    </span>
-                  ) : null}
-                  <span className="text-muted">
-                    {m.classes} class{m.classes === 1 ? "" : "es"}
-                  </span>
-                  {m.debt_vnd > 0 ? <Badge tone="danger">Owes {money(m.debt_vnd)}</Badge> : null}
-                </div>
-              </Card>
-            ))}
-          </div>
-          <div className="mt-4 flex items-center justify-between text-sm text-muted">
-            <span className="tabular-nums">
-              {from}–{to} of {total}
-            </span>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>
-                Previous
-              </Button>
-              <Button size="sm" variant="outline" disabled={to >= total} onClick={() => setOffset(offset + PAGE)}>
-                Next
-              </Button>
+          <p className="mb-2 text-sm text-muted tabular-nums">
+            {total === 1 ? t("1 member") : t("{n} members", { n: total.toLocaleString(locale()) })}
+          </p>
+          <Card className="overflow-hidden p-0">
+            <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1.4fr)_5rem] gap-4 border-b border-line bg-wood/50 px-4 py-2 text-xs font-medium text-muted md:grid">
+              <span>{t("Member")}</span>
+              <span>{t("Phone")}</span>
+              <span>{t("Plan")}</span>
+              <span className="text-right">{t("Classes")}</span>
             </div>
-          </div>
+            <ul className="divide-y divide-line/70">
+              {data.items.map((m) => (
+                <li key={m.id}>
+                  <Link
+                    to="/desk/member/$id"
+                    params={{ id: m.id }}
+                    className="grid gap-x-4 gap-y-0.5 px-4 py-2.5 transition-colors duration-150 hover:bg-wood/60 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1.4fr)_5rem] md:items-center"
+                  >
+                    <div className="min-w-0">
+                      <p className="flex flex-wrap items-center gap-2 font-medium">
+                        <span className="truncate">{m.full_name}</span>
+                        {m.status !== "active" ? <StatusBadge status={m.status} /> : null}
+                      </p>
+                      <p className="text-xs tabular-nums text-muted">{m.member_code ?? "—"}</p>
+                    </div>
+                    <p className="text-sm tabular-nums text-muted">{m.phone}</p>
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <Badge tone={m.plan_state === "active" ? "accent" : m.plan_state === "expiring" ? "hold" : "muted"}>
+                        {t(PLAN_LABEL[m.plan_state])}
+                      </Badge>
+                      {m.plan_name ? (
+                        <span className="truncate text-xs text-muted">
+                          {m.plan_name}
+                          {m.end_on ? ` · ${t("until {date}", { date: formatDate(m.end_on) })}` : ""}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-sm tabular-nums text-muted md:text-right">
+                      {m.classes === 1 ? t("1 class") : t("{n} classes", { n: m.classes })}
+                    </p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Card>
+          <Pagination offset={offset} total={total} pageSize={PAGE} onChange={setOffset} />
         </>
       )}
     </Shell>

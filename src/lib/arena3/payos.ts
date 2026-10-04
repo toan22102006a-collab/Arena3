@@ -29,6 +29,18 @@ function credentials() {
   return { clientId, apiKey, checksumKey };
 }
 
+/**
+ * Test switch: with `PAYOS_TEST_AMOUNT=2000` every online payment is charged
+ * that much at the gateway while the order keeps its real price. Unset (the
+ * default) it does nothing, and an amount at or above the price is ignored, so
+ * it can only ever lower what a customer is asked to pay. Remove it before
+ * taking real money.
+ */
+export function gatewayAmount(priceVnd: number): number {
+  const t = Number(process.env.PAYOS_TEST_AMOUNT?.trim());
+  return Number.isInteger(t) && t >= 1000 && t < priceVnd ? t : priceVnd;
+}
+
 /** Whether online payment can be offered at all. */
 export function payosConfigured(): boolean {
   return credentials() !== null;
@@ -91,7 +103,7 @@ export async function createPaymentLink(args: {
     : undefined;
   const res = await payos().paymentRequests.create({
     orderCode: args.orderCode,
-    amount: args.amountVnd,
+    amount: gatewayAmount(args.amountVnd),
     description: args.description,
     returnUrl: args.returnUrl,
     cancelUrl: args.cancelUrl,

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { SectionTitle } from "@/components/section";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Shell } from "@/components/shell";
@@ -8,15 +9,16 @@ import { SplitText } from "@/components/fx";
 import { cn } from "@/lib/cn";
 import { ApiClientError, apiGet, apiPatch } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
+import { t, tk, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/manager/settings")({
   component: Page,
 });
 
 const FLAG_META: { key: string; label: string; hint: string }[] = [
-  { key: "F4", label: "Register & session plans", hint: "Coaches take attendance and hand out drills." },
-  { key: "F5", label: "Plan suggestions", hint: "Drill templates per sport — a coach still has to approve." },
-  { key: "F6", label: "Member assistant", hint: "Gemini Q&A, grounded in the timetable, plans and coaches." },
+  { key: "F4", label: tk("Register & session plans"), hint: tk("Coaches take attendance and hand out drills.") },
+  { key: "F5", label: tk("Plan suggestions"), hint: tk("Drill templates per sport — a coach still has to approve.") },
+  { key: "F6", label: tk("Member assistant"), hint: tk("Gemini Q&A, grounded in the timetable, plans and coaches.") },
 ];
 
 const SETTINGS_FORM_KEYS = [
@@ -28,7 +30,9 @@ const SETTINGS_FORM_KEYS = [
   "hold_minutes",
   "book_ahead_days",
   "cancel_court_hours",
-  "debt_limit_vnd",
+  "gate_dedup_minutes",
+  "at_risk_idle_days",
+  "self_checkin_enabled",
   "freeze_max_days_year",
   "waitlist_offer_hours",
 ];
@@ -41,14 +45,14 @@ function Page() {
   useEffect(() => {
     void apiGet<Record<string, unknown>>("/settings")
       .then(setS)
-      .catch((e) => toast.error(e.message));
+      .catch((e) => toast.error(tServer(e.message)));
     void apiGet<{ flags: Record<string, boolean> }>("/flags")
       .then((r) => setFlags(r.flags))
       .catch(() => undefined);
   }, []);
   if (!s) {
     return (
-      <Shell role="manager" title="Centre settings">
+      <Shell role="manager" title={t("Centre settings")}>
         <Skeleton className="h-64" />
       </Shell>
     );
@@ -73,17 +77,17 @@ function Page() {
     );
   }
   return (
-    <Shell role="manager" title="Centre settings" subtitle="New transactions pick these up within a minute.">
-      <SplitText as="h2" text="Features" className="mb-3 font-display text-2xl" />
+    <Shell role="manager" title={t("Centre settings")} subtitle={t("New transactions pick these up within a minute.")}>
+      <SectionTitle text={tk("Features")} className="mb-3 font-display text-2xl" />
       <Stagger className="mb-6 grid gap-2 md:grid-cols-2" gap={0.05}>
         {FLAG_META.map((fl) => (
           <StaggerItem key={fl.key}>
           <Card className="flex h-full items-center justify-between gap-3 p-4">
             <div>
               <p className="font-medium">
-                {fl.key} · {fl.label}
+                {fl.key} · {t(fl.label)}
               </p>
-              <p className="text-xs text-muted">{fl.hint}</p>
+              <p className="text-xs text-muted">{t(fl.hint)}</p>
             </div>
             <button
               type="button"
@@ -92,14 +96,14 @@ function Page() {
                 try {
                   const r = await apiPatch<{ flags: Record<string, boolean> }>("/flags", { [fl.key]: next });
                   setFlags(r.flags);
-                  toast.success(next ? `${fl.key} switched on` : `${fl.key} switched off`);
+                  toast.success(next ? t("{key} switched on", { key: fl.key }) : t("{key} switched off", { key: fl.key }));
                 } catch (e) {
-                  toast.error(e instanceof Error ? e.message : "Something went wrong");
+                  toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
                 }
               }}
               className={`h-8 w-14 rounded-full p-1 transition-colors ${flags[fl.key] ? "bg-accent" : "bg-wood"}`}
               aria-pressed={!!flags[fl.key]}
-              aria-label={fl.label}
+              aria-label={t(fl.label)}
             >
               <motion.span
                 layout
@@ -112,28 +116,46 @@ function Page() {
           </StaggerItem>
         ))}
       </Stagger>
-      <SplitText as="h2" text="Courts" className="mb-1 font-display text-2xl" />
+      <SectionTitle text={tk("Courts")} className="mb-1 font-display text-2xl" />
       <p className="mb-3 text-sm text-muted">
-        Taking a court out of service stops new bookings on it. Anything already booked stays — the desk sorts those out.
+        {t("Taking a court out of service stops new bookings on it. Anything already booked stays — the desk sorts those out.")}
       </p>
       <Courts />
 
-      <SplitText as="h2" text="Centre details" className="mb-3 mt-8 font-display text-2xl" />
+      <SectionTitle text={tk("Centre details")} className="mb-3 mt-8 font-display text-2xl" />
       <Reveal>
       <Card className="grid gap-3 md:grid-cols-2">
-        {f("legal_name", "Legal name")}
-        {f("address", "Address")}
-        {f("tax_code", "Tax code")}
-        {f("open_time", "Opens at", "time")}
-        {f("close_time", "Closes at", "time")}
-        {f("hold_minutes", "Hold length (minutes)", "number")}
-        {f("book_ahead_days", "Book ahead (days)", "number")}
-        {f("cancel_court_hours", "Court cancellation window (hours)", "number")}
-        {f("debt_limit_vnd", "Debt ceiling (đ)", "number")}
-        {f("freeze_max_days_year", "Freeze cap (days per year)", "number")}
-        {f("waitlist_offer_hours", "Waitlist offer window (hours)", "number")}
+        {f("legal_name", t("Legal name"))}
+        {f("address", t("Address"))}
+        {f("tax_code", t("Tax code"))}
+        {f("open_time", t("Opens at"), "time")}
+        {f("close_time", t("Closes at"), "time")}
+        {f("hold_minutes", t("Hold length (minutes)"), "number")}
+        {f("book_ahead_days", t("Book ahead (days)"), "number")}
+        {f("cancel_court_hours", t("Court cancellation window (hours)"), "number")}
+        {f("gate_dedup_minutes", t("Count a repeat gate scan once for (minutes)"), "number")}
+        {f("at_risk_idle_days", t("At-risk after no visit for (days)"), "number")}
+        {f("freeze_max_days_year", t("Freeze cap (days per year)"), "number")}
+        {f("waitlist_offer_hours", t("Waitlist offer window (hours)"), "number")}
+        <label className="flex items-start gap-3 text-sm md:col-span-2">
+          <input
+            type="checkbox"
+            className="mt-1 size-4 accent-[var(--color-accent)]"
+            checked={s.self_checkin_enabled === true}
+            onChange={(e) => setS({ ...s, self_checkin_enabled: e.target.checked })}
+          />
+          <span>
+            {t("Let members check in themselves")}
+            <span className="block text-xs text-muted">
+              {t("Off by default. When on, the front desk shows a code that changes every 30 seconds and a member scans it from their own phone. Members without a plan or booking are still sent to the desk.")}
+            </span>
+          </span>
+        </label>
         <p className="text-xs text-muted md:col-span-2">
-          Time zone ({String(s.timezone ?? "—")}) and currency ({String(s.currency ?? "—")}) are fixed for this centre.
+          {t("Time zone ({tz}) and currency ({currency}) are fixed for this centre.", {
+            tz: String(s.timezone ?? "—"),
+            currency: String(s.currency ?? "—"),
+          })}
         </p>
         <div className="md:col-span-2">
           <Button
@@ -149,20 +171,20 @@ function Page() {
                 body.open_time = String(s.open_time ?? "").slice(0, 5);
                 body.close_time = String(s.close_time ?? "").slice(0, 5);
                 setS(await apiPatch("/settings", body));
-                toast.success("Saved — new transactions use these now");
+                toast.success(t("Saved — new transactions use these now"));
               } catch (e) {
                 if (e instanceof ApiClientError && e.body.field) {
-                  setFieldErrors({ [e.body.field]: e.message });
-                  toast.error(e.message);
+                  setFieldErrors({ [e.body.field]: tServer(e.message) });
+                  toast.error(tServer(e.message));
                 } else {
-                  toast.error(e instanceof Error ? e.message : "Something went wrong");
+                  toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
                 }
               } finally {
                 setSaving(false);
               }
             }}
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? t("Saving…") : t("Save")}
           </Button>
         </div>
       </Card>
@@ -171,12 +193,12 @@ function Page() {
   );
 }
 
-type Court = { id: string; court_code: string; sport: string; status: string; convertible?: boolean };
+type Court = { id: string; court_code: string; sport: string; status: string };
 
 const STATUSES = [
-  { value: "ready", label: "Open", tone: "accent" as const },
-  { value: "maintenance", label: "Maintenance", tone: "hold" as const },
-  { value: "closed", label: "Closed", tone: "danger" as const },
+  { value: "ready", label: tk("Open"), tone: "accent" as const },
+  { value: "maintenance", label: tk("Maintenance"), tone: "hold" as const },
+  { value: "closed", label: tk("Closed"), tone: "danger" as const },
 ];
 
 function Courts() {
@@ -187,7 +209,7 @@ function Courts() {
   useEffect(() => {
     void apiGet<{ items: Court[] }>("/courts")
       .then((r) => setItems(r.items))
-      .catch((e) => toast.error(e instanceof Error ? e.message : "Could not load the courts"));
+      .catch((e) => toast.error(e instanceof Error ? tServer(e.message) : t("Could not load the courts")));
   }, []);
 
   async function set(court: Court, status: string) {
@@ -200,15 +222,19 @@ function Courts() {
     try {
       const res = await apiPatch<{ court: Court; upcoming: number }>(`/courts/${court.id}`, { status });
       setItems((list) => (list ?? []).map((c) => (c.id === court.id ? res.court : c)));
-      const label = STATUSES.find((s) => s.value === status)?.label ?? status;
+      const found = STATUSES.find((s) => s.value === status)?.label;
+      const label = found ? t(found) : status;
+      const code = court.court_code;
       toast.success(
         status !== "ready" && res.upcoming > 0
-          ? `${court.court_code} → ${label}. ${res.upcoming} booking${res.upcoming === 1 ? "" : "s"} still stand — tell the desk.`
-          : `${court.court_code} → ${label}`,
+          ? res.upcoming === 1
+            ? t("{code} → {label}. 1 booking still stands — tell the desk.", { code, label })
+            : t("{code} → {label}. {n} bookings still stand — tell the desk.", { code, label, n: res.upcoming })
+          : t("{code} → {label}", { code, label }),
       );
     } catch (e) {
       setItems((list) => (list ?? []).map((c) => (c.id === court.id ? { ...c, status: court.status } : c)));
-      toast.error(e instanceof Error ? e.message : "Could not change that court");
+      toast.error(e instanceof Error ? tServer(e.message) : t("Could not change that court"));
     } finally {
       setBusy(null);
     }
@@ -226,14 +252,14 @@ function Courts() {
           value={sport}
           onChange={setSport}
           options={[
-            { value: "", label: "All" },
-            { value: "badminton", label: "Badminton" },
-            { value: "basketball", label: "Basketball" },
-            { value: "volleyball", label: "Volleyball" },
+            { value: "", label: t("All") },
+            { value: "badminton", label: t("Badminton") },
+            { value: "basketball", label: t("Basketball") },
+            { value: "volleyball", label: t("Volleyball") },
           ]}
         />
         <p className="text-xs tabular-nums text-muted">
-          {items.length - down} of {items.length} open
+          {t("{n} of {total} open", { n: items.length - down, total: items.length })}
         </p>
       </div>
       <Stagger className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" gap={0.03}>
@@ -243,13 +269,12 @@ function Courts() {
               <div>
                 <p className="font-medium">
                   {c.court_code}
-                  {c.convertible ? <span className="ml-1 text-subtle">↔</span> : null}
                 </p>
                 <p className="text-xs text-muted">{sportLabel(c.sport)}</p>
               </div>
               <div
                 role="radiogroup"
-                aria-label={`Status for ${c.court_code}`}
+                aria-label={t("Status for {code}", { code: c.court_code })}
                 className="inline-flex rounded-[var(--radius-pill)] bg-wood p-1"
               >
                 {STATUSES.map((st) => {
@@ -277,7 +302,7 @@ function Courts() {
                           transition={{ type: "spring", stiffness: 420, damping: 34 }}
                         />
                       ) : null}
-                      <span className="relative z-[1]">{st.label}</span>
+                      <span className="relative z-[1]">{t(st.label)}</span>
                     </button>
                   );
                 })}

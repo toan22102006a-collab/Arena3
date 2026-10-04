@@ -15,6 +15,9 @@ import * as onlineH from "./handlers/online";
 import * as opsH from "./handlers/ops";
 import * as staffH from "./handlers/staff";
 import * as trainH from "./handlers/training";
+import * as checkinH from "./handlers/checkin";
+import * as promoH from "./handlers/promos";
+import * as attH from "./handlers/attendance";
 
 type Result = { status: number; body: unknown };
 
@@ -174,6 +177,9 @@ async function dispatch(request: Request): Promise<Response | Result> {
   if (method === "GET" && p0 === "members" && p1 && !p2) {
     return authedRead((sql, user) => memberH.memberGet(sql, p1, user));
   }
+  if (method === "POST" && p0 === "members" && p1 && p2 === "reset-password") {
+    return authed((sql, user) => memberH.memberResetPassword(sql, p1, user));
+  }
   if (method === "PATCH" && p0 === "members" && p1 && !p2) {
     return authed((sql, user) => memberH.membersUpdate(sql, p1, request, user));
   }
@@ -306,6 +312,18 @@ async function dispatch(request: Request): Promise<Response | Result> {
     return authedRead((sql, user) => deskH.invoicePdf(sql, id, request, user));
   }
 
+  if (method === "GET" && p0 === "reports" && p1 === "attendance" && !p2) {
+    return authedRead((sql, user) => attH.reportsAttendance(sql, request, user));
+  }
+  if (method === "GET" && p0 === "at-risk" && !p1) {
+    return authedRead((sql, user) => attH.atRiskList(sql, user));
+  }
+  if (method === "POST" && p0 === "contacts" && !p1) {
+    return authed((sql, user) => attH.contactCreate(sql, request, user));
+  }
+  if (method === "GET" && p0 === "members" && p1 && p2 === "contacts") {
+    return authedRead((sql, user) => attH.contactList(sql, p1, user));
+  }
   if (method === "GET" && p0 === "reports" && p1 && p2 === "export") {
     return authedRead((sql, user) => reportH.reportsExport(sql, request, user, p1));
   }
@@ -349,14 +367,6 @@ async function dispatch(request: Request): Promise<Response | Result> {
   if (method === "POST" && p0 === "waitlist" && p1 && p2 === "accept") {
     return authed((sql, user) => opsH.waitlistAccept(sql, p1, user));
   }
-  if (method === "POST" && p0 === "convert" && p1 && p2 === "release") {
-    return authed((sql, user) => opsH.convertRelease(sql, p1, user));
-  }
-  if (method === "POST" && p0 === "convert") {
-    return authed((sql, user) =>
-      withIdempotency(sql, request, user.id, true, () => opsH.convertSlot(sql, request, user)),
-    );
-  }
   if (method === "GET" && p0 === "equipment" && !p1) {
     return authedRead((sql) => opsH.equipmentList(sql));
   }
@@ -384,6 +394,18 @@ async function dispatch(request: Request): Promise<Response | Result> {
   // Before the /:id routes, or "suggest" is read as a plan id.
   if (method === "POST" && p0 === "training-plans" && p1 === "suggest") {
     return authed((sql, user) => opsH.trainingSuggest(sql, request, user));
+  }
+  if (method === "GET" && p0 === "training-plans" && p1 === "templates") {
+    return authedRead((sql, user) => trainH.templatesList(sql, request, user));
+  }
+  if (method === "POST" && p0 === "training-plans" && p1 === "from-template") {
+    return authed((sql, user) => trainH.plansFromTemplate(sql, request, user));
+  }
+  if (method === "POST" && p0 === "training-plans" && p1 && p2 === "save-template") {
+    return authed((sql, user) => trainH.templateSave(sql, p1, request, user));
+  }
+  if (method === "GET" && p0 === "training-plans" && p1 && p2 === "versions") {
+    return authedRead((sql, user) => trainH.planVersions(sql, p1, user));
   }
   if (method === "PATCH" && p0 === "training-plans" && p1 && !p2) {
     return authed((sql, user) => trainH.trainingPatch(sql, p1, request, user));
@@ -427,11 +449,43 @@ async function dispatch(request: Request): Promise<Response | Result> {
   if (method === "PUT" && p0 === "me" && p1 === "homework" && p2) {
     return authed((sql, user) => trainH.meHomeworkPut(sql, p2, request, user));
   }
+  // Door check-in (SRS v1.4.1 FR-TRN-02, BR-71/72): QR scan, manual with a reason, optional self check-in.
   if (method === "POST" && p0 === "desk" && p1 === "gate-checkin") {
-    return authed((sql, user) => trainH.gateCheckin(sql, request, user));
+    return authed((sql, user) => checkinH.gateCheckin(sql, request, user));
+  }
+  if (method === "POST" && p0 === "desk" && p1 === "scan") {
+    return authed((sql, user) => checkinH.deskScan(sql, request, user));
+  }
+  if (method === "GET" && p0 === "desk" && p1 === "checkin-qr") {
+    return authedRead((sql, user) => checkinH.deskCheckinCode(sql, user));
   }
   if (method === "GET" && p0 === "desk" && p1 === "gate-checkins") {
-    return authedRead((sql, user) => trainH.gateCheckins(sql, user));
+    return authedRead((sql, user) => checkinH.gateCheckins(sql, user));
+  }
+  if (method === "GET" && p0 === "me" && p1 === "checkin-token") {
+    return authedRead((sql, user) => checkinH.meCheckinToken(sql, user));
+  }
+  if (method === "GET" && p0 === "me" && p1 === "bookings" && p2 && parts[3] === "checkin-token") {
+    return authedRead((sql, user) => checkinH.meBookingCheckinToken(sql, p2, user));
+  }
+  if (method === "POST" && p0 === "me" && p1 === "self-checkin") {
+    return authed((sql, user) => checkinH.meSelfCheckin(sql, request, user));
+  }
+  // Promotions (FR-PAY-03, BR-44..46, BR-70). "validate" before the /:id routes.
+  if (method === "GET" && p0 === "promotions" && !p1) {
+    return authedRead((sql, user) => promoH.promosList(sql, user));
+  }
+  if (method === "POST" && p0 === "promotions" && p1 === "validate") {
+    return authedRead((sql, user) => promoH.promosValidate(sql, request, user));
+  }
+  if (method === "POST" && p0 === "promotions" && !p1) {
+    return authed((sql, user) => promoH.promosCreate(sql, request, user));
+  }
+  if (method === "PATCH" && p0 === "promotions" && p1 && !p2) {
+    return authed((sql, user) => promoH.promosPatch(sql, p1, request, user));
+  }
+  if (method === "GET" && p0 === "promotions" && p1 && p2 === "redemptions") {
+    return authedRead((sql, user) => promoH.promosRedemptions(sql, p1, user));
   }
   if (method === "POST" && p0 === "assistant") {
     return authed((sql, user) => opsH.assistantChat(sql, request, user));

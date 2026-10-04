@@ -38,8 +38,6 @@ export type CatalogCourt = {
   court_code: string;
   sport: string;
   status: string;
-  convertible: boolean;
-  pair_court_id: string | null;
 };
 
 export type CatalogSlot = {
@@ -74,7 +72,7 @@ export const getPublicAvailability = createServerFn({ method: "POST" })
     const end = new Date(ictDateTime(date, "23:59").getTime() + 60_000);
     const [courts, slots] = await Promise.all([
       sql.query<CatalogCourt>(
-        `select id, court_code, sport, status, convertible, pair_court_id
+        `select id, court_code, sport, status
            from courts order by court_code`,
       ),
       sql.query<{ court_id: string; start_at: string | Date; end_at: string | Date; kind: string }>(

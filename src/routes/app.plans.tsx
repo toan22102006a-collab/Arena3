@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Cover, MediaCaption, sportPhoto } from "@/components/media";
 import { Shell, money } from "@/components/shell";
-import { Button, Card, EmptyState, Skeleton } from "@/components/ui";
+import { Button, Card, EmptyState, Input, Skeleton } from "@/components/ui";
 import { Lift, Stagger, StaggerItem } from "@/components/motion";
 import { GlareHover, SpotlightCard } from "@/components/fx";
 import { apiGet, apiPost } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/app/plans")({
   component: Page,
@@ -35,6 +36,7 @@ function Page() {
   // pressing the button again does nothing useful — say so instead of firing a
   // request the rate limiter will reject.
   const [ordered, setOrdered] = useState<Record<string, string>>({});
+  const [promoCode, setPromoCode] = useState("");
 
   useEffect(() => {
     void apiGet<{ items: Plan[] }>("/plans")
@@ -46,24 +48,43 @@ function Page() {
     if (busy) return;
     setBusy(p.id);
     try {
-      const res = await apiPost<{ preview_end: string; renewal?: boolean }>("/subscriptions", {
+      const res = await apiPost<{
+        preview_end: string;
+        renewal?: boolean;
+        amount_due_vnd: number;
+        promo?: { code: string; discount_vnd: number } | null;
+      }>("/subscriptions", {
         plan_id: p.id,
+        ...(promoCode.trim() ? { promo_code: promoCode.trim() } : {}),
       });
       setOrdered((o) => ({ ...o, [p.id]: res.preview_end }));
       toast.success(
         res.renewal
-          ? `Renewed through ${res.preview_end} — pay at the desk`
-          : `Order placed, valid through ${res.preview_end} — pay at the desk`,
+          ? t("Renewed through {date} — pay at the desk", { date: res.preview_end })
+          : t("Order placed, valid through {date} — pay at the desk", { date: res.preview_end }),
+        {
+          description: res.promo
+            ? t("{code} takes {off} off — you pay {total}.", {
+                code: res.promo.code,
+                off: money(res.promo.discount_vnd),
+                total: money(res.amount_due_vnd),
+              })
+            : t("You pay {total}.", { total: money(res.amount_due_vnd) }),
+        },
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Something went wrong");
+      toast.error(e instanceof Error ? e.message : t("Something went wrong"));
     } finally {
       setBusy(null);
     }
   }
 
   return (
-    <Shell role="member" title="Membership plans" subtitle="Order here, pay at the desk — you see the new end date before anything is charged.">
+    <Shell
+      role="member"
+      title={t("Membership plans")}
+      subtitle={t("Order here, pay at the desk — you see the new end date before anything is charged.")}
+    >
       {!items ? (
         <div className="grid gap-3 md:grid-cols-3">
           <Skeleton className="h-56" />
@@ -71,6 +92,17 @@ function Page() {
           <Skeleton className="h-56" />
         </div>
       ) : (
+        <>
+        <div className="mb-4 flex max-w-sm items-center gap-2">
+          <Input
+            value={promoCode}
+            onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+            placeholder={t("Promo code (optional)")}
+            aria-label={t("Promo code")}
+            autoCapitalize="characters"
+            maxLength={32}
+          />
+        </div>
         <Stagger className="grid gap-3 md:grid-cols-3" gap={0.08}>
           {items.map((p) => (
             <StaggerItem key={p.id} className="h-full">
@@ -90,21 +122,21 @@ function Page() {
                 <ul className="mt-4 grid gap-2 text-sm text-muted">
                   <li className="flex items-center gap-2">
                     <Check className="size-4 text-accent" strokeWidth={1.75} />
-                    {p.duration_days ? `${p.duration_days} days` : "Per session"}
+                    {p.duration_days ? t("{n} days", { n: p.duration_days }) : t("Per session")}
                   </li>
                   {p.session_quota ? (
                     <li className="flex items-center gap-2">
                       <Check className="size-4 text-accent" strokeWidth={1.75} />
-                      {p.session_quota} class sessions
+                      {t("{n} class sessions", { n: p.session_quota })}
                     </li>
                   ) : null}
                   <li className="flex items-center gap-2">
                     <Check className="size-4 text-accent" strokeWidth={1.75} />
-                    {p.court_hours} court hours
+                    {t("{n} court hours", { n: p.court_hours })}
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="size-4 text-accent" strokeWidth={1.75} />
-                    {p.court_discount_pct}% off court rental
+                    {t("{n}% off court rental", { n: p.court_discount_pct })}
                   </li>
                 </ul>
                 {/* Pinned to the bottom of the card: plans carry a different
@@ -117,13 +149,13 @@ function Page() {
                     onClick={() => void order(p)}
                   >
                     {busy === p.id
-                      ? "Placing order…"
+                      ? t("Placing order…")
                       : ordered[p.id]
-                        ? "Ordered — pay at the desk"
-                        : "Buy or renew"}
+                        ? t("Ordered — pay at the desk")
+                        : t("Buy or renew")}
                   </Button>
                   {ordered[p.id] ? (
-                    <p className="mt-2 text-center text-xs text-muted">Valid through {ordered[p.id]}</p>
+                    <p className="mt-2 text-center text-xs text-muted">{t("Valid through {date}", { date: ordered[p.id] })}</p>
                   ) : null}
                 </div>
               </div>
@@ -132,8 +164,9 @@ function Page() {
             </Lift>
             </StaggerItem>
           ))}
-          {!items.length ? <EmptyState title="No plans on sale right now" /> : null}
+          {!items.length ? <EmptyState title={t("No plans on sale right now")} /> : null}
         </Stagger>
+        </>
       )}
     </Shell>
   );

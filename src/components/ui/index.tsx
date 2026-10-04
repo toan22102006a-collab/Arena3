@@ -11,8 +11,10 @@ import {
   type TextareaHTMLAttributes,
 } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
+import { Spot, type SpotName } from "../illustrations";
+import { ArrowDownRight, ArrowUpRight, Minus, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { locale, t } from "@/lib/i18n";
 import { formatDate, statusLabel, statusTone } from "@/lib/arena3/labels";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { EASE_SMOOTH } from "../motion";
@@ -27,7 +29,7 @@ export function Button({
   size?: "md" | "sm" | "lg";
 }) {
   const base =
-    "sweep inline-flex items-center justify-center gap-2 font-medium tracking-tight transition-[opacity,transform,background-color,box-shadow,color] duration-200 ease-[var(--ease-smooth)] disabled:opacity-50 disabled:pointer-events-none active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
+    "sweep inline-flex items-center whitespace-nowrap justify-center gap-2 font-medium tracking-tight transition-[opacity,transform,background-color,box-shadow,color] duration-200 ease-[var(--ease-smooth)] disabled:opacity-50 disabled:pointer-events-none active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
   // Fully-rounded: a pill reads as "pressable" at a glance and is the one shape
   // that never fights the square data tables and court grids around it.
   const sizes = {
@@ -75,7 +77,7 @@ export function DateField({
   onChange,
   className,
   disabled,
-  "aria-label": ariaLabel = "Pick a date",
+  "aria-label": ariaLabel,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -111,7 +113,7 @@ export function DateField({
       )}
     >
       <span className="pointer-events-none flex-1 truncate text-sm tabular-nums text-fg">
-        {value ? formatDate(value) : <span className="text-subtle">Pick a date</span>}
+        {value ? formatDate(value) : <span className="text-subtle">{t("Pick a date")}</span>}
       </span>
       <svg
         aria-hidden
@@ -131,7 +133,7 @@ export function DateField({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        aria-label={ariaLabel}
+        aria-label={ariaLabel ?? t("Pick a date")}
         // Still stretched over the whole field so keyboard focus lands on the
         // real control, but `opacity-0` means the overlay above is what shows.
         className="absolute inset-0 size-full cursor-pointer rounded-[var(--radius-sm)] opacity-0 disabled:cursor-not-allowed"
@@ -237,10 +239,10 @@ export function Field({
 }) {
   return (
     <label className="grid gap-1.5">
-      <Label>{label}</Label>
+      <Label>{t(label)}</Label>
       {children}
       {hint ? (
-        <span className={cn("text-xs", tone === "danger" ? "text-danger" : "text-muted")}>{hint}</span>
+        <span className={cn("text-xs", tone === "danger" ? "text-danger" : "text-muted")}>{t(hint)}</span>
       ) : null}
     </label>
   );
@@ -257,16 +259,20 @@ export function Skeleton({ className }: { className?: string }) {
 export function EmptyState({
   title,
   hint,
+  art,
   children,
 }: {
   title: string;
   hint?: string;
+  /** Picture to show; defaults to the neutral empty tray (the page header already carries the screen's own picture). */
+  art?: SpotName;
   children?: ReactNode;
 }) {
   return (
-    <div className="grid place-items-center rounded-[var(--radius-xl)] border border-dashed border-line-strong/70 px-6 py-12 text-center">
-      <p className="font-medium">{title}</p>
-      {hint ? <p className="mt-1 max-w-sm text-sm text-muted">{hint}</p> : null}
+    <div className="grid place-items-center rounded-[var(--radius-xl)] border border-dashed border-line-strong/70 px-6 py-10 text-center">
+      <Spot name={art ?? "empty"} className="mb-2 h-24 w-[7.5rem]" />
+      <p className="font-medium">{t(title)}</p>
+      {hint ? <p className="mt-1 max-w-sm text-sm text-muted">{t(hint)}</p> : null}
       {children ? <div className="mt-4">{children}</div> : null}
     </div>
   );
@@ -314,6 +320,90 @@ export function Seg({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * A filter that doubles as a counter: "To call 412". Pressing it narrows the list,
+ * pressing another one swaps. Used above long lists so the size of each pile is
+ * visible before anyone starts scrolling.
+ */
+export function FilterChip({
+  active,
+  onClick,
+  label,
+  count,
+  tone = "default",
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count?: number;
+  tone?: "default" | "hold";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex min-h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-[var(--radius-pill)] border px-3.5 text-sm font-medium transition-colors duration-150",
+        active
+          ? "border-accent bg-accent text-accent-fg shadow-[var(--shadow-accent)]"
+          : "border-line bg-surface text-fg hover:bg-wood",
+      )}
+    >
+      {label}
+      {count !== undefined ? (
+        <span
+          className={cn(
+            "rounded-full px-1.5 text-2xs font-semibold tabular-nums",
+            active ? "bg-accent-fg/20" : tone === "hold" ? "bg-hold/15 text-hold" : "bg-wood text-muted",
+          )}
+        >
+          {count}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+/** "21–40 of 1,000" with Previous / Next, so no list is ever longer than one screenful or two. */
+export function Pagination({
+  offset,
+  total,
+  pageSize,
+  onChange,
+}: {
+  offset: number;
+  total: number;
+  pageSize: number;
+  onChange: (offset: number) => void;
+}) {
+  if (total <= 0) return null;
+  const from = offset + 1;
+  const to = Math.min(offset + pageSize, total);
+  const page = Math.floor(offset / pageSize) + 1;
+  const pages = Math.ceil(total / pageSize);
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
+      <span className="tabular-nums">
+        {t("Showing {from}–{to} of {total}", { from, to, total: total.toLocaleString(locale()) })}
+      </span>
+      {pages > 1 ? (
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => onChange(Math.max(0, offset - pageSize))}>
+            {t("Previous")}
+          </Button>
+          <span className="px-1 tabular-nums">
+            {t("Page {page} of {pages}", { page, pages })}
+          </span>
+          <Button size="sm" variant="outline" disabled={to >= total} onClick={() => onChange(offset + pageSize)}>
+            {t("Next")}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -371,7 +461,7 @@ export function Modal({
           <motion.button
             type="button"
             className="absolute inset-0 bg-fg/40 backdrop-blur-[2px]"
-            aria-label="Close"
+            aria-label={t("Close")}
             onClick={onClose}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -386,7 +476,7 @@ export function Modal({
             transition={{ duration: 0.28, ease: EASE_SMOOTH }}
           >
             <h2 id="modal-title" className="font-display text-2xl">
-              {title}
+              {t(title)}
             </h2>
             <div className="mt-4">{children}</div>
             {footer ? <div className="mt-5 flex flex-wrap justify-end gap-2">{footer}</div> : null}
@@ -420,17 +510,29 @@ export function Stat({
   value,
   hint,
   trend,
+  icon: Icon,
+  note,
 }: {
   label: string;
   value: ReactNode;
   hint?: string;
   trend?: Trend;
+  icon?: LucideIcon;
+  /** Always-visible plain-words definition of the figure. */
+  note?: string;
 }) {
   const Arrow =
     trend?.pct == null || trend.pct === 0 ? Minus : trend.pct > 0 ? ArrowUpRight : ArrowDownRight;
   return (
     <Card>
-      <p className="kicker text-2xs text-muted">{label}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="kicker text-2xs text-muted">{t(label)}</p>
+        {Icon ? (
+          <span aria-hidden="true" className="grid size-8 place-items-center rounded-[var(--radius-sm)] bg-accent/10 text-accent-2">
+            <Icon className="size-4" strokeWidth={1.9} />
+          </span>
+        ) : null}
+      </div>
       <p className="figure mt-2.5 text-4xl">{value}</p>
       {trend ? (
         <p
@@ -445,8 +547,29 @@ export function Stat({
           {trend.label}
         </p>
       ) : hint ? (
-        <p className="mt-1.5 text-sm text-muted">{hint}</p>
+        <p className="mt-1.5 text-sm text-muted">{t(hint)}</p>
       ) : null}
+      {note ? <p className="mt-2 border-t border-line/70 pt-2 text-xs leading-snug text-muted">{t(note)}</p> : null}
     </Card>
+  );
+}
+
+
+/**
+ * For catalogue-style lists (classes, plans) where paging would be heavy: show the first few and
+ * let the person ask for more. Says how many are hidden so nobody wonders if the list ended.
+ */
+export function ShowMore({ shown, total, step, onMore }: { shown: number; total: number; step: number; onMore: () => void }) {
+  if (shown >= total) return null;
+  const left = total - shown;
+  return (
+    <div className="mt-4 flex flex-col items-center gap-1">
+      <Button variant="outline" onClick={onMore}>
+        {t("Show {n} more", { n: Math.min(step, left) })}
+      </Button>
+      <span className="text-xs text-muted tabular-nums">
+        {t("{shown} of {total} shown", { shown, total })}
+      </span>
+    </div>
   );
 }

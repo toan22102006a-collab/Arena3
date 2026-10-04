@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/cn";
@@ -10,8 +10,23 @@ import { AnimatePresence, motion } from "motion/react";
 import { Reveal } from "@/components/motion";
 import { GLBackground, Magnet, SplitText, SpotlightCard } from "@/components/fx";
 import { apiPost, homeFor, setSession, type SessionUser } from "@/lib/arena3/client";
+import { LangSwitch } from "@/components/lang-switch";
+import { t, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/register")({ component: Register });
+
+/** Puts a styled node where a translated sentence has its single placeholder. */
+const SLOT = "";
+const slot = (text: string, node: ReactNode) => {
+  const [a, b] = text.split(SLOT);
+  return (
+    <>
+      {a}
+      {node}
+      {b}
+    </>
+  );
+};
 
 function Register() {
   const navigate = useNavigate();
@@ -47,7 +62,7 @@ function Register() {
   async function send(e: FormEvent) {
     e.preventDefault();
     if (form.password !== confirm) {
-      toast.error("The two passwords do not match.");
+      toast.error(t("The two passwords do not match."));
       return;
     }
     setBusy(true);
@@ -57,10 +72,10 @@ function Register() {
       setSentTo(res.sent_to ?? null);
       setStep("otp");
       toast.message(
-        res.sent_to ? `Code sent to ${res.sent_to}` : "Code generated — check with the front desk.",
+        res.sent_to ? t("Code sent to {email}", { email: res.sent_to }) : t("Code generated — check with the front desk."),
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not create the account");
+      toast.error(err instanceof Error ? tServer(err.message) : t("Could not create the account"));
     } finally {
       setBusy(false);
     }
@@ -77,7 +92,7 @@ function Register() {
       setSession(res.token, res.user);
       navigate({ to: homeFor(res.user.role) });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "That OTP is not right");
+      toast.error(err instanceof Error ? tServer(err.message) : t("That OTP is not right"));
     } finally {
       setBusy(false);
     }
@@ -103,7 +118,7 @@ function Register() {
             <div className="max-w-sm rounded-[var(--radius-xl)] bg-pass/92 p-6 text-pass-fg">
               <SplitText
                 as="p"
-                text="A live plan is your key to the courts and the classes."
+                text={t("A live plan is your key to the courts and the classes.")}
                 splitBy="words"
                 stagger={0.05}
                 delay={0.2}
@@ -113,7 +128,8 @@ function Register() {
           </div>
         </Cover>
       </div>
-      <div className="grid min-h-dvh place-items-center px-4 py-10">
+      <div className="relative grid min-h-dvh place-items-center px-4 py-10">
+        <LangSwitch className="absolute right-4 top-3 z-10" />
         <Reveal className="w-full max-w-md" from="up">
         <SpotlightCard className="rounded-[var(--radius-xl)]" size={360} strength={0.1}>
         <Card className="relative z-[2] w-full p-6">
@@ -121,7 +137,7 @@ function Register() {
             <ArenaMark className="size-7" />
             <p className="text-2xs uppercase tracking-wider text-muted">Arena3</p>
           </div>
-          <h1 className="mt-3 font-display text-3xl">Create an account</h1>
+          <h1 className="mt-3 font-display text-3xl">{t("Create an account")}</h1>
           <AnimatePresence mode="wait">
           {step === "form" ? (
             <motion.form
@@ -133,14 +149,14 @@ function Register() {
               className="mt-6 grid gap-4"
               onSubmit={send}
             >
-              <Field label="Full name">
+              <Field label={t("Full name")}>
                 <Input
                   required
                   value={form.full_name}
                   onChange={(e) => setForm({ ...form, full_name: e.target.value })}
                 />
               </Field>
-              <Field label="Phone number">
+              <Field label={t("Phone number")}>
                 <Input
                   required
                   value={form.phone}
@@ -148,10 +164,10 @@ function Register() {
                   placeholder="0901…"
                 />
               </Field>
-              <Field label="Date of birth">
-                <DateField value={form.dob} onChange={(v) => setForm({ ...form, dob: v })} aria-label="Date of birth" />
+              <Field label={t("Date of birth")}>
+                <DateField value={form.dob} onChange={(v) => setForm({ ...form, dob: v })} aria-label={t("Date of birth")} />
               </Field>
-              <Field label="Password" hint={tooWeak ? "At least 8 characters, with a letter and a number." : undefined}>
+              <Field label={t("Password")} hint={tooWeak ? t("At least 8 characters, with a letter and a number.") : undefined}>
                 <div className="relative">
                   <Input
                     required
@@ -165,16 +181,16 @@ function Register() {
                     type="button"
                     className="absolute right-1 top-1 grid size-9 place-items-center text-muted hover:text-fg"
                     onClick={() => setShow((v) => !v)}
-                    aria-label={show ? "Hide password" : "Show password"}
+                    aria-label={show ? t("Hide password") : t("Show password")}
                   >
                     {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </div>
               </Field>
               <Field
-                label="Email"
+                label={t("Email")}
                 tone="muted"
-                hint="Where your verification code is sent, and how you recover the account."
+                hint={t("Where your verification code is sent, and how you recover the account.")}
               >
                 <Input
                   required
@@ -185,7 +201,7 @@ function Register() {
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                 />
               </Field>
-              <Field label="Confirm password" hint={mismatch ? "The two passwords do not match." : undefined}>
+              <Field label={t("Confirm password")} hint={mismatch ? t("The two passwords do not match.") : undefined}>
                 <Input
                   required
                   type={show ? "text" : "password"}
@@ -202,7 +218,7 @@ function Register() {
                   checked={form.pii_consent}
                   onChange={(e) => setForm({ ...form, pii_consent: e.target.checked })}
                 />
-                I agree to the terms and to Decree 13/2023 on personal data protection.
+                {t("I agree to the terms and to Decree 13/2023 on personal data protection.")}
               </label>
               <Magnet radius={140} pull={0.22} wrapperClassName="w-full" className="w-full">
                 <Button
@@ -210,7 +226,7 @@ function Register() {
                   disabled={busy || mismatch || tooWeak || !form.password || !form.email}
                   className="w-full"
                 >
-                  {busy ? "Sending…" : "Send OTP"}
+                  {busy ? t("Sending…") : t("Send OTP")}
                 </Button>
               </Magnet>
             </motion.form>
@@ -231,33 +247,32 @@ function Register() {
               <p className="rounded-[var(--radius-md)] bg-wood px-3 py-2 text-sm">
                 {sentTo ? (
                   <>
-                    We emailed a code to <span className="font-medium">{sentTo}</span>. It expires in 5
-                    minutes.
+                    {slot(t("We emailed a code to {email}. It expires in 5 minutes.", { email: SLOT }), <span className="font-medium">{sentTo}</span>)}
                   </>
                 ) : (
-                  <>We could not email the code. Ask the front desk to verify you in person.</>
+                  <>{t("We could not email the code. Ask the front desk to verify you in person.")}</>
                 )}
               </p>
               {shown ? (
                 <p className="rounded-[var(--radius-md)] border border-hold/40 px-3 py-2 text-sm text-hold">
-                  Demo build — the code is <span className="font-medium tabular-nums">{shown}</span>.
+                  {slot(t("Demo build — the code is {code}.", { code: SLOT }), <span className="font-medium tabular-nums">{shown}</span>)}
                 </p>
               ) : null}
-              <Field label="6-digit OTP">
+              <Field label={t("6-digit OTP")}>
                 <Input value={otp} onChange={(e) => setOtp(e.target.value)} inputMode="numeric" />
               </Field>
               <Magnet radius={140} pull={0.22} wrapperClassName="w-full" className="w-full">
                 <Button type="submit" disabled={busy} className="w-full">
-                  Verify
+                  {t("Verify")}
                 </Button>
               </Magnet>
             </motion.form>
           )}
           </AnimatePresence>
           <p className="mt-4 text-sm text-muted">
-            Already have an account?{" "}
+            {t("Already have an account?")}{" "}
             <Link to="/login" className="text-accent-2 underline underline-offset-2">
-              Sign in
+              {t("Sign in")}
             </Link>
           </p>
         </Card>

@@ -388,7 +388,7 @@ ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming
   const one = byStamp.data.items.find((m) => m.id === m1.userId);
   ok(one && one.plan_state === "active" && one.sport_scope === "basketball" && one.plan_name, "a member with a plan shows it", one);
   const none = byStamp.data.items.find((m) => m.id === bare.userId);
-  ok(none && none.plan_state === "none" && none.plan_name === null && none.debt_vnd === 0, "a member without a plan says so", none);
+  ok(none && none.plan_state === "none" && none.plan_name === null, "a member without a plan says so", none);
   const byName = await dir(`q=${encodeURIComponent("lifecycle one")}`);
   ok(byName.data.items.some((m) => m.id === m1.userId), "search by name ignores case", byName);
   const noPlan = await dir(`q=${stamp}&plan=none`);

@@ -1,3 +1,4 @@
+import { locale } from "@/lib/i18n";
 import {
   AnimatePresence,
   MotionConfig,
@@ -276,7 +277,7 @@ export function CountUp({
     return () => cancelAnimationFrame(raf);
   }, [inView, to, duration, reduced]);
 
-  const shown = format ? format(value) : Math.round(value).toLocaleString("en-US");
+  const shown = format ? format(value) : Math.round(value).toLocaleString(locale());
   return (
     <span ref={ref} className={cn("tabular-nums", className)}>
       {prefix}
@@ -373,7 +374,7 @@ export function WordReveal({
       variants={{ hidden: {}, show: { transition: { staggerChildren: gap, delayChildren: delay } } }}
     >
       {words.map((w, i) => (
-        <span key={`${w}-${i}`} className="inline-block overflow-hidden align-bottom">
+        <span key={`${w}-${i}`} className="inline-block overflow-hidden align-bottom py-[0.28em] -my-[0.28em]">
           <motion.span
             className="inline-block"
             variants={{

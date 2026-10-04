@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiGet } from "@/lib/arena3/client";
 import { cn } from "@/lib/cn";
 import { addDaysISO, todayISO } from "@/lib/arena3/labels";
+import { locale, t, tk } from "@/lib/i18n";
 
 /** One day of the calendar: how many court-slots are still free (M-03). */
 export type DayAvail = { date: string; free: number; total: number; bookable: boolean };
@@ -38,10 +39,10 @@ export function useAvailability(sport: string, refreshKey: unknown): AvailMap | 
 /** "12 free" / "Full" / nothing, for a day the member cannot book yet. */
 export function availLabel(a: DayAvail | undefined): string {
   if (!a || !a.bookable) return "";
-  return a.free > 0 ? `${a.free} free` : "Full";
+  return a.free > 0 ? t("{n} free", { n: a.free }) : t("Full");
 }
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAYS = [tk("Mon"), tk("Tue"), tk("Wed"), tk("Thu"), tk("Fri"), tk("Sat"), tk("Sun")];
 
 function monthStart(iso: string) {
   return `${iso.slice(0, 7)}-01`;
@@ -52,7 +53,7 @@ function shiftMonth(iso: string, by: number) {
   return dt.toISOString().slice(0, 10);
 }
 function monthTitle(iso: string) {
-  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString(locale(), {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
@@ -98,7 +99,7 @@ export function MonthCalendar({
       <div className="mb-2 flex items-center justify-between">
         <button
           type="button"
-          aria-label="Previous month"
+          aria-label={t("Previous month")}
           disabled={!canPrev}
           onClick={() => setMonth(shiftMonth(month, -1))}
           className="grid size-9 place-items-center rounded-full hover:bg-wood disabled:opacity-30"
@@ -108,7 +109,7 @@ export function MonthCalendar({
         <p className="font-display text-lg">{monthTitle(month)}</p>
         <button
           type="button"
-          aria-label="Next month"
+          aria-label={t("Next month")}
           disabled={!canNext}
           onClick={() => setMonth(shiftMonth(month, 1))}
           className="grid size-9 place-items-center rounded-full hover:bg-wood disabled:opacity-30"
@@ -118,7 +119,7 @@ export function MonthCalendar({
       </div>
       <div className="grid grid-cols-7 gap-1 text-center text-2xs font-medium uppercase tracking-wide text-muted">
         {WEEKDAYS.map((d) => (
-          <span key={d}>{d}</span>
+          <span key={d}>{t(d)}</span>
         ))}
       </div>
       <div className="mt-1 grid grid-cols-7 gap-1">
@@ -156,7 +157,7 @@ export function MonthCalendar({
         })}
       </div>
       <p className="mt-2 text-2xs text-muted">
-        Numbers are free court-hours that day. Days further out open for booking as the date approaches.
+        {t("Numbers are free court-hours that day. Days further out open for booking as the date approaches.")}
       </p>
     </div>
   );

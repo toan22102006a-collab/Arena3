@@ -26,7 +26,7 @@ const SPORTS = ["badminton", "basketball", "volleyball", "all"] as const;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** A temporary password: letters and digits, no look-alikes, never reused. */
-function tempPassword(): string {
+export function tempPassword(): string {
   const letters = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz";
   const digits = "23456789";
   const pick = (set: string, n: number) =>
@@ -94,7 +94,7 @@ async function managedTarget(sql: Sql, id: string, manager: PublicUser): Promise
   return row;
 }
 
-async function revoke(sql: Sql, userId: string): Promise<number> {
+export async function revoke(sql: Sql, userId: string): Promise<number> {
   const gone = await q<{ id: string }>(sql, `delete from sessions_auth where user_id = $1 returning id`, [userId]);
   return gone.length;
 }

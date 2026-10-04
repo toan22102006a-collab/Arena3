@@ -1,59 +1,73 @@
-export const SPORT_LABEL: Record<string, string> = {
-  badminton: "Badminton",
-  basketball: "Basketball",
-  volleyball: "Volleyball",
-  all: "All 3 sports",
-};
+import { t, tk } from "@/lib/i18n";
 
-export const ROLE_LABEL: Record<string, string> = {
-  manager: "Manager",
-  receptionist: "Front desk",
-  coach: "Coach",
-  member: "Member",
-};
+/**
+ * Label tables are module-scope, so they hold English (marked with `tk`) and translate when a
+ * property is read: `LEVEL_LABEL[x]` returns the text in the language that is on at that moment.
+ */
+function lazyLabels(record: Record<string, string>): Record<string, string> {
+  return new Proxy(record, {
+    get(target, key, receiver) {
+      const v = Reflect.get(target, key, receiver);
+      return typeof key === "string" && typeof v === "string" ? t(v) : v;
+    },
+  });
+}
 
-export const LEVEL_LABEL: Record<string, string> = {
-  beginner: "Beginner",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
-  team: "Team",
-  new: "Beginner",
-  tb: "Intermediate",
-  nc: "Advanced",
-};
+export const SPORT_LABEL: Record<string, string> = lazyLabels({
+  badminton: tk("Badminton"),
+  basketball: tk("Basketball"),
+  volleyball: tk("Volleyball"),
+  all: tk("All 3 sports"),
+});
 
-export const STATUS_LABEL: Record<string, string> = {
-  confirmed: "Confirmed",
-  hold: "On hold",
-  in_use: "Playing",
-  cancelled: "Cancelled",
-  completed: "Completed",
-  noshow: "No-show",
-  active: "Active",
-  pending: "Unpaid",
-  expired: "Expired",
-  frozen: "Frozen",
-  draft: "Draft",
-  published: "Published",
-  archived: "Archived",
-  open: "Open",
-  closed: "Closed",
-  waitlisted: "Waitlisted",
-  present: "Present",
-  late: "Late",
-  absent: "Absent",
-  excused: "Excused",
-  out: "Checked out",
-  returned: "Returned",
-};
+export const ROLE_LABEL: Record<string, string> = lazyLabels({
+  manager: tk("Manager"),
+  receptionist: tk("Front desk"),
+  coach: tk("Coach"),
+  member: tk("Member"),
+});
 
-export const KIND_LABEL: Record<string, string> = {
-  hold: "Hold",
-  booking: "Booking",
-  session: "Class",
-  maintenance: "Maintenance",
-  convert: "Merged court",
-};
+export const LEVEL_LABEL: Record<string, string> = lazyLabels({
+  beginner: tk("Beginner"),
+  intermediate: tk("Intermediate"),
+  advanced: tk("Advanced"),
+  team: tk("Team"),
+  new: tk("Beginner"),
+  tb: tk("Intermediate"),
+  nc: tk("Advanced"),
+});
+
+export const STATUS_LABEL: Record<string, string> = lazyLabels({
+  confirmed: tk("Confirmed"),
+  hold: tk("On hold"),
+  in_use: tk("Playing"),
+  cancelled: tk("Cancelled"),
+  completed: tk("Completed"),
+  noshow: tk("No-show"),
+  active: tk("Active"),
+  pending: tk("Unpaid"),
+  expired: tk("Expired"),
+  frozen: tk("Frozen"),
+  draft: tk("Draft"),
+  published: tk("Published"),
+  archived: tk("Archived"),
+  open: tk("Open"),
+  closed: tk("Closed"),
+  waitlisted: tk("Waitlisted"),
+  present: tk("Present"),
+  late: tk("Late"),
+  absent: tk("Absent"),
+  excused: tk("Excused"),
+  out: tk("Checked out"),
+  returned: tk("Returned"),
+});
+
+export const KIND_LABEL: Record<string, string> = lazyLabels({
+  hold: tk("Hold"),
+  booking: tk("Booking"),
+  session: tk("Class"),
+  maintenance: tk("Maintenance"),
+});
 
 /**
  * What one hour on one court is doing, as the grid paints it.
@@ -64,36 +78,35 @@ export const KIND_LABEL: Record<string, string> = {
  * and a court someone is standing on. "Maintenance" and "Closed" are not sales
  * states at all — they are the building saying no.
  */
-export const SLOT_STATE_LABEL: Record<string, string> = {
-  free: "Free",
-  hold: "On hold",
-  booked: "Booked",
-  in_use: "In use",
-  class: "Class",
-  maintenance: "Maintenance",
-  merged: "Merged court",
-  closed: "Closed",
-  past: "Already passed",
-};
+export const SLOT_STATE_LABEL: Record<string, string> = lazyLabels({
+  free: tk("Free"),
+  hold: tk("On hold"),
+  booked: tk("Booked"),
+  in_use: tk("In use"),
+  class: tk("Class"),
+  maintenance: tk("Maintenance"),
+  closed: tk("Closed"),
+  past: tk("Already passed"),
+});
 
 export function slotStateLabel(s: string) {
   return SLOT_STATE_LABEL[s] ?? s;
 }
 
-export const DAY_KIND_LABEL: Record<string, string> = {
-  weekday: "Weekday",
-  weekend: "Weekend",
-  holiday: "Holiday",
-};
+export const DAY_KIND_LABEL: Record<string, string> = lazyLabels({
+  weekday: tk("Weekday"),
+  weekend: tk("Weekend"),
+  holiday: tk("Holiday"),
+});
 
 const BYDAY: Record<string, string> = {
-  MO: "Mon",
-  TU: "Tue",
-  WE: "Wed",
-  TH: "Thu",
-  FR: "Fri",
-  SA: "Sat",
-  SU: "Sun",
+  MO: tk("Mon"),
+  TU: tk("Tue"),
+  WE: tk("Wed"),
+  TH: tk("Thu"),
+  FR: tk("Fri"),
+  SA: tk("Sat"),
+  SU: tk("Sun"),
 };
 
 /**
@@ -110,10 +123,10 @@ export function planBenefits(s: {
   court_discount_pct?: number | null;
 }): string[] {
   const out: string[] = [];
-  if ((s.plan_court_hours ?? 0) > 0) out.push(`${Number(s.court_hours_left)} court hours left`);
-  if (s.plan_session_quota != null) out.push(`${s.session_left ?? 0} sessions left`);
-  if ((s.court_discount_pct ?? 0) > 0) out.push(`${s.court_discount_pct}% off courts`);
-  return out.length ? out : ["Membership"];
+  if ((s.plan_court_hours ?? 0) > 0) out.push(t("{n} court hours left", { n: Number(s.court_hours_left) }));
+  if (s.plan_session_quota != null) out.push(t("{n} sessions left", { n: s.session_left ?? 0 }));
+  if ((s.court_discount_pct ?? 0) > 0) out.push(t("{n}% off courts", { n: s.court_discount_pct ?? 0 }));
+  return out.length ? out : [t("Membership")];
 }
 
 export function sportLabel(s: string) {
@@ -161,13 +174,13 @@ export function statusTone(s: string): "ink" | "accent" | "hold" | "muted" | "da
   return "muted";
 }
 
-export const METHOD_LABEL: Record<string, string> = {
-  cash: "Cash",
-  transfer: "Bank transfer",
-  card: "Card",
-  gateway: "Online gateway",
-  quota: "Plan hours",
-};
+export const METHOD_LABEL: Record<string, string> = lazyLabels({
+  cash: tk("Cash"),
+  transfer: tk("Bank transfer"),
+  card: tk("Card"),
+  gateway: tk("Online gateway"),
+  quota: tk("Plan hours"),
+});
 
 /**
  * Payment methods in Vietnamese, for the printed invoice only.
@@ -187,15 +200,15 @@ export function methodLabelVi(s: string) {
   return METHOD_LABEL_VI[s] ?? s;
 }
 
-export const SOURCE_LABEL: Record<string, string> = {
-  court: "Court rental",
-  booking: "Court rental",
-  class: "Class",
-  membership: "Plan",
-  subscription: "Plan",
-  walk_in: "Walk-in",
-  other: "Other",
-};
+export const SOURCE_LABEL: Record<string, string> = lazyLabels({
+  court: tk("Court rental"),
+  booking: tk("Court rental"),
+  class: tk("Class"),
+  membership: tk("Plan"),
+  subscription: tk("Plan"),
+  walk_in: tk("Walk-in"),
+  other: tk("Other"),
+});
 
 export function methodLabel(s: string) {
   return METHOD_LABEL[s] ?? s;
@@ -206,18 +219,18 @@ export function sourceLabel(s: string) {
 }
 
 const MONTH_SHORT = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
+  tk("Jan"),
+  tk("Feb"),
+  tk("Mar"),
+  tk("Apr"),
+  tk("May"),
+  tk("Jun"),
+  tk("Jul"),
+  tk("Aug"),
+  tk("Sep"),
+  tk("Oct"),
+  tk("Nov"),
+  tk("Dec"),
 ];
 
 /** 2026-09-17 → 17 Sep 2026 */
@@ -227,7 +240,7 @@ export function formatDate(iso: string) {
   if (!y || !m || !d) return iso;
   const month = MONTH_SHORT[Number(m) - 1];
   if (!month) return iso;
-  return `${Number(d)} ${month} ${y}`;
+  return `${Number(d)} ${t(month)} ${y}`;
 }
 
 export function addDaysISO(iso: string, days: number) {
@@ -239,7 +252,7 @@ export function addDaysISO(iso: string, days: number) {
 export function weekdayShort(iso: string) {
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
   const dt = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1));
-  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getUTCDay()] ?? "";
+  return t([tk("Sun"), tk("Mon"), tk("Tue"), tk("Wed"), tk("Thu"), tk("Fri"), tk("Sat")][dt.getUTCDay()] ?? "");
 }
 
 export function todayISO() {
@@ -261,7 +274,7 @@ export function rruleLabel(rrule: string) {
   );
   const days = (parts.BYDAY ?? "")
     .split(",")
-    .map((d) => BYDAY[d.trim()] ?? d.trim())
+    .map((d) => (BYDAY[d.trim()] ? t(BYDAY[d.trim()]!) : d.trim()))
     .filter(Boolean)
     .join(", ");
   const hour = parts.BYHOUR ? `${String(parts.BYHOUR).padStart(2, "0")}:00` : "";

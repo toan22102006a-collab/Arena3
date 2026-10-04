@@ -5,6 +5,7 @@ import { NotificationList, type Notification } from "@/components/notifications"
 import { Guard, Shell, useSessionUser } from "@/components/shell";
 import { EmptyState, Skeleton } from "@/components/ui";
 import { apiGet } from "@/lib/arena3/client";
+import { t, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/alerts")({
   component: () => (
@@ -24,16 +25,16 @@ function Page() {
       .then((r) => setItems(r.items))
       .catch((e) => {
         setItems([]);
-        toast.error(e instanceof Error ? e.message : "Could not load your alerts");
+        toast.error(e instanceof Error ? tServer(e.message) : t("Could not load your alerts"));
       });
   }, []);
 
   return (
-    <Shell role={user?.role ?? "coach"} title="Alerts" subtitle="Things that need a look. Open one to read it.">
+    <Shell role={user?.role ?? "coach"} title={t("Alerts")} subtitle={t("Things that need a look. Open one to read it.")}>
       {!items ? (
         <Skeleton className="h-32" />
       ) : !items.length ? (
-        <EmptyState title="Nothing here yet" hint="You'll be told when a student misses three sessions in a row." />
+        <EmptyState title={t("Nothing here yet")} hint={t("You'll be told when a student misses three sessions in a row.")} />
       ) : (
         <NotificationList
           items={items}

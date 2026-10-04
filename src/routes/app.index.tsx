@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { SectionTitle } from "@/components/section";
 import { Map, Ticket, Wallet } from "lucide-react";
 import { AssistantMark } from "@/components/mark";
 import { useEffect, useState } from "react";
@@ -12,6 +13,7 @@ import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { GlareHover, ShinyText, SplitText, SpotlightCard } from "@/components/fx";
 import { apiGet, apiPost, getStoredUser } from "@/lib/arena3/client";
 import { formatDate, levelLabel, planBenefits, sportLabel, todayISO } from "@/lib/arena3/labels";
+import { t, tk } from "@/lib/i18n";
 
 export const Route = createFileRoute("/app/")({
   component: Page,
@@ -83,7 +85,7 @@ function Page() {
     ...(me?.today.classes ?? []).map((c) => ({
       id: `c-${c.id}`,
       start: c.start_at,
-      kind: "Class" as const,
+      kind: tk("Class"),
       title: `${sportLabel(c.sport)} · ${c.court_code}`,
       meta: c.coach_name,
       bookingId: null as string | null,
@@ -92,7 +94,7 @@ function Page() {
     ...(me?.today.bookings ?? []).map((b) => ({
       id: `b-${b.id}`,
       start: b.start_at,
-      kind: "Court" as const,
+      kind: tk("Court"),
       title: b.court_code,
       meta: b.code,
       bookingId: b.id,
@@ -108,11 +110,11 @@ function Page() {
             className="shiny-muted mb-1 block text-[11px] font-semibold uppercase tracking-widest"
             speed={6}
           >
-            Member
+            {t("Member")}
           </ShinyText>
           <SplitText
             as="h1"
-            text={`Welcome back, ${greet}`}
+            text={t("Welcome back, {name}", { name: greet })}
             stagger={0.02}
             duration={0.6}
             className="font-display text-3xl font-medium tracking-tight sm:text-4xl"
@@ -127,7 +129,7 @@ function Page() {
 
       {(me?.offers ?? []).length ? (
         <Card className="mb-4 border border-hold/30 bg-hold/5">
-          <p className="text-sm font-medium">A waitlist seat opened up</p>
+          <p className="text-sm font-medium">{t("A waitlist seat opened up")}</p>
           {(me?.offers ?? []).map((o) => (
             <div key={o.id} className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm">
@@ -138,14 +140,14 @@ function Page() {
                 onClick={async () => {
                   try {
                     await apiPost(`/waitlist/${o.id}/accept`);
-                    toast.success("Seat claimed");
+                    toast.success(t("Seat claimed"));
                     setMe(await apiGet("/me"));
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : "Offer expired");
+                    toast.error(e instanceof Error ? e.message : t("Offer expired"));
                   }
                 }}
               >
-                Claim seat
+                {t("Claim seat")}
               </Button>
             </div>
           ))}
@@ -154,25 +156,35 @@ function Page() {
 
       {frozen.length ? (
         <Card className="mb-4">
-          <p className="text-sm font-medium">Frozen plans</p>
+          <p className="text-sm font-medium">{t("Frozen plans")}</p>
           <p className="mt-1 text-sm text-muted">
-            {frozen.map((s) => `${s.plan_name} · new end date ${formatDate(s.end_on)}`).join(" · ")} — ask
-            the desk to unfreeze.
+            {t("{plans} — ask the desk to unfreeze.", {
+              plans: frozen
+                .map((s) => t("{plan} · new end date {date}", { plan: s.plan_name, date: formatDate(s.end_on) }))
+                .join(" · "),
+            })}
           </p>
         </Card>
       ) : null}
 
       {expiring.length ? (
         <Card className="mb-4 border border-hold/30 bg-hold/5">
-          <p className="text-sm font-medium text-fg">Plans expiring soon</p>
+          <p className="text-sm font-medium text-fg">{t("Plans expiring soon")}</p>
           <p className="mt-1 text-sm text-muted">
-            {expiring
-              .map((s) => `${s.plan_name} — ${daysUntil(s.end_on)} days left (until ${formatDate(s.end_on)})`)
-              .join(" · ")}{" "}
-            — renew to keep your class seats.
+            {t("{plans} — renew to keep your class seats.", {
+              plans: expiring
+                .map((s) =>
+                  t("{plan} — {n} days left (until {date})", {
+                    plan: s.plan_name,
+                    n: daysUntil(s.end_on),
+                    date: formatDate(s.end_on),
+                  }),
+                )
+                .join(" · "),
+            })}
           </p>
           <Link to="/app/plans" className="mt-3 inline-block">
-            <Button size="sm">Renew</Button>
+            <Button size="sm">{t("Renew")}</Button>
           </Link>
         </Card>
       ) : null}
@@ -196,23 +208,23 @@ function Page() {
                 />
               </GlareHover>
             ) : (
-              <EmptyState title="No active plan" hint="Buy a plan to enrol in classes and book courts.">
+              <EmptyState title={t("No active plan")} hint={t("Buy a plan to enrol in classes and book courts.")}>
                 <Link to="/app/plans">
-                  <Button>Browse plans</Button>
+                  <Button>{t("Browse plans")}</Button>
                 </Link>
               </EmptyState>
             )}
           </Reveal>
 
-          <div className="order-2 md:order-3 md:col-span-2">
-            <SplitText as="h2" text="Quick actions" className="font-display text-lg tracking-tight" />
+          <div className="order-2 hidden md:order-3 md:col-span-2 md:block">
+            <SectionTitle text={t("Quick actions")} className="font-display text-lg tracking-tight" />
             <Stagger className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4" gap={0.06}>
               {(
                 [
-                  { to: "/app/book" as const, label: "Book a court", Icon: Map },
-                  { to: "/app/classes" as const, label: "Classes", Icon: Ticket },
-                  { to: "/app/plans" as const, label: "Plans", Icon: Wallet },
-                  { to: "/app/assistant" as const, label: "Ask AI", Icon: AssistantMark },
+                  { to: "/app/book" as const, label: t("Book a court"), Icon: Map },
+                  { to: "/app/classes" as const, label: t("Classes"), Icon: Ticket },
+                  { to: "/app/plans" as const, label: t("Plans"), Icon: Wallet },
+                  { to: "/app/assistant" as const, label: t("Ask AI"), Icon: AssistantMark },
                 ] as const
               ).map((a) => (
                 <StaggerItem key={a.to}>
@@ -238,9 +250,9 @@ function Page() {
             <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={340} strength={0.1}>
             <Card className="relative z-[2] h-full">
               <div className="mb-3 flex items-baseline justify-between">
-                <p className="font-display text-xl">Today</p>
+                <p className="font-display text-xl">{t("Today")}</p>
                 <span className="text-xs text-muted">
-                  {events.length} {events.length === 1 ? "session" : "sessions"} booked
+                  {events.length === 1 ? t("1 session booked") : t("{n} sessions booked", { n: events.length })}
                 </span>
               </div>
               {events.length ? (
@@ -250,7 +262,7 @@ function Page() {
                       <div className="rounded-[var(--radius-md)] bg-wood/50 px-4 py-3 transition-colors duration-200 hover:bg-wood">
                         <div className="flex items-center justify-between gap-2">
                           <span className="rounded-full bg-accent px-2.5 py-0.5 text-2xs font-semibold text-accent-fg">
-                            {ev.kind}
+                            {t(ev.kind)}
                           </span>
                           <StatusBadge status={ev.status} />
                         </div>
@@ -276,7 +288,7 @@ function Page() {
                             <PayOnlineButton
                               refType="booking"
                               refId={ev.bookingId}
-                              label="Pay online"
+                              label={t("Pay online")}
                               onPaid={async () => setMe(await apiGet("/me"))}
                             />
                           ) : null}
@@ -287,14 +299,14 @@ function Page() {
                               onClick={async () => {
                                 try {
                                   await apiPost(`/bookings/${ev.bookingId}/cancel`);
-                                  toast.success("Booking cancelled");
+                                  toast.success(t("Booking cancelled"));
                                   setMe(await apiGet("/me"));
                                 } catch (e) {
-                                  toast.error(e instanceof Error ? e.message : "Something went wrong");
+                                  toast.error(e instanceof Error ? e.message : t("Something went wrong"));
                                 }
                               }}
                             >
-                              Cancel
+                              {t("Cancel")}
                             </Button>
                           ) : null}
                         </div>
@@ -304,14 +316,14 @@ function Page() {
                 </Stagger>
               ) : (
                 <div className="mt-2">
-                  <p className="text-sm text-muted">Nothing on the calendar.</p>
+                  <p className="text-sm text-muted">{t("Nothing on the calendar.")}</p>
                   <div className="mt-3 flex gap-2">
                     <Link to="/app/book">
-                      <Button size="sm">Book a court</Button>
+                      <Button size="sm">{t("Book a court")}</Button>
                     </Link>
                     <Link to="/app/classes">
                       <Button size="sm" variant="outline">
-                        Join a class
+                        {t("Join a class")}
                       </Button>
                     </Link>
                   </div>
@@ -336,7 +348,7 @@ function Page() {
                   <Card interactive className="h-full">
                     <p className="text-2xs uppercase tracking-wider text-muted">{sportLabel(s.sport_scope)}</p>
                     <p className="mt-1 font-medium text-fg">{s.plan_name}</p>
-                    <p className="text-sm text-muted">Until {formatDate(s.end_on)}</p>
+                    <p className="text-sm text-muted">{t("Until {date}", { date: formatDate(s.end_on) })}</p>
                     <p className="text-sm text-muted">{planBenefits(s).join(" · ")}</p>
                   </Card>
                 </Link>
@@ -347,9 +359,9 @@ function Page() {
       ) : null}
 
       <div className="mt-8 flex items-end justify-between gap-3">
-        <SplitText as="h2" text="Notifications" className="font-display text-2xl" />
+        <SectionTitle text={t("Notifications")} className="font-display text-2xl" />
         <Link to="/app/notifications" className="text-sm underline">
-          Open inbox
+          {t("Open inbox")}
         </Link>
       </div>
       {me && me.inbox.length ? (
@@ -370,7 +382,7 @@ function Page() {
           }
         />
       ) : null}
-      {me && !me.inbox.length ? <p className="mt-3 text-sm text-muted">Nothing here yet.</p> : null}
+      {me && !me.inbox.length ? <p className="mt-3 text-sm text-muted">{t("Nothing here yet.")}</p> : null}
     </Shell>
   );
 }

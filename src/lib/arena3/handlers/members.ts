@@ -1,10 +1,11 @@
 import type { Sql } from "@/lib/db";
 import { hashPassword } from "../crypto";
 import { err } from "../errors";
-import { ageYears, audit, getSettings, readJson, str, userDebt } from "../helpers";
+import { ageYears, audit, getSettings, readJson, str } from "../helpers";
 import { isValidVnPhone, normalizePhone, phoneLast9, unaccentVi } from "../phone";
 import { requireRole, toPublic, type PublicUser } from "../session";
 import { one } from "../tx";
+import { revoke, tempPassword } from "./staff";
 
 export async function membersSearch(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["manager", "receptionist", "coach"]);
@@ -113,7 +114,6 @@ export async function memberGet(sql: Sql, id: string, user: PublicUser) {
       where s.user_id = $1 order by s.end_on desc`,
     [id],
   );
-  const debt = await userDebt(sql, id);
   // Guardian details are not part of the public user shape, but the desk needs
   // them to correct a profile that was filled in wrongly.
   const guardian = await one<{ guardian_name: string | null; guardian_phone: string | null }>(
@@ -174,7 +174,6 @@ export async function memberGet(sql: Sql, id: string, user: PublicUser) {
       user: toPublic(m),
       guardian: { name: guardian?.guardian_name ?? null, phone: guardian?.guardian_phone ?? null },
       subscriptions: subs,
-      debt_vnd: debt,
       payments,
       today: { bookings, classes },
     },
@@ -335,7 +334,6 @@ export async function membersDirectory(sql: Sql, request: Request, user: PublicU
     `with base as (
        select u.id, u.member_code, u.full_name, u.phone, u.status::text as status, u.created_at,
               u.name_normalized, latest.plan_name, latest.sport_scope, latest.end_on, latest.sub_status,
-              coalesce(debt.debt_vnd, 0)::int as debt_vnd,
               (select count(*) from enrollments e where e.user_id = u.id and e.status = 'confirmed')::int as classes,
               case
                 when latest.id is null then 'none'
@@ -353,11 +351,6 @@ export async function membersDirectory(sql: Sql, request: Request, user: PublicU
             order by (s.status in ('active','frozen')) desc, s.end_on desc
             limit 1
          ) latest on true
-         left join lateral (
-           select sum(d.debt_vnd) filter (where d.debt_vnd > 0) as debt_vnd
-             from v_subscription_debt d join subscriptions s on s.id = d.subscription_id
-            where s.user_id = u.id
-         ) debt on true
         where u.role = 'member'
           and ($1::text is null or u.status::text = $1)
           and ($2::text is null
@@ -384,5 +377,36 @@ export async function membersDirectory(sql: Sql, request: Request, user: PublicU
       offset,
       items: rows.map(({ total: _t, name_normalized: _n, ...r }) => r),
     },
+  };
+}
+
+/**
+ * Front-desk password reset for a member.
+ *
+ * The self-service route (`/forgot`) mails a code, which is no use to a member
+ * with no email on file or no access to it. This is the way back in for them:
+ * a one-time temporary password, shown once to the person at the desk, that the
+ * member must replace at first sign-in. Every open session is signed out, and
+ * the audit row records who did it — never the password itself.
+ */
+export async function memberResetPassword(sql: Sql, id: string, user: PublicUser) {
+  requireRole(user, ["receptionist", "manager"]);
+  const target = await one<{ id: string; full_name: string; phone: string; role: string }>(
+    sql,
+    `select id, full_name, phone, role::text as role from users where id = $1 for update`,
+    [id],
+  );
+  if (!target || target.role !== "member") throw err.notFound("No such member.");
+  const tmp = tempPassword();
+  await sql.query(
+    `update users set password_hash = $1, must_change_password = true, failed_logins = 0, locked_until = null
+      where id = $2`,
+    [hashPassword(tmp), id],
+  );
+  const revoked = await revoke(sql, id);
+  await audit(sql, user.id, "reset_member_password", "user", id, null, { sessions_revoked: revoked });
+  return {
+    status: 200,
+    body: { temp_password: tmp, full_name: target.full_name, phone: target.phone, sessions_revoked: revoked },
   };
 }

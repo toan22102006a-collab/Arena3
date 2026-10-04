@@ -61,11 +61,11 @@ const member = await login("0901230101");
   });
   ok(save.status === 200 && save.data.hold_minutes === 10, "B-01 a valid save succeeds", save);
 
-  const blank = await req("/settings", { method: "PATCH", token: mgr.token, body: { debt_limit_vnd: "" } });
-  ok(blank.status === 400 && blank.data.field === "debt_limit_vnd", "B-01 blank number is a 400 naming the field", blank);
+  const blank = await req("/settings", { method: "PATCH", token: mgr.token, body: { gate_dedup_minutes: "" } });
+  ok(blank.status === 400 && blank.data.field === "gate_dedup_minutes", "B-01 blank number is a 400 naming the field", blank);
 
-  const big = await req("/settings", { method: "PATCH", token: mgr.token, body: { debt_limit_vnd: 99999999999 } });
-  ok(big.status === 400 && big.data.field === "debt_limit_vnd", "B-01 over-int is a 400 naming the field", big);
+  const big = await req("/settings", { method: "PATCH", token: mgr.token, body: { gate_dedup_minutes: 99999999999 } });
+  ok(big.status === 400 && big.data.field === "gate_dedup_minutes", "B-01 over-int is a 400 naming the field", big);
 
   const long = await req("/settings", { method: "PATCH", token: mgr.token, body: { tax_code: "1".repeat(40) } });
   ok(long.status === 400 && long.data.field === "tax_code", "B-01 too-long text is a 400 naming the field", long);

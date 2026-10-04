@@ -8,10 +8,11 @@ import { CourtGrid, DateStrip, freeHours, type Court, type OccSlot } from "@/com
 import { Cover, HoldProgress, HoldTimer, MediaCaption, media, sportPhoto } from "@/components/media";
 import { PayOnlineButton } from "@/components/pay-online";
 import { Shell, money, when } from "@/components/shell";
-import { Badge, Button, Card, DateField, Seg, Skeleton, StatusBadge } from "@/components/ui";
+import { Badge, Button, Card, DateField, Input, Seg, Skeleton, StatusBadge } from "@/components/ui";
 import { GlareHover, StarBorder } from "@/components/fx";
 import { apiGet, apiPost, openInvoice, ApiClientError } from "@/lib/arena3/client";
 import { todayISO, sportLabel } from "@/lib/arena3/labels";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/app/book")({
   validateSearch: (s: Record<string, unknown>): { sport?: string } => ({
@@ -58,6 +59,7 @@ type Hold = {
   /** Which slot this is, carried from the tap so the card can name it. */
   court_code?: string;
   hour?: number;
+  promo?: { code: string; name: string; discount_vnd: number } | null;
 };
 
 /** A hold that was refused, and — when another hour would help — where to go instead. */
@@ -73,6 +75,8 @@ function Page() {
   const [sport, setSport] = useState(Route.useSearch().sport ?? "badminton");
   const [data, setData] = useState<{ courts: Court[]; slots: OccSlot[] } | null>(null);
   const [hold, setHold] = useState<Hold | null>(null);
+  // Typed before tapping a slot: the hold is priced when it is made, so the code goes with it.
+  const [promoCode, setPromoCode] = useState("");
   const [overlap, setOverlap] = useState<{ court: Court; hour: number; message: string } | null>(null);
   // Week strip or whole month — both show how many slots each day has left.
   const [view, setView] = useState<"week" | "month">("week");
@@ -126,7 +130,13 @@ function Page() {
         `/bookings/${moving.id}/reschedule`,
         { start_at: start, court_id: court.id, ...(confirmOverlap ? { confirm_overlap: true } : {}) },
       );
-      toast.success(`Moved ${moving.code} to ${court.court_code} · ${String(hour).padStart(2, "0")}:00`);
+      toast.success(
+        t("Moved {code} to {court} · {time}", {
+          code: moving.code,
+          court: court.court_code,
+          time: `${String(hour).padStart(2, "0")}:00`,
+        }),
+      );
       setMoving(null);
       setOverlap(null);
       await load();
@@ -134,7 +144,7 @@ function Page() {
       if (e instanceof ApiClientError && e.body.requires_confirm && !confirmOverlap) {
         setOverlap({ court, hour, message: e.body.message });
       } else {
-        setMoveError(e instanceof Error ? e.message : "Could not move that booking");
+        setMoveError(e instanceof Error ? e.message : t("Could not move that booking"));
         await load().catch(() => {});
       }
     } finally {
@@ -165,13 +175,18 @@ function Page() {
     try {
       const res = await apiPost<Hold>(
         "/bookings",
-        { court_id: court.id, start_at: start, ...(confirmOverlap ? { confirm_overlap: true } : {}) },
+        {
+          court_id: court.id,
+          start_at: start,
+          ...(confirmOverlap ? { confirm_overlap: true } : {}),
+          ...(promoCode.trim() ? { promo_code: promoCode.trim() } : {}),
+        },
         true,
       );
       setHold({ ...res, court_code: court.court_code, hour });
       setOverlap(null);
       setTaken(null);
-      toast.success(`Holding ${court.court_code} · ${res.booking.code}`);
+      toast.success(t("Holding {court} · {code}", { court: court.court_code, code: res.booking.code }));
       await load();
     } catch (e) {
       if (e instanceof ApiClientError && e.body.requires_confirm && !confirmOverlap) {
@@ -181,7 +196,7 @@ function Page() {
         // working, not breaking — but a red toast saying "slot unavailable"
         // leaves the member to start the search again from nothing. Offer the
         // nearest hours that are still open instead, closest first.
-        const message = e instanceof Error ? e.message : "Could not hold that slot";
+        const message = e instanceof Error ? e.message : t("Could not hold that slot");
         // Only when another hour would actually help. A member who has used up
         // their two holds for the day, or whose balance is over the limit, is
         // not going to get anywhere by tapping a different court — offering
@@ -229,35 +244,42 @@ function Page() {
       // not found a single dong of it in the bank.
       if (res.awaiting_transfer) {
         setPending({ amount: hold.price, until: res.hold_until ?? hold.hold_until });
-        toast.success("Transfer noted", {
-          description: "Your court is held while reception checks the bank.",
+        toast.success(t("Transfer noted"), {
+          description: t("Your court is held while reception checks the bank."),
         });
         return;
       }
       if (res.invoice_id) {
         setReceipt(res.invoice_id);
-        toast.success(method === "quota" ? "One plan hour deducted" : "Booking confirmed", {
-          description: "Your receipt is ready.",
+        toast.success(method === "quota" ? t("One plan hour deducted") : t("Booking confirmed"), {
+          description: t("Your receipt is ready."),
           action: {
-            label: "Open receipt",
+            label: t("Open receipt"),
             onClick: () => void openInvoice(res.invoice_id!),
           },
         });
       } else {
-        toast.success(method === "quota" ? "One plan hour deducted" : "Booking confirmed");
+        toast.success(method === "quota" ? t("One plan hour deducted") : t("Booking confirmed"));
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not confirm the booking");
+      toast.error(e instanceof Error ? e.message : t("Could not confirm the booking"));
     } finally {
       setBusy(false);
     }
   }
 
+  // Sentences that wrap a live component: the translation carries a {placeholder}
+  // and the component is dropped in between the two halves.
+  const [heldBefore, heldAfter] = t(
+    "Reception confirms it against the bank, usually the same day. We hold the slot for another {timer}; after that it goes back on the grid.",
+  ).split("{timer}");
+  const [keptBefore, keptAfter] = t("It is also kept in {link}.").split("{link}");
+
   return (
     <Shell
       role="member"
-      title="Book a court"
-      subtitle="Pick a date and sport, then tap a free slot — we hold it for five minutes."
+      title={t("Book a court")}
+      subtitle={t("Pick a date and sport, then tap a free slot — we hold it for five minutes.")}
     >
       <GlareHover className="mb-4 block rounded-[var(--radius-xl)]" duration={1.1}>
         <Cover
@@ -268,7 +290,7 @@ function Page() {
         >
           <MediaCaption>
             <p className="font-display text-2xl">
-              {sport ? sportLabel(sport) : "All 3 sports"} · 60′ slots
+              {t("{sport} · 60′ slots", { sport: sport ? sportLabel(sport) : t("All 3 sports") })}
             </p>
           </MediaCaption>
         </Cover>
@@ -280,35 +302,49 @@ function Page() {
           <MonthCalendar value={date} onChange={setDate} avail={avail} />
         )}
         <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={promoCode}
+            onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+            placeholder={t("Promo code (optional)")}
+            aria-label={t("Promo code")}
+            autoCapitalize="characters"
+            maxLength={32}
+            className="h-9 w-44"
+          />
           <Seg
             value={view}
             onChange={(v) => setView(v === "month" ? "month" : "week")}
             options={[
-              { value: "week", label: "Week" },
-              { value: "month", label: "Month" },
+              { value: "week", label: t("Week") },
+              { value: "month", label: t("Month") },
             ]}
           />
           <Seg
             value={sport}
             onChange={setSport}
             options={[
-              { value: "", label: "All" },
+              { value: "", label: t("All") },
               { value: "badminton", label: sportLabel("badminton") },
               { value: "basketball", label: sportLabel("basketball") },
               { value: "volleyball", label: sportLabel("volleyball") },
             ]}
           />
-          <DateField value={date} onChange={setDate} aria-label="Pick another date" />
+          <DateField value={date} onChange={setDate} aria-label={t("Pick another date")} />
         </div>
       </div>
       {moving ? (
         <Card className="mb-4 border border-accent/30 bg-accent/5">
           <p className="text-sm font-medium">
-            Moving {moving.code} — now {moving.court_code}, {when(moving.start_at)}
+            {t("Moving {code} — now {court}, {when}", {
+              code: moving.code,
+              court: moving.court_code,
+              when: when(moving.start_at),
+            })}
           </p>
           <p className="mt-1 text-xs text-muted">
-            Tap a free slot below. You keep the same sport and price; the old hour is freed the moment the new one is
-            yours.
+            {t(
+              "Tap a free slot below. You keep the same sport and price; the old hour is freed the moment the new one is yours.",
+            )}
           </p>
           {moveError ? (
             <p role="alert" className="mt-2 text-sm text-danger">
@@ -317,14 +353,14 @@ function Page() {
           ) : null}
           <div className="mt-3">
             <Button size="sm" variant="outline" onClick={() => (setMoving(null), setMoveError(""))}>
-              Keep it where it is
+              {t("Keep it where it is")}
             </Button>
           </div>
         </Card>
       ) : null}
       {mine?.length && !moving ? (
         <Card className="mb-4">
-          <p className="mb-2 font-display text-lg">Your upcoming courts</p>
+          <p className="mb-2 font-display text-lg">{t("Your upcoming courts")}</p>
           <div className="grid gap-2">
             {(showAllMine ? mine : mine.slice(0, 3)).map((b) => (
               <div
@@ -339,10 +375,10 @@ function Page() {
                   <StatusBadge status={b.status} />
                   {b.can_move ? (
                     <Button size="sm" variant="outline" onClick={() => startMove(b)}>
-                      Change time
+                      {t("Change time")}
                     </Button>
                   ) : b.status === "confirmed" ? (
-                    <Badge tone="muted">Within {windowHours}h — can&apos;t move</Badge>
+                    <Badge tone="muted">{t("Within {n}h — can't move", { n: windowHours })}</Badge>
                   ) : null}
                 </span>
               </div>
@@ -354,7 +390,7 @@ function Page() {
               onClick={() => setShowAllMine((v) => !v)}
               className="mt-2 text-sm text-accent-2 underline-offset-2 hover:underline"
             >
-              {showAllMine ? "Show fewer" : `Show all ${mine.length}`}
+              {showAllMine ? t("Show fewer") : t("Show all {n}", { n: mine.length })}
             </button>
           ) : null}
         </Card>
@@ -372,16 +408,16 @@ function Page() {
                 <Landmark className="size-5 shrink-0 text-hold" strokeWidth={1.75} />
                 <div className="min-w-[12rem] flex-1">
                   <p className="text-sm font-medium">
-                    Transfer {money(pending.amount)} — your court is held meanwhile.
+                    {t("Transfer {amount} — your court is held meanwhile.", { amount: money(pending.amount) })}
                   </p>
                   <p className="text-xs text-muted">
-                    Reception confirms it against the bank, usually the same day. We hold the slot
-                    for another <HoldTimer until={pending.until} onExpire={() => setPending(null)} />
-                    ; after that it goes back on the grid.
+                    {heldBefore}
+                    <HoldTimer until={pending.until} onExpire={() => setPending(null)} />
+                    {heldAfter}
                   </p>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => setPending(null)} aria-label="Dismiss">
-                  Got it
+                <Button size="sm" variant="ghost" onClick={() => setPending(null)} aria-label={t("Dismiss")}>
+                  {t("Got it")}
                 </Button>
               </div>
             </Card>
@@ -397,16 +433,20 @@ function Page() {
             <Card className="mb-4 flex flex-wrap items-center gap-3 border border-accent/30 bg-accent/5">
               <ReceiptIcon className="size-5 shrink-0 text-accent" strokeWidth={1.75} />
               <div className="min-w-[10rem] flex-1">
-                <p className="text-sm font-medium">Booking confirmed — your receipt is ready.</p>
+                <p className="text-sm font-medium">{t("Booking confirmed — your receipt is ready.")}</p>
                 <p className="text-xs text-muted">
-                  It is also kept in <Link to="/account" className="text-accent-2 underline">Account settings → Receipts</Link>.
+                  {keptBefore}
+                  <Link to="/account" className="text-accent-2 underline">
+                    {t("Account settings → Receipts")}
+                  </Link>
+                  {keptAfter}
                 </p>
               </div>
               <Button size="sm" onClick={() => void openInvoice(receipt)}>
-                Open receipt
+                {t("Open receipt")}
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setReceipt(null)} aria-label="Dismiss">
-                Dismiss
+              <Button size="sm" variant="ghost" onClick={() => setReceipt(null)} aria-label={t("Dismiss")}>
+                {t("Dismiss")}
               </Button>
             </Card>
           </motion.div>
@@ -423,19 +463,18 @@ function Page() {
               {!taken.canRetry ? (
                 <>
                   <p className="mt-1 text-xs text-muted">
-                    Another court will not get past this one — the desk can sort it out while you
-                    are here.
+                    {t("Another court will not get past this one — the desk can sort it out while you are here.")}
                   </p>
                   <div className="mt-3">
                     <Button size="sm" variant="ghost" onClick={() => setTaken(null)}>
-                      Dismiss
+                      {t("Dismiss")}
                     </Button>
                   </div>
                 </>
               ) : taken.alts.length ? (
                 <>
                   <p className="mt-1 text-xs text-muted">
-                    Nearest hours still open on this sport — tap one to hold it.
+                    {t("Nearest hours still open on this sport — tap one to hold it.")}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {taken.alts.map((a) => (
@@ -450,19 +489,18 @@ function Page() {
                       </Button>
                     ))}
                     <Button size="sm" variant="ghost" onClick={() => setTaken(null)}>
-                      Dismiss
+                      {t("Dismiss")}
                     </Button>
                   </div>
                 </>
               ) : (
                 <>
                   <p className="mt-1 text-xs text-muted">
-                    Nothing else is free for this sport today. Try another date above, or another
-                    sport.
+                    {t("Nothing else is free for this sport today. Try another date above, or another sport.")}
                   </p>
                   <div className="mt-3">
                     <Button size="sm" variant="ghost" onClick={() => setTaken(null)}>
-                      Dismiss
+                      {t("Dismiss")}
                     </Button>
                   </div>
                 </>
@@ -480,7 +518,7 @@ function Page() {
             <Card className="mb-4 border border-hold/30 bg-hold/5">
               <p className="text-sm">{overlap.message}</p>
               <p className="mt-1 text-xs text-muted">
-                Your class enrolment stays put — this is only a clash warning.
+                {t("Your class enrolment stays put — this is only a clash warning.")}
               </p>
               <div className="mt-3 flex gap-2">
                 <Button
@@ -491,10 +529,10 @@ function Page() {
                       : holdSlot(overlap.court, overlap.hour, true))
                   }
                 >
-                  {moving ? "Move it anyway" : "Hold it anyway"}
+                  {moving ? t("Move it anyway") : t("Hold it anyway")}
                 </Button>
                 <Button variant="outline" onClick={() => setOverlap(null)}>
-                  Never mind
+                  {t("Never mind")}
                 </Button>
               </div>
             </Card>
@@ -525,12 +563,17 @@ function Page() {
                     <span className="font-medium text-fg">{hold.booking.code}</span>
                   )}{" "}
                   · <span className="font-display text-lg tabular-nums text-fg">{money(hold.price)}</span>
+                  {hold.promo ? (
+                    <span className="ml-2 text-xs text-accent">
+                      {hold.promo.code}: −{money(hold.promo.discount_vnd)}
+                    </span>
+                  ) : null}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <StarBorder speed={4}>
                   <Button disabled={busy} onClick={() => void confirmPay("quota")}>
-                    Use plan hours
+                    {t("Use plan hours")}
                   </Button>
                 </StarBorder>
                 {/*
@@ -543,18 +586,18 @@ function Page() {
                   <PayOnlineButton
                     refType="booking"
                     refId={hold.booking.id}
-                    label="Pay online"
+                    label={t("Pay online")}
                     size="md"
                     variant="outline"
                     onPaid={() => {
                       setHold(null);
                       void load();
-                      toast.success("Paid — your court is confirmed and the receipt is in your account.");
+                      toast.success(t("Paid — your court is confirmed and the receipt is in your account."));
                     }}
                   />
                 ) : null}
                 <Button variant="outline" disabled={busy} onClick={() => void confirmPay("transfer")}>
-                  Bank transfer
+                  {t("Bank transfer")}
                 </Button>
               </div>
             </Card>

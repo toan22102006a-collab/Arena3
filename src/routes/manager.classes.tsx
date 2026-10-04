@@ -2,28 +2,30 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Shell } from "@/components/shell";
-import { Button, Card, DateField, EmptyState, Field, Input, Select, StatusBadge } from "@/components/ui";
+import { Button, Card, DateField, EmptyState, Field, Input, Select, ShowMore, StatusBadge } from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
 import { SpotlightCard } from "@/components/fx";
 import { ClassDetailModal } from "@/components/class-detail";
 import { apiGet, apiPost } from "@/lib/arena3/client";
 import { composeWeeklyRrule, levelLabel, rruleLabel, sportLabel, todayISO, addDaysISO } from "@/lib/arena3/labels";
+import { t, tk, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/manager/classes")({
   component: Page,
 });
 
 const DAYS = [
-  { k: "MO", l: "Mon" },
-  { k: "TU", l: "Tue" },
-  { k: "WE", l: "Wed" },
-  { k: "TH", l: "Thu" },
-  { k: "FR", l: "Fri" },
-  { k: "SA", l: "Sat" },
-  { k: "SU", l: "Sun" },
+  { k: "MO", l: tk("Mon") },
+  { k: "TU", l: tk("Tue") },
+  { k: "WE", l: tk("Wed") },
+  { k: "TH", l: tk("Thu") },
+  { k: "FR", l: tk("Fri") },
+  { k: "SA", l: tk("Sat") },
+  { k: "SU", l: tk("Sun") },
 ];
 
 function Page() {
+  const [limit, setLimit] = useState(8);
   const [items, setItems] = useState<
     Array<{
       id: string;
@@ -63,7 +65,7 @@ function Page() {
     setLoaded(true);
   }, []);
   useEffect(() => {
-    void load().catch((e) => toast.error(e.message));
+    void load().catch((e) => toast.error(tServer(e.message)));
   }, [load]);
 
   // The people and courts a class of this sport can actually use. Nothing is
@@ -84,9 +86,9 @@ function Page() {
   const missing = !loaded
     ? null
     : !sportCoaches.length
-      ? "No active coach teaches this sport yet."
+      ? t("No active coach teaches this sport yet.")
       : !sportCourts.length
-        ? "There is no court for this sport."
+        ? t("There is no court for this sport.")
         : null;
 
   function toggleDay(k: string) {
@@ -94,25 +96,25 @@ function Page() {
   }
 
   return (
-    <Shell role="manager" title="Classes" subtitle="Pick the days and the hour — clashes on court or coach are blocked for you.">
+    <Shell role="manager" title={t("Classes")} subtitle={t("Pick the days and the hour — clashes on court or coach are blocked for you.")}>
       <Reveal from="down">
       <Card className="mb-6 grid gap-3 md:grid-cols-3">
-        <Field label="Sport">
+        <Field label={t("Sport")}>
           <Select value={form.sport} onChange={(e) => setForm({ ...form, sport: e.target.value })}>
-            <option value="badminton">Badminton</option>
-            <option value="basketball">Basketball</option>
-            <option value="volleyball">Volleyball</option>
+            <option value="badminton">{t("Badminton")}</option>
+            <option value="basketball">{t("Basketball")}</option>
+            <option value="volleyball">{t("Volleyball")}</option>
           </Select>
         </Field>
-        <Field label="Level">
+        <Field label={t("Level")}>
           <Select value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}>
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-            <option value="team">Squad</option>
+            <option value="beginner">{t("Beginner")}</option>
+            <option value="intermediate">{t("Intermediate")}</option>
+            <option value="advanced">{t("Advanced")}</option>
+            <option value="team">{t("Squad")}</option>
           </Select>
         </Field>
-        <Field label="Court">
+        <Field label={t("Court")}>
           <Select value={form.court_id} onChange={(e) => setForm({ ...form, court_id: e.target.value })}>
             {sportCourts.map((c) => (
               <option key={c.id} value={c.id}>
@@ -121,7 +123,7 @@ function Page() {
             ))}
           </Select>
         </Field>
-        <Field label="Coach">
+        <Field label={t("Coach")}>
           <Select value={form.coach_id} onChange={(e) => setForm({ ...form, coach_id: e.target.value })}>
             {sportCoaches.map((c) => (
               <option key={c.id} value={c.id}>
@@ -131,7 +133,7 @@ function Page() {
           </Select>
         </Field>
         <div className="md:col-span-2">
-          <p className="text-2xs font-medium uppercase tracking-wider text-muted">Repeats weekly on</p>
+          <p className="text-2xs font-medium uppercase tracking-wider text-muted">{t("Repeats weekly on")}</p>
           <div className="mt-1.5 flex flex-wrap gap-1">
             {DAYS.map((d) => (
               <button
@@ -149,12 +151,12 @@ function Page() {
                     transition={{ type: "spring", stiffness: 420, damping: 34 }}
                   />
                 ) : null}
-                <span className="relative">{d.l}</span>
+                <span className="relative">{t(d.l)}</span>
               </button>
             ))}
           </div>
         </div>
-        <Field label="Start time">
+        <Field label={t("Start time")}>
           <Select value={String(hour)} onChange={(e) => setHour(Number(e.target.value))}>
             {Array.from({ length: 16 }, (_, i) => i + 6).map((h) => (
               <option key={h} value={h}>
@@ -163,10 +165,10 @@ function Page() {
             ))}
           </Select>
         </Field>
-        <Field label="First day">
-          <DateField value={form.start_on} onChange={(v) => setForm({ ...form, start_on: v })} aria-label="Start date" />
+        <Field label={t("First day")}>
+          <DateField value={form.start_on} onChange={(v) => setForm({ ...form, start_on: v })} aria-label={t("Start date")} />
         </Field>
-        <Field label="Capacity">
+        <Field label={t("Capacity")}>
           <Input
             type="number"
             value={form.capacity}
@@ -179,7 +181,7 @@ function Page() {
               {missing}{" "}
               {!sportCoaches.length ? (
                 <Link to="/manager/staff" className="underline">
-                  Add a coach
+                  {t("Add a coach")}
                 </Link>
               ) : null}
             </p>
@@ -193,22 +195,22 @@ function Page() {
                   ...form,
                   rrule: composeWeeklyRrule(days, hour),
                 });
-                toast.success("Draft created");
+                toast.success(t("Draft created"));
                 const pub = await apiPost<{ sessions: unknown[]; skipped: unknown[] }>(`/classes/${row.id}/publish`);
-                toast.success(`Published ${pub.sessions.length} sessions`);
+                toast.success(t("Published {n} sessions", { n: pub.sessions.length }));
                 await load();
               } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Something went wrong");
+                toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
               }
             }}
           >
-            Create & publish
+            {t("Create & publish")}
           </Button>
         </div>
       </Card>
       </Reveal>
       <Stagger className="grid gap-3 md:grid-cols-2" gap={0.06}>
-        {items.map((c) => (
+        {items.slice(0, limit).map((c) => (
           <StaggerItem key={c.id} className="h-full">
           <Lift className="h-full">
           <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={320} strength={0.1}>
@@ -225,7 +227,7 @@ function Page() {
             </p>
             {c.rrule ? <p className="text-sm">{rruleLabel(c.rrule)}</p> : null}
             <Button className="mt-3" variant="outline" onClick={() => setDetail(c.id)}>
-              Sessions &amp; students
+              {t("Sessions & students")}
             </Button>
             {c.status === "draft" ? (
               <Button
@@ -233,14 +235,14 @@ function Page() {
                 onClick={async () => {
                   try {
                     await apiPost(`/classes/${c.id}/publish`);
-                    toast.success("Published");
+                    toast.success(t("Published"));
                     await load();
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : "Something went wrong");
+                    toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
                   }
                 }}
               >
-                Publish
+                {t("Publish")}
               </Button>
             ) : null}
           </Card>
@@ -249,10 +251,11 @@ function Page() {
           </StaggerItem>
         ))}
       </Stagger>
+      <ShowMore shown={Math.min(limit, items.length)} total={items.length} step={8} onMore={() => setLimit((n) => n + 8)} />
       {loaded && !items.length ? (
         <EmptyState
-          title="No classes yet"
-          hint="Pick a sport, a coach and the days above, then press Create & publish. Members can book as soon as it is published."
+          title={t("No classes yet")}
+          hint={t("Pick a sport, a coach and the days above, then press Create & publish. Members can book as soon as it is published.")}
         />
       ) : null}
       <ClassDetailModal classId={detail} onClose={() => setDetail(null)} manage onChanged={() => void load()} />
