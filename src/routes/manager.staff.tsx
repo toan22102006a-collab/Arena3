@@ -2,10 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Shell, when } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Skeleton } from "@/components/ui";
-import { ApiClientError, apiGet, apiPost, apiPatch } from "@/lib/arena3/client";
+import { Badge, Button, Card, EmptyState, Field, Input, LoadError, Modal, Select, Skeleton } from "@/components/ui";
+import { ApiClientError, apiPost, apiPatch } from "@/lib/arena3/client";
 import { roleLabel, sportLabel } from "@/lib/arena3/labels";
-import { t, tServer } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
+import { t, tServer, tData } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/manager/staff")({ component: Page });
 
@@ -29,7 +31,6 @@ const SPORTS = ["badminton", "basketball", "volleyball", "all"] as const;
 type Issued = { name: string; phone: string; password: string; why: string };
 
 function Page() {
-  const [items, setItems] = useState<Staff[] | null>(null);
   const [role, setRole] = useState("");
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
@@ -37,19 +38,20 @@ function Page() {
   const [issued, setIssued] = useState<Issued | null>(null);
   const [editing, setEditing] = useState<Staff | null>(null);
 
-  async function load() {
-    const qs = new URLSearchParams();
-    if (role) qs.set("role", role);
-    if (status) qs.set("status", status);
-    if (q.trim()) qs.set("q", q.trim());
-    const r = await apiGet<{ items: Staff[] }>(`/staff${qs.size ? `?${qs}` : ""}`);
-    setItems(r.items);
-  }
+  // Typing waits a beat so one search is one request.
+  const [term, setTerm] = useState("");
   useEffect(() => {
-    const timer = setTimeout(() => void load().catch((e) => toast.error(tServer(e.message))), q ? 200 : 0);
+    const timer = setTimeout(() => setTerm(q.trim()), 250);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, status, q]);
+  }, [q]);
+  const qs = new URLSearchParams();
+  if (role) qs.set("role", role);
+  if (status) qs.set("status", status);
+  if (term) qs.set("q", term);
+  const filtered = !!(role || status || term);
+  // The list on screen stays (dimmed) while a new filter loads; a failed read replaces it with the reason.
+  const read = useRead<{ items: Staff[] }>(`/staff${qs.size ? `?${qs}` : ""}`, { keepPrevious: true });
+  const items = read.data?.items ?? null;
 
   async function act(s: Staff, what: "lock" | "unlock" | "reset" | "revoke") {
     try {
@@ -76,7 +78,7 @@ function Page() {
             : t("No open sessions"),
         );
       }
-      await load();
+      read.reload();
     } catch (e) {
       toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
     }
@@ -104,14 +106,17 @@ function Page() {
         <Button onClick={() => setCreating(true)}>{t("Add staff")}</Button>
       </Card>
 
-      {!items ? (
+      <div aria-busy={read.stale} className={cn("transition-opacity", read.stale && "opacity-60")}>
+      {read.error ? (
+        <LoadError message={read.error.message} onRetry={read.error.refused ? undefined : read.reload} />
+      ) : !items ? (
         <Skeleton className="h-40" />
       ) : !items.length ? (
         <EmptyState
-          title={role || status || q ? t("Nobody matches those filters") : t("No staff accounts yet")}
-          hint={role || status || q ? t("Clear a filter to see everyone.") : t("Add the first receptionist or coach to give them a login.")}
+          title={filtered ? t("Nobody matches those filters") : t("No staff accounts yet")}
+          hint={filtered ? t("Clear a filter to see everyone.") : t("Add the first receptionist or coach to give them a login.")}
         >
-          {!(role || status || q) ? <Button onClick={() => setCreating(true)}>{t("Add staff")}</Button> : null}
+          {!filtered ? <Button onClick={() => setCreating(true)}>{t("Add staff")}</Button> : null}
         </EmptyState>
       ) : (
         <div className="grid gap-2">
@@ -121,7 +126,7 @@ function Page() {
               <Card key={s.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-2 font-medium">
-                    {s.full_name}
+                    {tData(s.full_name)}
                     <Badge tone={s.role === "manager" ? "ink" : "accent"}>{roleLabel(s.role)}</Badge>
                     {s.status !== "active" ? <Badge tone="danger">{t("Locked")}</Badge> : null}
                     {s.must_change_password ? <Badge tone="hold">{t("Must change password")}</Badge> : null}
@@ -170,6 +175,7 @@ function Page() {
           })}
         </div>
       )}
+      </div>
 
       <CreateModal
         open={creating}
@@ -177,7 +183,7 @@ function Page() {
         onDone={(i) => {
           setCreating(false);
           setIssued(i);
-          void load();
+          read.reload();
         }}
       />
       <RoleModal
@@ -185,7 +191,7 @@ function Page() {
         onClose={() => setEditing(null)}
         onDone={() => {
           setEditing(null);
-          void load();
+          read.reload();
         }}
       />
       <Modal

@@ -1,14 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 import { AssistantMark } from "@/components/mark";
 import { Shell } from "@/components/shell";
-import { Button } from "@/components/ui";
+import { Button, LoadError } from "@/components/ui";
 import { AnimatePresence, motion } from "motion/react";
 import { GLBackground, Magnet, ShinyText } from "@/components/fx";
 import { apiPost } from "@/lib/arena3/client";
 import { cn } from "@/lib/cn";
+import { scrollBehavior } from "@/lib/calm";
 import { t, tk } from "@/lib/i18n";
 
 export const Route = createFileRoute("/app/assistant")({ component: Page });
@@ -55,32 +55,41 @@ function Page() {
   const [q, setQ] = useState("");
   const [log, setLog] = useState<Msg[]>([WELCOME]);
   const [busy, setBusy] = useState(false);
+  // The question that got no answer, and why. Kept in the thread rather than in a toast that fades, so
+  // the member can see what was asked and ask it again without typing it out a second time.
+  const [failure, setFailure] = useState<{ message: string; reason: string } | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [log, busy]);
+    bottom.current?.scrollIntoView({ behavior: scrollBehavior(), block: "end" });
+  }, [log, busy, failure]);
 
-  async function send(text?: string) {
-    // Trimmed before the cap so trailing spaces cannot eat the last words.
-    const message = (text ?? q).trim().slice(0, MAX_CHARS);
-    if (message.length < 2 || busy) return;
-    setQ("");
-    const nextLog: Msg[] = [...log, { role: "me", text: message }];
-    setLog(nextLog);
+  /** Asks the server about `message`, which is already the last line of `thread`. */
+  async function ask(message: string, thread: Msg[]) {
     setBusy(true);
+    setFailure(null);
     try {
-      const history = nextLog
+      const history = thread
         .filter((m) => m !== WELCOME)
         .slice(0, -1)
         .map((m) => ({ role: m.role, text: m.text }));
       const r = await apiPost<{ reply: string; source?: Msg["source"] }>("/assistant", { message, history });
       setLog((l) => [...l, { role: "bot", text: r.reply, source: r.source }]);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("The assistant is switched off"));
+      setFailure({ message, reason: e instanceof Error ? e.message : t("The assistant is switched off") });
     } finally {
       setBusy(false);
     }
+  }
+
+  function send(text?: string) {
+    // Trimmed before the cap so trailing spaces cannot eat the last words.
+    const message = (text ?? q).trim().slice(0, MAX_CHARS);
+    if (message.length < 2 || busy) return;
+    setQ("");
+    const nextLog: Msg[] = [...log, { role: "me", text: message }];
+    setLog(nextLog);
+    void ask(message, nextLog);
   }
 
   return (
@@ -95,7 +104,7 @@ function Page() {
         variant="dotgrid"
         position="fixed"
         className="-z-[1]"
-        color="#1f5c43"
+        color="#1e4fd8"
         gap={30}
         dot={1.6}
         radius={140}
@@ -119,6 +128,7 @@ function Page() {
               size="sm"
               onClick={() => {
                 setLog([WELCOME]);
+                setFailure(null);
                 setQ("");
               }}
             >
@@ -141,14 +151,14 @@ function Page() {
                 : "mr-auto bg-surface text-fg",
             )}
           >
-            <p className={cn("text-2xs uppercase tracking-wider", m.role === "me" ? "text-accent-fg/70" : "text-muted")}>
+            <p className={cn("text-2xs", m.role === "me" ? "text-accent-fg/70" : "text-muted")}>
               {m.role === "me" ? t("You") : t("Assistant")}
             </p>
             <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm leading-relaxed">
               {m === WELCOME ? t(m.text) : m.text}
             </p>
             {m.role === "bot" && sourceLabel(m.source) ? (
-              <p className="mt-2 text-2xs uppercase tracking-wider text-muted">{sourceLabel(m.source)}</p>
+              <p className="mt-2 text-2xs text-muted">{sourceLabel(m.source)}</p>
             ) : null}
           </motion.div>
         ))}
@@ -160,7 +170,7 @@ function Page() {
             exit={{ opacity: 0 }}
             className="mr-auto max-w-[85%] rounded-[var(--radius-lg)] bg-surface px-4 py-3 shadow-[var(--shadow-border)]"
           >
-            <ShinyText className="shiny-muted text-2xs uppercase tracking-wider" speed={2.4}>
+            <ShinyText className="shiny-muted text-2xs" speed={2.4}>
               {t("Assistant")}
             </ShinyText>
             <p className="mt-1 flex items-center gap-1 text-sm text-muted">
@@ -177,6 +187,13 @@ function Page() {
           </motion.div>
         ) : null}
         </AnimatePresence>
+        {failure && !busy ? (
+          <LoadError
+            title={t("The assistant could not answer.")}
+            message={failure.reason}
+            onRetry={() => void ask(failure.message, log)}
+          />
+        ) : null}
         <div ref={bottom} />
       </div>
 
@@ -192,8 +209,8 @@ function Page() {
                 <button
                   key={c}
                   type="button"
-                  onClick={() => void send(c)}
-                  className="rounded-full border border-line bg-surface px-3 py-2 text-xs font-medium text-fg transition-[background-color,border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-accent hover:bg-wood active:scale-95"
+                  onClick={() => send(c)}
+                  className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-3.5 py-2 text-left text-xs font-medium text-fg transition-[background-color,border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-accent hover:bg-wood active:scale-95 sm:min-h-9"
                 >
                   {t(c)}
                 </button>
@@ -205,7 +222,7 @@ function Page() {
             className="flex gap-2"
             onSubmit={(e) => {
               e.preventDefault();
-              void send();
+              send();
             }}
           >
             <input

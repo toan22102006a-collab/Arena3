@@ -1,15 +1,32 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { SectionTitle } from "@/components/section";
 import { PayOnlineButton } from "@/components/pay-online";
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Shell, money, useSessionUser, when } from "@/components/shell";
-import { Badge, Button, Card, DateField, Field, Input, Modal, Skeleton, StatusBadge, Textarea } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  ButtonLink,
+  Card,
+  DateField,
+  EmptyState,
+  Field,
+  Input,
+  LoadError,
+  Modal,
+  MoneyInput,
+  Skeleton,
+  StatusBadge,
+  Textarea,
+} from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { SpotlightCard } from "@/components/fx";
-import { ApiClientError, apiGet, apiPatch, apiPost, openInvoice } from "@/lib/arena3/client";
-import { METHOD_LABEL, formatDate, sportLabel } from "@/lib/arena3/labels";
-import { t, tk, tServer } from "@/lib/i18n";
+import { CancelBookingDialog } from "@/components/cancel-booking";
+import { ApiClientError, apiPatch, apiPost, openInvoice } from "@/lib/arena3/client";
+import { METHOD_LABEL, formatDate, refTypeLabel, sportLabel, statusLabel } from "@/lib/arena3/labels";
+import { t, tServer, tData } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/desk/member/$id")({
   component: Page,
@@ -28,53 +45,70 @@ type Payment = {
   refundable_vnd: number;
 };
 
-/** What a payment was raised against, in words the desk uses. */
-function refTypeLabel(r: string) {
-  const label = ({ subscription: tk("Plan"), booking: tk("Booking") } as Record<string, string>)[r];
-  return label ? t(label) : r;
-}
-
 /** Digits only, so a typed "1.500.000" or "1,500,000" still means 1500000. */
 function parseVnd(raw: string) {
   const digits = raw.replace(/\D/g, "");
   return digits ? Number(digits) : 0;
 }
 
+type Member = {
+  user: { full_name: string; phone: string; member_code: string | null; date_of_birth: string | null };
+  guardian: { name: string | null; phone: string | null };
+  subscriptions: Array<{
+    id: string;
+    status: string;
+    plan_name: string;
+    end_on: string;
+    sport_scope: string;
+    court_hours_left: number;
+    frozen_days?: number;
+    /** What "Take payment" collects, worked out by the server: price less any code on the order. */
+    due_vnd: number;
+  }>;
+  payments: Payment[];
+  today: {
+    bookings: Array<{ id: string; code: string; start_at: string; status: string; court_code: string; price_vnd: number; paid_vnd: number }>;
+    classes: unknown[];
+  };
+};
+
 function Page() {
   const { id } = Route.useParams();
   const me = useSessionUser();
-  const [data, setData] = useState<{
-    user: { full_name: string; phone: string; member_code: string | null; date_of_birth: string | null };
-    guardian: { name: string | null; phone: string | null };
-    subscriptions: Array<{
-      id: string;
-      status: string;
-      plan_name: string;
-      end_on: string;
-      sport_scope: string;
-      court_hours_left: number;
-      frozen_days?: number;
-    }>;
-    payments: Payment[];
-    today: {
-      bookings: Array<{ id: string; code: string; start_at: string; status: string; court_code: string }>;
-      classes: unknown[];
-    };
-  } | null>(null);
+  // null while it is being asked for, and also if the question failed — `read.error` says which.
+  const read = useRead<Member>(`/members/${id}`);
+  const data = read.data;
+  const reload = read.reload;
   // Leave the online button out when the centre has no payOS keys, rather
   // than offering reception a button that errors in front of a customer.
-  const [onlineOn, setOnlineOn] = useState(false);
-  useEffect(() => {
-    void apiGet<{ capabilities?: { online_payment?: boolean } }>("/flags")
-      .then((r) => setOnlineOn(Boolean(r.capabilities?.online_payment)))
-      .catch(() => setOnlineOn(false));
-  }, []);
-  const [plans, setPlans] = useState<Array<{ id: string; name: string; price_vnd: number }>>([]);
+  const flagsRead = useRead<{ capabilities?: { online_payment?: boolean } }>("/flags");
+  const onlineOn = Boolean(flagsRead.data?.capabilities?.online_payment);
+  const plansRead = useRead<{ items: Array<{ id: string; name: string; price_vnd: number }> }>("/plans");
+  const [cancelId, setCancelId] = useState<string | null>(null);
   // The payment a refund is being raised against, plus what the desk typed.
   const [refunding, setRefunding] = useState<Payment | null>(null);
   const [refundAmount, setRefundAmount] = useState("");
   const [refundReason, setRefundReason] = useState("");
   const [refundBusy, setRefundBusy] = useState(false);
+  const [refundErr, setRefundErr] = useState("");
+
+  // One desk action at a time. A second tap on "Take payment" or "Check-in" while the first is still
+  // being answered would be a double charge or a double check-in waiting to happen.
+  const busyRef = useRef(false);
+  const [working, setWorking] = useState(false);
+  async function act(run: () => Promise<void>, fallback: string) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setWorking(true);
+    try {
+      await run();
+    } catch (e) {
+      toast.error(e instanceof Error ? tServer(e.message) : fallback);
+    } finally {
+      busyRef.current = false;
+      setWorking(false);
+    }
+  }
 
   // Profile correction (B-11): what the desk has typed, and which input the
   // server said was wrong.
@@ -87,24 +121,29 @@ function Page() {
   // once — it is not stored anywhere the desk can look it up again.
   const [resetStep, setResetStep] = useState<"closed" | "confirm" | "issued">("closed");
   const [resetBusy, setResetBusy] = useState(false);
+  const [resetErr, setResetErr] = useState("");
   const [tempPassword, setTempPassword] = useState("");
+
+  function closeReset() {
+    setResetStep("closed");
+    setResetErr("");
+    setTempPassword("");
+  }
 
   async function resetPassword() {
     setResetBusy(true);
+    setResetErr("");
     try {
       const r = await apiPost<{ temp_password: string }>(`/members/${id}/reset-password`);
       setTempPassword(r.temp_password);
       setResetStep("issued");
     } catch (e) {
-      toast.error(e instanceof Error ? tServer(e.message) : t("Could not reset the password"));
-      setResetStep("closed");
+      // Stays on the question, with the reason written under it: a toast would fade while the desk is
+      // still looking at a button that appears to have done nothing.
+      setResetErr(e instanceof Error ? tServer(e.message) : t("Could not reset the password"));
     } finally {
       setResetBusy(false);
     }
-  }
-
-  async function load() {
-    setData(await apiGet(`/members/${id}`));
   }
 
   function openEdit() {
@@ -127,7 +166,7 @@ function Page() {
       await apiPatch(`/members/${id}`, { ...edit, date_of_birth: edit.date_of_birth || null });
       toast.success(t("Profile updated"));
       setEditing(false);
-      await load();
+      reload();
     } catch (e) {
       if (e instanceof ApiClientError) setEditErr({ field: e.body.field, message: tServer(e.message) });
       else setEditErr({ message: e instanceof Error ? tServer(e.message) : t("Could not save the profile") });
@@ -135,13 +174,6 @@ function Page() {
       setEditBusy(false);
     }
   }
-  useEffect(() => {
-    void load().catch((e) => toast.error(tServer(e.message)));
-    void apiGet<{ items: Array<{ id: string; name: string; price_vnd: number }> }>("/plans").then((r) =>
-      setPlans(r.items),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
 
   function openRefund(p: Payment) {
     setRefunding(p);
@@ -149,6 +181,7 @@ function Page() {
     // what nearly every one of these is; a part refund is a deliberate edit.
     setRefundAmount(String(p.refundable_vnd));
     setRefundReason("");
+    setRefundErr("");
   }
 
   async function submitRefund() {
@@ -156,6 +189,7 @@ function Page() {
     const amount = parseVnd(refundAmount);
     if (amount <= 0 || amount > refunding.refundable_vnd) return;
     setRefundBusy(true);
+    setRefundErr("");
     try {
       const res = await apiPost<{ payment: { status: string } }>(
         `/payments/${refunding.id}/refund`,
@@ -171,18 +205,35 @@ function Page() {
           : t("Refunded {amount}", { amount: money(amount) }),
       );
       setRefunding(null);
-      await load();
+      reload();
     } catch (e) {
-      toast.error(e instanceof Error ? tServer(e.message) : t("Could not raise that refund"));
+      // Written inside the window the desk is looking at, where a toast would fade behind it.
+      setRefundErr(e instanceof Error ? tServer(e.message) : t("Could not raise that refund"));
     } finally {
       setRefundBusy(false);
     }
   }
 
+  const role = me?.role === "manager" ? "manager" : "receptionist";
+
   if (!data) {
     return (
-      <Shell role="receptionist" title={t("Member")}>
-        <Skeleton className="h-40" />
+      <Shell role={role} title={t("Member")}>
+        {read.error?.refused ? (
+          // An old link or a removed member: the server said no, so asking again would only bring the same words back.
+          <EmptyState
+            title={t("This member could not be opened")}
+            hint={t("The link may be old, or the member may have been removed. Search for them again from the desk.")}
+          >
+            <ButtonLink to="/desk" variant="outline">
+              {t("Back to the desk")}
+            </ButtonLink>
+          </EmptyState>
+        ) : read.error ? (
+          <LoadError message={read.error.message} onRetry={reload} />
+        ) : (
+          <Skeleton className="h-40" />
+        )}
       </Shell>
     );
   }
@@ -198,15 +249,22 @@ function Page() {
 
   return (
     <Shell
-      role={me?.role === "manager" ? "manager" : "receptionist"}
+      role={role}
       title={data.user.full_name}
-      subtitle={`${data.user.member_code} · ${data.user.phone}`}
+      subtitle={[data.user.member_code, data.user.phone].filter(Boolean).join(" · ")}
     >
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Button size="sm" variant="outline" onClick={openEdit}>
           {t("Edit profile")}
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setResetStep("confirm")}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setResetErr("");
+            setResetStep("confirm");
+          }}
+        >
           {t("Reset password")}
         </Button>
       </div>
@@ -217,31 +275,28 @@ function Page() {
           <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={320} strength={0.1}>
           <Card interactive className="relative z-[2] h-full">
             <StatusBadge status={s.status} />
-            <h2 className="mt-2 font-display text-2xl">{s.plan_name}</h2>
+            <h2 className="mt-2 font-display text-2xl">{tData(s.plan_name)}</h2>
             <p className="text-sm text-muted">
               {sportLabel(s.sport_scope)} · {t("through {date}", { date: formatDate(s.end_on) })} · {t("{n} court hours", { n: Number(s.court_hours_left) })}
             </p>
             {s.status === "pending" || s.status === "active" ? (
               <Button
                 className="mt-3"
-                onClick={async () => {
-                  const plan = plans.find((p) => p.name === s.plan_name);
-                  const amt = plan?.price_vnd ?? 0;
-                  try {
+                disabled={working}
+                onClick={() =>
+                  void act(async () => {
                     const res = await apiPost<{ invoice: { id: string } }>(
                       "/payments",
-                      { ref_type: "subscription", ref_id: s.id, method: "cash", amount_vnd: amt },
+                      { ref_type: "subscription", ref_id: s.id, method: "cash", amount_vnd: s.due_vnd },
                       true,
                     );
                     toast.success(t("Payment recorded"));
-                    await load();
+                    reload();
                     if (res.invoice?.id) await openInvoice(res.invoice.id);
-                  } catch (e) {
-                    toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
-                  }
-                }}
+                  }, t("Something went wrong"))
+                }
               >
-                {t("Take payment")}
+                {t("Take payment · {amount}", { amount: money(s.due_vnd) })}
               </Button>
             ) : null}
             {/*
@@ -257,22 +312,21 @@ function Page() {
                 label={t("Pay online")}
                 size="md"
                 variant="outline"
-                onPaid={() => void load()}
+                onPaid={reload}
               />
             ) : null}
             {s.status === "active" ? (
               <Button
                 className="mt-2"
                 variant="outline"
-                onClick={async () => {
-                  try {
+                disabled={working}
+                onClick={() =>
+                  void act(async () => {
                     await apiPost(`/subscriptions/${s.id}/freeze`, { days: 7 });
                     toast.success(t("Frozen for 7 days — the end date moves out to match"));
-                    await load();
-                  } catch (e) {
-                    toast.error(e instanceof Error ? tServer(e.message) : t("Could not freeze the plan"));
-                  }
-                }}
+                    reload();
+                  }, t("Could not freeze the plan"))
+                }
               >
                 {t("Freeze for 7 days")}
               </Button>
@@ -280,15 +334,14 @@ function Page() {
             {s.status === "frozen" ? (
               <Button
                 className="mt-3"
-                onClick={async () => {
-                  try {
+                disabled={working}
+                onClick={() =>
+                  void act(async () => {
                     await apiPost(`/subscriptions/${s.id}/unfreeze`);
                     toast.success(t("Plan resumed"));
-                    await load();
-                  } catch (e) {
-                    toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
-                  }
-                }}
+                    reload();
+                  }, t("Something went wrong"))
+                }
               >
                 {t("Resume plan")}
               </Button>
@@ -301,25 +354,34 @@ function Page() {
       </Stagger>
 
       <SectionTitle text={t("Sell another plan")} className="mt-8 font-display text-2xl" />
-      <Reveal className="mt-3 flex flex-wrap gap-2">
-        {plans.map((p) => (
-          <Button
-            key={p.id}
-            variant="outline"
-            onClick={async () => {
-              try {
-                await apiPost("/subscriptions", { plan_id: p.id, user_id: id });
-                toast.success(t("Order created — take payment to activate"));
-                await load();
-              } catch (e) {
-                toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
+      {plansRead.error ? (
+        <div className="mt-3">
+          <LoadError message={plansRead.error.message} onRetry={plansRead.error.refused ? undefined : plansRead.reload} />
+        </div>
+      ) : !plansRead.data ? (
+        <Skeleton className="mt-3 h-11" />
+      ) : plansRead.data.items.length === 0 ? (
+        <p className="mt-3 text-sm text-muted">{t("No plans on sale right now")}</p>
+      ) : (
+        <Reveal className="mt-3 flex flex-wrap gap-2">
+          {plansRead.data.items.map((p) => (
+            <Button
+              key={p.id}
+              variant="outline"
+              disabled={working}
+              onClick={() =>
+                void act(async () => {
+                  await apiPost("/subscriptions", { plan_id: p.id, user_id: id });
+                  toast.success(t("Order created — take payment to activate"));
+                  reload();
+                }, t("Something went wrong"))
               }
-            }}
-          >
-            {p.name} · {money(p.price_vnd)}
-          </Button>
-        ))}
-      </Reveal>
+            >
+              {tData(p.name)} · {money(p.price_vnd)}
+            </Button>
+          ))}
+        </Reveal>
+      )}
 
       <SectionTitle text={t("Payments")} className="mt-8 font-display text-2xl" />
       <p className="mt-1 text-sm text-muted">
@@ -331,14 +393,14 @@ function Page() {
           return (
             <StaggerItem key={p.id}>
               <Card className="flex flex-wrap items-center gap-3 p-4">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1 basis-56">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium tabular-nums">{money(Math.abs(p.amount_vnd))}</span>
                     {isRefund ? <Badge tone="danger">{t("Refund")}</Badge> : null}
                     {p.status === "refund_pending" ? <Badge tone="hold">{t("Awaiting a manager")}</Badge> : null}
                     {p.status === "refund_rejected" ? <Badge tone="muted">{t("Rejected")}</Badge> : null}
                   </div>
-                  <p className="mt-1 truncate text-xs tabular-nums text-subtle">
+                  <p className="mt-1 break-words text-xs tabular-nums text-subtle">
                     {p.code} · {METHOD_LABEL[p.method] ? t(METHOD_LABEL[p.method]) : p.method} · {refTypeLabel(p.ref_type)} · {when(p.created_at)}
                   </p>
                 </div>
@@ -410,7 +472,9 @@ function Page() {
             />
           </Field>
           {editErr && !["full_name", "phone", "date_of_birth", "guardian_name", "guardian_phone"].includes(editErr.field ?? "") ? (
-            <p className="text-sm text-danger">{editErr.message}</p>
+            <p role="alert" className="text-sm text-danger">
+              {editErr.message}
+            </p>
           ) : null}
         </div>
       </Modal>
@@ -445,10 +509,12 @@ function Page() {
               })}
             </p>
             <Field label={t("Amount to refund")} hint={refundInvalid}>
-              <Input
-                inputMode="numeric"
+              <MoneyInput
                 value={refundAmount}
-                onChange={(e) => setRefundAmount(e.target.value)}
+                onChange={(v) => {
+                  setRefundAmount(v);
+                  setRefundErr("");
+                }}
                 aria-label={t("Amount to refund in dong")}
               />
             </Field>
@@ -465,6 +531,11 @@ function Page() {
                 {t("Above your limit this is parked for a manager instead of paid out — you will be told which happened.")}
               </p>
             ) : null}
+            {refundErr ? (
+              <p role="alert" className="text-sm text-danger">
+                {refundErr}
+              </p>
+            ) : null}
           </div>
         ) : null}
       </Modal>
@@ -473,32 +544,58 @@ function Page() {
       <Stagger className="mt-3 grid gap-2" gap={0.05}>
         {data.today.bookings.map((b) => (
           <StaggerItem key={b.id}>
-          <Card className="flex items-center justify-between p-4">
+          <Card className="flex flex-wrap items-center justify-between gap-2 p-4">
             <div>
               <p className="font-medium">
                 {b.court_code} · {when(b.start_at)}
               </p>
               <p className="text-xs text-subtle">
-                {b.code} · {b.status === "confirmed" ? t("Confirmed") : b.status}
+                {b.code} · {statusLabel(b.status)}
               </p>
+              {(b.status === "confirmed" || b.status === "in_use") && b.price_vnd > b.paid_vnd ? (
+                <p className="mt-1 text-xs font-medium text-danger">
+                  {t("Balance due at the desk: {amount}", { amount: money(b.price_vnd - b.paid_vnd) })}
+                </p>
+              ) : null}
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+            {(b.status === "confirmed" || b.status === "in_use") && b.price_vnd > b.paid_vnd ? (
+              <Button
+                variant="outline"
+                disabled={working}
+                onClick={() =>
+                  void act(async () => {
+                    await apiPost(`/bookings/${b.id}/collect-balance`, { method: "cash" });
+                    toast.success(t("Balance collected"));
+                    reload();
+                  }, t("Something went wrong"))
+                }
+              >
+                {t("Collect balance (cash)")}
+              </Button>
+            ) : null}
+            {b.status === "confirmed" ? (
+              <Button variant="outline" onClick={() => setCancelId(b.id)}>
+                {t("Cancel booking")}
+              </Button>
+            ) : null}
             {b.status === "confirmed" ? (
               <Button
-                onClick={async () => {
-                  try {
+                disabled={working}
+                onClick={() =>
+                  void act(async () => {
                     await apiPost(`/bookings/${b.id}/check-in`);
                     toast.success(t("Checked in — on court"));
-                    await load();
-                  } catch (e) {
-                    toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
-                  }
-                }}
+                    reload();
+                  }, t("Something went wrong"))
+                }
               >
                 {t("Check-in")}
               </Button>
             ) : (
               <StatusBadge status={b.status} />
             )}
+            </div>
           </Card>
           </StaggerItem>
         ))}
@@ -506,28 +603,28 @@ function Page() {
           <p className="text-sm text-muted">{t("No bookings today.")}</p>
         ) : null}
       </Stagger>
+      <CancelBookingDialog
+        staff
+        bookingId={cancelId}
+        open={cancelId !== null}
+        onClose={() => setCancelId(null)}
+        onDone={() => {
+          setCancelId(null);
+          reload();
+        }}
+      />
       <Modal
         open={resetStep !== "closed"}
-        onClose={() => {
-          setResetStep("closed");
-          setTempPassword("");
-        }}
+        onClose={closeReset}
         title={resetStep === "issued" ? t("Hand this over now") : t("Reset this member's password?")}
         footer={
           resetStep === "issued" ? (
             <div className="flex justify-end">
-              <Button
-                onClick={() => {
-                  setResetStep("closed");
-                  setTempPassword("");
-                }}
-              >
-                {t("Done")}
-              </Button>
+              <Button onClick={closeReset}>{t("Done")}</Button>
             </div>
           ) : (
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setResetStep("closed")}>
+              <Button variant="ghost" onClick={closeReset}>
                 {t("Cancel")}
               </Button>
               <Button disabled={resetBusy} onClick={() => void resetPassword()}>
@@ -552,9 +649,16 @@ function Page() {
             </dl>
           </div>
         ) : (
-          <p className="text-sm text-muted">
-            {t("Check the member's identity first. This replaces their password with a temporary one and signs them out everywhere.")}
-          </p>
+          <div className="grid gap-3">
+            <p className="text-sm text-muted">
+              {t("Check the member's identity first. This replaces their password with a temporary one and signs them out everywhere.")}
+            </p>
+            {resetErr ? (
+              <p role="alert" className="text-sm text-danger">
+                {resetErr}
+              </p>
+            ) : null}
+          </div>
         )}
       </Modal>
     </Shell>

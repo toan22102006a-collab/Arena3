@@ -3,10 +3,11 @@ import { Download, Eye, EyeOff, KeyRound, Receipt, UserRound } from "lucide-reac
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Guard, Shell, money, useSessionUser, when } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Field, Input, Label, Seg, Skeleton, Textarea } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, Label, LoadError, Seg, Skeleton, Textarea } from "@/components/ui";
 import { Lift, Stagger, StaggerItem } from "@/components/motion";
 import { SpotlightCard, StarBorder } from "@/components/fx";
 import {
+  ApiClientError,
   apiGet,
   apiPatch,
   apiPost,
@@ -84,6 +85,7 @@ function Profile({ user }: { user: SessionUser | null }) {
   const [form, setForm] = useState({ full_name: "", health_notes: "" });
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Seed from the cached session the moment it arrives, then let `/me` correct
   // it — the cached copy paints instantly, the server copy is authoritative.
@@ -95,16 +97,18 @@ function Profile({ user }: { user: SessionUser | null }) {
 
   async function save(e: FormEvent) {
     e.preventDefault();
+    setError(null);
     setBusy(true);
     try {
       const res = await apiPatch<{ user: SessionUser }>("/me", form);
+      // Rewriting the cached user is enough: the header listens for it and shows the new name at
+      // once. The page used to reload here, which threw away the "Saved." the person had just seen.
       setStoredUser(res.user);
+      setForm({ full_name: res.user.full_name, health_notes: res.user.health_notes ?? "" });
       toast.success(t("Saved."));
-      // The header reads the cached user once on mount, so a reload is the
-      // honest way to show the new name everywhere at once.
-      window.location.reload();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("Could not save your details"));
+      // Inline, not a toast: a toast fades in a few seconds and the form still has to be fixed.
+      setError(e instanceof Error ? e.message : t("Could not save your details"));
     } finally {
       setBusy(false);
     }
@@ -140,6 +144,11 @@ function Profile({ user }: { user: SessionUser | null }) {
                 onChange={(e) => setForm({ ...form, health_notes: e.target.value })}
               />
             </Field>
+            {error ? (
+              <p role="alert" className="text-sm text-danger">
+                {error}
+              </p>
+            ) : null}
             <div className="flex items-center gap-3 pt-1">
               <StarBorder speed={4}>
                 <Button type="submit" disabled={busy}>
@@ -170,7 +179,7 @@ function Profile({ user }: { user: SessionUser | null }) {
 function Row({ label, value, note, mono }: { label: string; value: string; note?: string; mono?: boolean }) {
   return (
     <div>
-      <dt className="text-2xs uppercase tracking-wider text-subtle">{label}</dt>
+      <dt className="text-2xs text-subtle">{label}</dt>
       <dd className={mono ? "mt-0.5 font-mono text-sm font-semibold tracking-wider" : "mt-0.5 text-sm"}>{value}</dd>
       {note ? <dd className="mt-1 text-xs text-subtle">{note}</dd> : null}
     </div>
@@ -181,6 +190,10 @@ function Security({ forced }: { forced: boolean }) {
   const [form, setForm] = useState({ current_password: "", new_password: "", confirm_password: "" });
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<{ message: string; field: string | null } | null>(null);
+  /** For an input: marked invalid, and tied to the message, when the server named it as the fault. */
+  const faulted = (name: string) =>
+    error?.field === name ? ({ "aria-invalid": true, "aria-describedby": "password-error" } as const) : {};
 
   const mismatch = form.confirm_password.length > 0 && form.confirm_password !== form.new_password;
   const tooWeak =
@@ -191,6 +204,7 @@ function Security({ forced }: { forced: boolean }) {
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!ready) return;
+    setError(null);
     setBusy(true);
     try {
       await apiPost("/me/password", form);
@@ -203,7 +217,12 @@ function Security({ forced }: { forced: boolean }) {
         window.location.assign(homeFor(u.role));
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("Could not change your password"));
+      // The usual cause is a wrong current password; say so beside the button, where it stays, and
+      // mark the box the server named.
+      setError({
+        message: e instanceof Error ? e.message : t("Could not change your password"),
+        field: e instanceof ApiClientError ? (e.body.field ?? null) : null,
+      });
     } finally {
       setBusy(false);
     }
@@ -231,6 +250,7 @@ function Security({ forced }: { forced: boolean }) {
               autoComplete="current-password"
               value={form.current_password}
               onChange={(e) => setForm({ ...form, current_password: e.target.value })}
+              {...faulted("current_password")}
             />
           </Field>
           <Field
@@ -245,10 +265,12 @@ function Security({ forced }: { forced: boolean }) {
                 className="pr-12"
                 value={form.new_password}
                 onChange={(e) => setForm({ ...form, new_password: e.target.value })}
+                {...faulted("new_password")}
+                aria-invalid={tooWeak || error?.field === "new_password" ? true : undefined}
               />
               <button
                 type="button"
-                className="absolute right-1 top-1 grid size-9 place-items-center text-muted hover:text-fg"
+                className="absolute right-0 top-0 grid size-11 place-items-center text-muted hover:text-fg"
                 onClick={() => setShow((v) => !v)}
                 aria-label={show ? t("Hide passwords") : t("Show passwords")}
               >
@@ -266,8 +288,15 @@ function Security({ forced }: { forced: boolean }) {
               autoComplete="new-password"
               value={form.confirm_password}
               onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
+              {...faulted("confirm_password")}
+              aria-invalid={mismatch || error?.field === "confirm_password" ? true : undefined}
             />
           </Field>
+          {error ? (
+            <p id="password-error" role="alert" className="text-sm text-danger">
+              {error.message}
+            </p>
+          ) : null}
           <div className="pt-1">
             <Button type="submit" disabled={busy || !ready}>
               {busy ? t("Changing…") : t("Change password")}
@@ -301,28 +330,38 @@ function Support() {
   const [items, setItems] = useState<Ticket[] | null>(null);
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function load() {
     const r = await apiGet<{ items: Ticket[] }>("/tickets/mine");
     setItems(r.items);
+    setLoadError(null);
   }
 
-  useEffect(() => {
-    void load().catch((e) => toast.error(e instanceof Error ? e.message : t("Could not load your requests")));
-  }, []);
+  function loadAgain() {
+    setLoadError(null);
+    void load().catch((e) => setLoadError(e instanceof Error ? e.message : t("Could not load your requests")));
+  }
+
+  useEffect(loadAgain, []);
 
   async function send(e: FormEvent) {
     e.preventDefault();
     const text = body.trim();
     if (text.length < 2 || busy) return;
+    setError(null);
     setBusy(true);
     try {
       await apiPost("/tickets", { body: text });
       setBody("");
-      await load();
       toast.success(t("Sent to the front desk"));
+      // The list is asked for again on its own: if that fails it says so beside the list, and never
+      // claims the message was not sent when it was.
+      loadAgain();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("Could not send that"));
+      // The message the person typed stays in the box, and the reason stays on screen beside it.
+      setError(e instanceof Error ? e.message : t("Could not send that"));
     } finally {
       setBusy(false);
     }
@@ -343,10 +382,16 @@ function Support() {
               rows={3}
               maxLength={2000}
               value={body}
+              aria-describedby={error ? "support-error" : undefined}
               onChange={(e) => setBody(e.target.value)}
               placeholder={t("The lights over BC2 have been out since Tuesday…")}
             />
           </Field>
+          {error ? (
+            <p id="support-error" role="alert" className="text-sm text-danger">
+              {error}
+            </p>
+          ) : null}
           <div>
             <StarBorder>
               <Button type="submit" disabled={busy || body.trim().length < 2}>
@@ -357,10 +402,14 @@ function Support() {
         </form>
       </Card>
 
+      {loadError ? <LoadError message={loadError} onRetry={loadAgain} /> : null}
       {!items ? (
-        <Skeleton className="h-24" />
+        loadError ? null : <Skeleton className="h-24" />
       ) : items.length === 0 ? (
-        <EmptyState title={t("Nothing asked yet")} hint={t("Anything you send the desk will be kept here with its reply.")} />
+        // Not while the list could not be refreshed: "nothing asked yet" would be a guess.
+        loadError ? null : (
+          <EmptyState title={t("Nothing asked yet")} hint={t("Anything you send the desk will be kept here with its reply.")} />
+        )
       ) : (
         <Stagger className="grid gap-2.5" gap={0.05}>
           {items.map((tix) => (
@@ -400,14 +449,19 @@ function Support() {
 function Receipts() {
   const [items, setItems] = useState<Invoice[] | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
+  function load() {
+    setLoadError(null);
     void apiGet<{ items: Invoice[] }>("/invoices")
       .then((r) => setItems(r.items))
-      .catch((e) => toast.error(e instanceof Error ? e.message : t("Could not load your receipts")));
-  }, []);
+      .catch((e) => setLoadError(e instanceof Error ? e.message : t("Could not load your receipts")));
+  }
+
+  useEffect(load, []);
 
   if (!items) {
+    if (loadError) return <LoadError message={loadError} onRetry={load} />;
     return (
       <div className="grid gap-2">
         <Skeleton className="h-20" />

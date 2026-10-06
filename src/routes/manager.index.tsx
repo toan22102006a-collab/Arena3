@@ -1,5 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Banknote, Clock, Hourglass, Layers, PiggyBank, TrendingUp, Undo2, Wallet } from "lucide-react";
+import {
+  Banknote,
+  Clock,
+  FileText,
+  HandCoins,
+  Hourglass,
+  Layers,
+  PiggyBank,
+  Repeat,
+  Settings,
+  Tag,
+  Ticket,
+  TrendingUp,
+  Undo2,
+  Wallet,
+  Wrench,
+} from "lucide-react";
 import { CardTitle } from "@/components/section";
 import { useEffect, useState } from "react";
 import {
@@ -13,17 +29,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { toast } from "sonner";
 import { CourtGrid, type Court, type OccSlot } from "@/components/court-grid";
 import { Cover, MediaCaption, media } from "@/components/media";
 import { Shell, money, when } from "@/components/shell";
 import { CapacityPanel, ExportButtons, MembersPanel } from "@/components/report-panels";
-import { Button, Card, DateField, Select, Seg, Skeleton, Stat, type Trend } from "@/components/ui";
+import { Button, ButtonLink, Card, DateField, LoadError, Select, Seg, Skeleton, Stat, type Trend } from "@/components/ui";
 import { CountUp, Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
 import { GLBackground, GlareHover, SplitText, SpotlightCard } from "@/components/fx";
-import { apiGet } from "@/lib/arena3/client";
-import { t, tServer } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import { addDaysISO, formatDate, methodLabel, sourceLabel, todayISO } from "@/lib/arena3/labels";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/manager/")({
   component: Page,
@@ -99,7 +114,7 @@ const TOOLTIP = {
     borderRadius: 12,
     fontSize: 12,
   },
-  labelStyle: { color: "var(--color-muted)", fontSize: 11 },
+  labelStyle: { color: "var(--color-muted)", fontSize: 12 },
 } as const;
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
@@ -120,11 +135,25 @@ function Page() {
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
   const [period, setPeriod] = useState("today");
-  const [rev, setRev] = useState<Rev | null>(null);
-  const [prev, setPrev] = useState<Pick<Rev, "from" | "to" | "totals" | "by_source"> | null>(null);
   const [method, setMethod] = useState("");
-  const [occ, setOcc] = useState<Occ | null>(null);
-  const [map, setMap] = useState<{ courts: Court[]; slots: OccSlot[] } | null>(null);
+  // The server returns the previous window of the same length alongside, with
+  // the same method filter, so the comparison is always like for like.
+  const revRead = useRead<Rev>(`/reports/revenue?from=${from}&to=${to}${method ? `&method=${method}` : ""}`);
+  // Court usage and the map are about the last day of the window only, so a window the server
+  // refuses leaves them standing.
+  const occRead = useRead<Occ>(`/reports/occupancy?date=${to}`);
+  const mapRead = useRead<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${to}`);
+  const rev = revRead.data;
+  const prev = rev?.prev ?? null;
+  const occ = occRead.data;
+  const map = mapRead.data;
+  // A window the server refuses (backwards, far too long) is said once, where the numbers would
+  // be, with the date box it is about marked. Asking again gets the same words, so there is no
+  // "Try again", and nothing counted from the window is shown as if it were zero.
+  const revError = revRead.error;
+  const refused = revError?.refused === true;
+  const faulty = (f: "from" | "to") => refused && (revError?.field ? revError.field === f : true);
+  const dayError = occRead.error ?? mapRead.error;
   const [chartReady, setChartReady] = useState(false);
   useEffect(() => setChartReady(true), []);
 
@@ -141,25 +170,6 @@ function Page() {
       setTo(today);
     }
   }
-
-  async function load() {
-    const methodQ = method ? `&method=${method}` : "";
-    // The server returns the previous window of the same length alongside, with
-    // the same method filter, so the comparison is always like for like.
-    const [r, o, m] = await Promise.all([
-      apiGet<Rev>(`/reports/revenue?from=${from}&to=${to}${methodQ}`),
-      apiGet<Occ>(`/reports/occupancy?date=${to}`),
-      apiGet<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${to}`),
-    ]);
-    setRev(r);
-    setPrev(r.prev ?? null);
-    setOcc(o);
-    setMap(m);
-  }
-  useEffect(() => {
-    void load().catch((e) => toast.error(tServer(e.message)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, method]);
 
   const chartData = Object.entries(rev?.by_method ?? {}).map(([k, v]) => ({
     name: methodLabel(k),
@@ -187,7 +197,7 @@ function Page() {
         variant="dotgrid"
         position="fixed"
         className="-z-[1]"
-        color="#1f5c43"
+        color="#1e4fd8"
         gap={32}
         dot={1.5}
         radius={130}
@@ -200,6 +210,27 @@ function Page() {
           </MediaCaption>
         </Cover>
       </GlareHover>
+      {/* Everything the manager runs besides the numbers. Phones reach the same pages from the
+          bottom bar's More sheet, so the strip is for screens with room for it. */}
+      <nav aria-label={t("Quick links")} className="mb-5 hidden flex-wrap gap-2 md:flex">
+        {(
+          [
+            { to: "/manager/plans", label: t("Plans"), Icon: Wallet },
+            { to: "/manager/promos", label: t("Promos"), Icon: Tag },
+            { to: "/manager/prices", label: t("Pricing"), Icon: Settings },
+            { to: "/desk/series", label: t("Fixed bookings"), Icon: Repeat },
+            { to: "/desk/day-passes", label: t("Day passes"), Icon: Ticket },
+            { to: "/manager/commission", label: t("Commission"), Icon: HandCoins },
+            { to: "/manager/invoices", label: t("E-invoices"), Icon: FileText },
+            { to: "/desk/maintenance", label: t("Maintenance"), Icon: Wrench },
+          ] as const
+        ).map((a) => (
+          <ButtonLink key={a.to} to={a.to} variant="outline" size="sm">
+            <a.Icon aria-hidden="true" className="size-4 text-muted" strokeWidth={1.75} />
+            {a.label}
+          </ButtonLink>
+        ))}
+      </nav>
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <Seg
           value={period}
@@ -213,27 +244,35 @@ function Page() {
         />
       {period === "custom" ? (
         <>
-        <span className="text-2xs uppercase tracking-wider text-muted">{t("From")}</span>
+        <span className="text-2xs text-muted">{t("From")}</span>
         <DateField
+          required
           value={from}
+          max={to}
           onChange={(v) => {
             setPeriod("custom");
             setFrom(v);
           }}
+          invalid={faulty("from")}
+          aria-describedby={faulty("from") ? "report-error" : undefined}
           aria-label={t("From date")}
         />
-        <span className="text-2xs uppercase tracking-wider text-muted">{t("To")}</span>
+        <span className="text-2xs text-muted">{t("To")}</span>
         <DateField
+          required
           value={to}
+          min={from}
           onChange={(v) => {
             setPeriod("custom");
             setTo(v);
           }}
+          invalid={faulty("to")}
+          aria-describedby={faulty("to") ? "report-error" : undefined}
           aria-label={t("To date")}
         />
         </>
       ) : null}
-        <div className="w-40">
+        <div className="w-full min-w-0 sm:w-52">
           <Select aria-label={t("Payment method")} value={method} onChange={(e) => setMethod(e.target.value)}>
             <option value="">{t("All methods")}</option>
             {["cash", "transfer", "card", "gateway", "quota"].map((m) => (
@@ -243,12 +282,13 @@ function Page() {
             ))}
           </Select>
         </div>
-        <ExportButtons kind="revenue" from={from} to={to} extra={{ method }} />
+        <ExportButtons kind="revenue" from={from} to={to} extra={{ method }} disabled={refused} />
         <Button
           variant="outline"
           size="sm"
+          disabled={!rev}
           onClick={() => {
-            if (!rev || !occ) return;
+            if (!rev) return;
             downloadCsv(`arena3-report-${from}_${to}.csv`, [
               [t("From"), formatDate(from), t("To"), formatDate(to)],
               [
@@ -267,14 +307,16 @@ function Page() {
               ...Object.entries(rev.by_source).map(([k, v]) => [sourceLabel(k), v]),
               [],
               [t("Court"), t("Minutes"), "%"],
-              ...(occ.items ?? []).map((c) => [c.court_code, c.minutes, c.pct]),
+              ...(occ?.items ?? []).map((c) => [c.court_code, c.minutes, c.pct]),
             ]);
           }}
         >
           {t("Export CSV")}
         </Button>
       </div>
-      {!rev ? (
+      {revError ? (
+        <LoadError id="report-error" message={revError.message} onRetry={refused ? undefined : revRead.reload} />
+      ) : !rev ? (
         <div className="grid gap-3 md:grid-cols-3">
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
@@ -330,13 +372,13 @@ function Page() {
                       <CartesianGrid vertical={false} stroke="var(--color-line)" strokeDasharray="2 4" />
                       <XAxis
                         dataKey="day"
-                        tick={{ fontSize: 11 }}
+                        tick={{ fontSize: 12 }}
                         stroke="var(--color-muted)"
                         tickLine={false}
                         minTickGap={16}
                       />
                       <YAxis
-                        tick={{ fontSize: 11 }}
+                        tick={{ fontSize: 12 }}
                         stroke="var(--color-muted)"
                         tickLine={false}
                         axisLine={false}
@@ -365,6 +407,11 @@ function Page() {
         </Reveal>
       ) : null}
 
+      {/* Counted from the window: until it has answered (or when it was refused) these say nothing,
+          rather than "Nothing recorded yet." about a period that was never read. */}
+      {!rev ? (
+        revError ? null : <Skeleton className="mt-6 h-52" />
+      ) : (
       <Reveal className="mt-6 grid gap-3 md:grid-cols-2">
         <SpotlightCard className="rounded-[var(--radius-xl)]" size={380} strength={0.09}>
         <Card className="relative z-[2] h-full">
@@ -374,9 +421,9 @@ function Page() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid vertical={false} stroke="var(--color-line)" strokeDasharray="2 4" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="var(--color-muted)" tickLine={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="var(--color-muted)" tickLine={false} />
                   <YAxis
-                    tick={{ fontSize: 11 }}
+                    tick={{ fontSize: 12 }}
                     stroke="var(--color-muted)"
                     tickLine={false}
                     axisLine={false}
@@ -409,7 +456,7 @@ function Page() {
                   <CartesianGrid horizontal={false} stroke="var(--color-line)" strokeDasharray="2 4" />
                   <XAxis
                     type="number"
-                    tick={{ fontSize: 11 }}
+                    tick={{ fontSize: 12 }}
                     stroke="var(--color-muted)"
                     tickLine={false}
                     axisLine={false}
@@ -418,7 +465,7 @@ function Page() {
                   <YAxis
                     type="category"
                     dataKey="name"
-                    tick={{ fontSize: 11 }}
+                    tick={{ fontSize: 12 }}
                     stroke="var(--color-muted)"
                     tickLine={false}
                     axisLine={false}
@@ -435,6 +482,7 @@ function Page() {
         </Card>
         </SpotlightCard>
       </Reveal>
+      )}
 
       {rev ? (
         <Reveal className="mt-6 grid gap-3 md:grid-cols-2">
@@ -442,7 +490,7 @@ function Page() {
             <CardTitle icon={PiggyBank} title={t("Where the money came from")} hint={t("The same revenue split by what was sold, with refunds shown.")} />
             {Object.keys(rev.by_source).length || Object.keys(rev.refunds_by_source ?? {}).length ? (
               <table className="mt-3 w-full text-sm">
-                <thead className="text-left text-2xs uppercase tracking-wider text-muted">
+                <thead className="text-left text-2xs text-muted">
                   <tr>
                     <th className="pb-1 font-medium">{t("Source")}</th>
                     <th className="pb-1 text-right font-medium">{t("Taken")}</th>
@@ -472,7 +520,7 @@ function Page() {
             <CardTitle icon={Clock} title={t("By cashier shift")} hint={t("Takings for each shift a cashier opened at the desk.")} />
             {rev.by_shift?.length ? (
               <table className="mt-3 w-full text-sm">
-                <thead className="text-left text-2xs uppercase tracking-wider text-muted">
+                <thead className="text-left text-2xs text-muted">
                   <tr>
                     <th className="pb-1 font-medium">{t("Shift")}</th>
                     <th className="pb-1 text-right font-medium">{t("Taken")}</th>
@@ -508,14 +556,36 @@ function Page() {
         </Reveal>
       ) : null}
 
-      <CapacityPanel from={from} to={to} />
-      <MembersPanel from={from} to={to} />
+      {/* These two ask for the same window, so a refusal is already said above. */}
+      {refused ? null : (
+        <>
+          <CapacityPanel from={from} to={to} />
+          <MembersPanel from={from} to={to} />
+        </>
+      )}
 
       <SplitText
         as="h2"
         text={t("Court usage · {date}", { date: formatDate(to) })}
         className="mt-8 font-display text-2xl"
       />
+      {dayError ? (
+        <div className="mt-3">
+          <LoadError
+            message={dayError.message}
+            onRetry={
+              dayError.refused
+                ? undefined
+                : () => {
+                    occRead.reload();
+                    mapRead.reload();
+                  }
+            }
+          />
+        </div>
+      ) : (
+        <>
+      {!occ ? <Skeleton className="mt-3 h-24" /> : null}
       <Stagger className="mt-3 grid gap-2 md:grid-cols-2" gap={0.05}>
         {(occ?.items ?? []).map((c) => (
           <StaggerItem key={c.court_code}>
@@ -545,6 +615,8 @@ function Page() {
         </div>
       ) : (
         <Skeleton className="mt-4 h-64" />
+      )}
+        </>
       )}
     </Shell>
   );

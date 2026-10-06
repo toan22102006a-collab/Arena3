@@ -8,10 +8,14 @@ import {
   DoorOpen,
   Dumbbell,
   Ellipsis,
+  FileText,
+  HandCoins,
   LayoutGrid,
   LogOut,
   Map,
   QrCode,
+  Repeat,
+  Star,
   ScrollText,
   Settings,
   Tag,
@@ -20,8 +24,9 @@ import {
   UserMinus,
   Users,
   Wallet,
+  Wrench,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type FocusEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { ArenaMark, AssistantMark } from "./mark";
 import { AnimatePresence, PageIn, motion } from "./motion";
 import { GradualBlur } from "./fx";
@@ -34,16 +39,23 @@ import {
   getStoredUser,
   getToken,
   homeFor,
+  onStoredUserChange,
   type SessionUser,
 } from "@/lib/arena3/client";
 import { roleLabel } from "@/lib/arena3/labels";
 import { locale, t, tk } from "@/lib/i18n";
+import { CalmToggle } from "./calm-toggle";
+import { ConnectionBanner } from "./connection-banner";
 import { LangSwitch } from "./lang-switch";
+import { useDialog } from "./ui";
 
 export function useSessionUser(): SessionUser | null {
   const [u, setU] = useState<SessionUser | null>(null);
   useEffect(() => {
     setU(getStoredUser());
+    // A profile edit rewrites the cached copy; follow it so the header shows the new name without
+    // reloading the page (a reload also threw away the "Saved" the person had just been shown).
+    return onStoredUserChange(() => setU(getStoredUser()));
   }, []);
   return u;
 }
@@ -62,24 +74,31 @@ const NAV: Record<string, NavItem[]> = {
     { to: "/app/classes", label: tk("Classes"), icon: Ticket },
     { to: "/app/train", label: tk("Progress"), icon: Activity },
     { to: "/app/plans", label: tk("Plans"), icon: Wallet },
+    { to: "/app/points", label: tk("Points"), icon: Star, dock: false },
     { to: "/app/pass", label: tk("Pass"), icon: QrCode },
   ],
   receptionist: [
     { to: "/desk", label: tk("Desk"), icon: Users },
     { to: "/desk/gate", label: tk("Gate"), icon: DoorOpen },
     { to: "/desk/courts", label: tk("Courts"), icon: Map, dock: false },
-    { to: "/desk/classes", label: tk("Classes"), icon: Ticket, dock: false },
+    { to: "/desk/classes", label: tk("Classes"), icon: Ticket, more: true, dock: false },
     { to: "/desk/payments", label: tk("Payments"), icon: Wallet },
+    // Selling a day pass and setting up a regular booking are front-desk jobs done every day, so
+    // they come before the retention list. The row shows as many tabs as fit, in this order.
+    { to: "/desk/day-passes", label: tk("Day passes"), icon: Ticket, dock: false },
+    { to: "/desk/series", label: tk("Fixed bookings"), icon: Repeat, dock: false },
     { to: "/desk/at-risk", label: tk("At risk"), icon: UserMinus },
     // `/desk/gear` is a complete equipment-hire screen that nothing linked to,
     // so reception could only reach it by typing the URL.
-    { to: "/desk/gear", label: tk("Gear"), icon: Dumbbell, dock: false },
+    { to: "/desk/gear", label: tk("Gear"), icon: Dumbbell, more: true, dock: false },
+    { to: "/desk/maintenance", label: tk("Maintenance"), icon: Wrench, more: true, dock: false },
   ],
   // The coach had one tab, which `showNav` hides, so the screen had no menu at
   // all (B-10). Schedule, register and profile are three different jobs.
   coach: [
     { to: "/coach", label: tk("Schedule"), icon: CalendarDays },
     { to: "/coach/attendance", label: tk("Attendance"), icon: ClipboardList },
+    { to: "/coach/earnings", label: tk("Earnings"), icon: HandCoins },
     { to: "/account", label: tk("Profile"), icon: UserCog },
   ],
   manager: [
@@ -94,6 +113,11 @@ const NAV: Record<string, NavItem[]> = {
     { to: "/desk/payments", label: tk("Payments"), icon: Wallet },
     { to: "/manager/staff", label: tk("Staff"), icon: UserCog, dock: false },
     { to: "/manager/prices", label: tk("Pricing"), icon: Settings, more: true, dock: false },
+    { to: "/desk/series", label: tk("Fixed bookings"), icon: Repeat, more: true, dock: false },
+    { to: "/desk/day-passes", label: tk("Day passes"), icon: Ticket, more: true, dock: false },
+    { to: "/manager/commission", label: tk("Commission"), icon: HandCoins, more: true, dock: false },
+    { to: "/manager/invoices", label: tk("E-invoices"), icon: FileText, more: true, dock: false },
+    { to: "/desk/maintenance", label: tk("Maintenance"), icon: Wrench, more: true, dock: false },
     { to: "/manager/audit", label: tk("Audit"), icon: ScrollText, more: true, dock: false },
     { to: "/manager/settings", label: tk("Settings"), icon: Settings, more: true, dock: false },
   ],
@@ -131,7 +155,7 @@ function NotificationBell({ active, to }: { active: boolean; to: string }) {
   const [unread, setUnread] = useState(0);
   useEffect(() => {
     let live = true;
-    void apiGet<{ unread: number }>("/me/notifications")
+    void apiGet<{ unread: number }>("/me/notifications", { background: true })
       .then((r) => live && setUnread(r.unread))
       .catch(() => {
         // The bell is a convenience; a failed count must not break the header.
@@ -151,12 +175,49 @@ function NotificationBell({ active, to }: { active: boolean; to: string }) {
     >
       <Bell className="size-4" strokeWidth={1.9} />
       {unread ? (
-        <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-danger px-1 text-[0.625rem] font-bold leading-4 text-white tabular-nums">
+        <span className="absolute right-0 top-0 grid min-w-5 place-items-center rounded-full bg-danger px-1 text-xs font-bold leading-5 text-white tabular-nums">
           {unread > 9 ? "9+" : unread}
         </span>
       ) : null}
     </Link>
   );
+}
+
+/**
+ * Open/close state shared by the header's two drop-downs. They are disclosure widgets (a button
+ * that reveals a list of links), not ARIA menus, which would promise arrow-key navigation we do
+ * not provide. So it is a plain list of links: Tab walks through it, Escape closes it and hands
+ * focus back to the button, and tabbing out of it closes it instead of leaving it hanging open.
+ */
+function useDropdown() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      button.current?.focus();
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  // Only a Tab that lands somewhere else counts: some browsers report no target when a mouse
+  // press moves focus onto a link, and closing then would swallow the click.
+  const onBlur = (e: FocusEvent<HTMLDivElement>) => {
+    const next = e.relatedTarget;
+    if (open && next instanceof Node && !e.currentTarget.contains(next)) setOpen(false);
+  };
+  return { open, setOpen, ref, button, panelId, onBlur };
 }
 
 /** Avatar button that opens the account menu. */
@@ -172,81 +233,70 @@ function AccountMenu({
   onLogout: () => void;
   compact?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Any click outside, or Escape, closes it — the two things every menu on the
-  // web does, and the two things people try first.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const { open, setOpen, ref, button, panelId, onBlur } = useDropdown();
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} onBlur={onBlur} className="relative">
       <button
+        ref={button}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
         className="flex items-center gap-2 rounded-[var(--radius-pill)] py-1 pl-1 pr-1 transition-colors duration-150 hover:bg-wood sm:pr-3"
         aria-label={t("Account menu — {name}", { name: user?.full_name ?? "" })}
       >
         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-xs font-bold tracking-wide text-accent-fg">
           {initials(user?.full_name)}
         </span>
-        <span className={cn("hidden text-left", compact ? "" : "sm:block")}>
+        <span className={cn("hidden text-left", compact ? "" : "xl:block")}>
           <span className="block max-w-[10rem] truncate text-sm font-medium leading-tight">{user?.full_name ?? "—"}</span>
           <span className="kicker text-2xs text-muted">{roleLabel(role)}</span>
         </span>
-        <ChevronDown className={cn("hidden size-4 text-muted transition-transform duration-200 sm:block", open && "rotate-180")} />
+        <ChevronDown aria-hidden="true" className={cn("hidden size-4 text-muted transition-transform duration-200 sm:block", open && "rotate-180")} />
       </button>
       <AnimatePresence>
         {open ? (
           <motion.div
-            role="menu"
+            id={panelId}
             initial={{ opacity: 0, y: -6, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
             className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-56 origin-top-right overflow-hidden rounded-[var(--radius-lg)] border border-line bg-surface p-1.5 shadow-[0_24px_50px_-28px_rgba(20,28,18,0.8)]"
           >
-            <div className={cn("border-b border-line/70 px-3 pb-2.5 pt-2", compact ? "" : "sm:hidden")}>
+            <div className={cn("border-b border-line/70 px-3 pb-2.5 pt-2", compact ? "" : "xl:hidden")}>
               <p className="truncate text-sm font-medium">{user?.full_name ?? "—"}</p>
               <p className="kicker text-2xs text-muted">{roleLabel(role)}</p>
             </div>
-            <Link
-              to="/account"
-              role="menuitem"
-              onClick={() => setOpen(false)}
-              className="flex min-h-11 items-center gap-2.5 rounded-[var(--radius-sm)] px-3 text-sm transition-colors duration-150 hover:bg-wood"
-            >
-              <UserCog className="size-4 text-muted" strokeWidth={1.75} />
-              {t("Account settings")}
-            </Link>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onLogout();
-              }}
-              className="flex min-h-11 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 text-left text-sm text-danger transition-colors duration-150 hover:bg-danger/10"
-            >
-              <LogOut className="size-4" strokeWidth={1.75} />
-              {t("Sign out")}
-            </button>
+            <ul>
+              <li>
+                <Link
+                  to="/account"
+                  onClick={() => setOpen(false)}
+                  className="flex min-h-11 items-center gap-2.5 rounded-[var(--radius-sm)] px-3 text-sm transition-colors duration-150 hover:bg-wood"
+                >
+                  <UserCog aria-hidden="true" className="size-4 text-muted" strokeWidth={1.75} />
+                  {t("Account settings")}
+                </Link>
+              </li>
+              <li>
+                <CalmToggle row />
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    onLogout();
+                  }}
+                  className="flex min-h-11 w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 text-left text-sm text-danger transition-colors duration-150 hover:bg-danger/10"
+                >
+                  <LogOut aria-hidden="true" className="size-4" strokeWidth={1.75} />
+                  {t("Sign out")}
+                </button>
+              </li>
+            </ul>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -254,62 +304,106 @@ function AccountMenu({
   );
 }
 
+/** Shape of a header tab; the real tab and its invisible twin (see `useFittingTabs`) must agree on it. */
+const tabShape = (dense: boolean) =>
+  cn(dense ? "px-2.5" : "px-3.5", "relative flex h-9 items-center gap-2 whitespace-nowrap rounded-[var(--radius-md)] text-sm font-medium");
+const MORE_SHAPE = "flex h-9 items-center gap-2 whitespace-nowrap rounded-[var(--radius-md)] px-3.5 text-sm font-medium";
+/** Gap between header tabs, in px (`gap-1`). */
+const TAB_GAP = 4;
+
+/**
+ * How many of the header tabs fit beside the logo and the buttons on the right; the rest go under
+ * "More", so the row never runs off the edge whatever the screen width, zoom level or language
+ * (Vietnamese labels are wider than English ones). No guessed breakpoints: an invisible twin of
+ * every tab, and of "More", is measured and the real widths are added up. The nav that holds the
+ * tabs is `flex-1`, so its width does not depend on what is in it and this cannot loop.
+ */
+function useFittingTabs(count: number, staticMore: boolean) {
+  const box = useRef<HTMLElement>(null);
+  const ruler = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(count);
+  const measure = useRef<() => void>(() => undefined);
+  measure.current = () => {
+    const nav = box.current;
+    const twin = ruler.current;
+    if (!nav || !twin) return;
+    const room = nav.clientWidth;
+    // On a phone the row is display:none; keep the last answer rather than collapsing to nothing.
+    if (room === 0) return;
+    const w = [...twin.children].map((c) => c.getBoundingClientRect().width);
+    const moreW = w.pop() ?? 0;
+    let used = 0;
+    let k = 0;
+    for (; k < count; k++) {
+      const next = used + (k ? TAB_GAP : 0) + (w[k] ?? 0);
+      // Anything left over (or a tab that always lives under "More") needs the button's room too.
+      const reserve = k + 1 < count || staticMore ? TAB_GAP + moreW : 0;
+      if (next + reserve > room) break;
+      used = next;
+    }
+    setFit(k);
+  };
+  // After every render: a language switch changes the label widths.
+  useLayoutEffect(() => measure.current());
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const run = () => measure.current();
+    const ro = new ResizeObserver(run);
+    ro.observe(el);
+    // The web font arrives after first paint and changes every width.
+    void document.fonts?.ready.then(run);
+    return () => ro.disconnect();
+  }, []);
+  return { box, ruler, fit: Math.min(fit, count) };
+}
+
 /** Desktop: the tabs that did not fit in the row live under one "More" button. */
 function MoreMenu({ items, pathname, all }: { items: NavItem[]; pathname: string; all: NavItem[] }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [open]);
+  const { open, setOpen, ref, button, panelId, onBlur } = useDropdown();
   // The button lights up when the page you are on is one of the hidden tabs.
   const inside = items.some((it) => navActive(pathname, it.to, all));
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} onBlur={onBlur} className="relative">
       <button
+        ref={button}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
         className={cn(
-          "flex h-9 items-center gap-2 whitespace-nowrap rounded-[var(--radius-pill)] px-3.5 text-xs font-semibold uppercase tracking-[0.1em] transition-colors duration-200",
-          inside ? "bg-accent text-accent-fg shadow-[var(--shadow-accent)]" : "text-muted hover:bg-wood hover:text-fg",
+          MORE_SHAPE,
+          "transition-colors duration-150",
+          inside ? "bg-accent/10 text-accent-2" : "text-muted hover:bg-wood hover:text-fg",
         )}
       >
-        <Ellipsis className="size-4" strokeWidth={1.75} />
+        <Ellipsis aria-hidden="true" className="size-4" strokeWidth={1.75} />
         {t("More")}
-        <ChevronDown className={cn("size-3.5 transition-transform duration-200", open && "rotate-180")} />
+        <ChevronDown aria-hidden="true" className={cn("size-3.5 transition-transform duration-200", open && "rotate-180")} />
       </button>
       {open ? (
-        <div role="menu" className="absolute left-0 top-[calc(100%+0.5rem)] z-30 w-52 rounded-[var(--radius-lg)] border border-line bg-surface p-1.5 shadow-[0_24px_50px_-28px_rgba(20,28,18,0.8)]">
+        <ul id={panelId} className="absolute left-0 top-[calc(100%+0.5rem)] z-30 w-52 rounded-[var(--radius-lg)] border border-line bg-surface p-1.5 shadow-[0_24px_50px_-28px_rgba(20,28,18,0.8)]">
           {items.map((it) => {
             const Icon = it.icon;
+            const active = navActive(pathname, it.to, all);
             return (
-              <Link
-                key={it.to}
-                to={it.to}
-                role="menuitem"
-                onClick={() => setOpen(false)}
-                className={cn(
-                  "flex min-h-11 items-center gap-2.5 rounded-[var(--radius-sm)] px-3 text-sm transition-colors duration-150 hover:bg-wood",
-                  navActive(pathname, it.to, all) && "bg-wood font-semibold",
-                )}
-              >
-                <Icon className="size-4 text-muted" strokeWidth={1.75} />
-                {t(it.label)}
-              </Link>
+              <li key={it.to}>
+                <Link
+                  to={it.to}
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => setOpen(false)}
+                  className={cn(
+                    "flex min-h-11 items-center gap-2.5 rounded-[var(--radius-sm)] px-3 text-sm transition-colors duration-150 hover:bg-wood",
+                    active && "bg-wood font-semibold",
+                  )}
+                >
+                  <Icon aria-hidden="true" className="size-4 text-muted" strokeWidth={1.75} />
+                  {t(it.label)}
+                </Link>
+              </li>
             );
           })}
-        </div>
+        </ul>
       ) : null}
     </div>
   );
@@ -329,38 +423,44 @@ function MoreSheet({
   open: boolean;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", esc);
-    return () => window.removeEventListener("keydown", esc);
-  }, [open, onClose]);
+  const panel = useRef<HTMLDivElement>(null);
+  // Focus moves into the sheet, Tab stays in it, Escape closes it, focus returns to "More".
+  useDialog(open, panel, onClose);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label={t("More pages")}>
-      <button type="button" aria-label={t("Close")} className="absolute inset-0 bg-fg/40 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="absolute inset-x-0 bottom-0 rounded-t-[var(--radius-xl)] bg-surface p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[var(--shadow-soft)]">
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line-strong/60" />
-        <div className="grid grid-cols-3 gap-2">
+    <div className="fixed inset-0 z-40 lg:hidden">
+      <div role="presentation" aria-hidden="true" className="absolute inset-0 bg-fg/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("More pages")}
+        tabIndex={-1}
+        className="absolute inset-x-0 bottom-0 rounded-t-[var(--radius-xl)] bg-surface p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[var(--shadow-soft)] outline-none"
+      >
+        <div aria-hidden="true" className="mx-auto mb-3 h-1 w-10 rounded-full bg-line-strong/60" />
+        <ul className="grid grid-cols-3 gap-2">
           {items.map((it) => {
             const Icon = it.icon;
             const active = navActive(pathname, it.to, all);
             return (
-              <Link
-                key={it.to}
-                to={it.to}
-                onClick={onClose}
-                className={cn(
-                  "flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-[var(--radius-lg)] text-xs font-medium transition-colors duration-150",
-                  active ? "bg-accent text-accent-fg" : "bg-wood text-fg",
-                )}
-              >
-                <Icon className="size-5" strokeWidth={1.75} />
-                {t(it.label)}
-              </Link>
+              <li key={it.to} className="grid">
+                <Link
+                  to={it.to}
+                  aria-current={active ? "page" : undefined}
+                  onClick={onClose}
+                  className={cn(
+                    "flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-[var(--radius-lg)] text-xs font-medium transition-colors duration-150",
+                    active ? "bg-accent text-accent-fg" : "bg-wood text-fg",
+                  )}
+                >
+                  <Icon aria-hidden="true" className="size-5" strokeWidth={1.75} />
+                  {t(it.label)}
+                </Link>
+              </li>
             );
           })}
-        </div>
+        </ul>
       </div>
     </div>
   );
@@ -388,10 +488,15 @@ export function Shell({
   // you, which is why the coach screen read "Teaching / Teaching". Roles with
   // one destination get a plain wordmark and no nav at all.
   const showNav = items.length > 1;
-  // Roles with a long tab row (and Vietnamese labels run longer) drop the wordmark text and tighten the tabs.
-  const dense = role === "manager" || role === "receptionist";
-  const rowItems = items.filter((it) => !it.more);
-  const moreItems = items.filter((it) => it.more);
+  // Roles with a long tab row (and Vietnamese labels run longer) drop the wordmark text and the
+  // name beside the avatar, and tighten the tabs.
+  const dense = items.length > 4;
+  const wantedRow = items.filter((it) => !it.more);
+  const alwaysMore = items.filter((it) => it.more);
+  const { box, ruler, fit } = useFittingTabs(wantedRow.length, alwaysMore.length > 0);
+  const rowItems = wantedRow.slice(0, fit);
+  // The tabs that did not fit join the ones that always live under "More", in tab order.
+  const moreItems = [...wantedRow.slice(fit), ...alwaysMore];
   const dockItems = items.filter((it) => it.dock !== false);
   const sheetItems = items.filter((it) => it.dock === false);
   const [sheet, setSheet] = useState(false);
@@ -414,11 +519,34 @@ export function Shell({
     <div className="min-h-dvh text-fg">
       <header className="sticky top-0 z-20 border-b border-line/80 bg-surface/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
-          <Link to={home} aria-label={t("Arena3 home")} className="flex items-center gap-2">
+          <Link to={home} aria-label={t("Arena3 home")} className="-ml-1.5 flex min-h-11 min-w-11 items-center justify-center gap-2 sm:ml-0 sm:justify-start">
             <ArenaMark className="size-8" />
-            <span className={cn("hidden font-display text-2xl font-normal italic tracking-tight", dense ? "2xl:inline" : "sm:inline")}>Arena3</span>
+            {/* The header is the same width on every wide screen, so a long row never gets the wordmark back. */}
+            <span className={cn("hidden font-display text-xl font-bold tracking-tight", dense ? "" : "sm:inline")}>Arena3</span>
           </Link>
-          <nav className={cn("ml-3 items-center gap-1", showNav ? "hidden md:flex" : "hidden")}>
+          {/* Laptop and wider. A tablet gets the bottom bar, like a phone: it is the thumb-friendly one. */}
+          <nav
+            ref={box}
+            aria-label={t("Main menu")}
+            className={cn("relative ml-3 min-w-0 flex-1 items-center gap-1", showNav ? "hidden lg:flex" : "hidden")}
+          >
+            {/* Invisible twin of every tab (and of "More"), measured to see how many fit. */}
+            <div ref={ruler} aria-hidden="true" className="pointer-events-none invisible absolute left-0 top-0 flex h-0 gap-1 overflow-hidden">
+              {wantedRow.map((it) => {
+                const Icon = it.icon;
+                return (
+                  <span key={it.to} className={tabShape(dense)}>
+                    <Icon className="size-4" strokeWidth={1.75} />
+                    <span>{t(it.label)}</span>
+                  </span>
+                );
+              })}
+              <span className={MORE_SHAPE}>
+                <Ellipsis className="size-4" strokeWidth={1.75} />
+                {t("More")}
+                <ChevronDown className="size-3.5" />
+              </span>
+            </div>
             {rowItems.map((it) => {
               const active = navActive(pathname, it.to, items);
               const Icon = it.icon;
@@ -428,16 +556,16 @@ export function Shell({
                   to={it.to}
                   activeOptions={{ exact: true }}
                   className={cn(
-                    dense ? "px-2.5" : "px-3.5",
-                    "relative flex h-9 items-center gap-2 whitespace-nowrap rounded-[var(--radius-pill)] text-xs font-semibold uppercase tracking-[0.1em] transition-colors duration-200",
-                    active ? "text-accent-fg" : "text-muted hover:bg-wood hover:text-fg",
+                    tabShape(dense),
+                    "transition-colors duration-150",
+                    active ? "text-accent-2" : "text-muted hover:bg-wood hover:text-fg",
                   )}
                 >
                   {/* Highlight slides between tabs rather than cutting. */}
                   {active ? (
                     <motion.span
                       layoutId="shell-nav-active"
-                      className="absolute inset-0 rounded-[var(--radius-pill)] bg-accent shadow-[var(--shadow-accent)]"
+                      className="absolute inset-0 rounded-[var(--radius-md)] bg-accent/10"
                       transition={{ type: "spring", stiffness: 400, damping: 34 }}
                     />
                   ) : null}
@@ -476,19 +604,20 @@ export function Shell({
         id="main-content"
         tabIndex={-1}
         className={cn(
-          "mx-auto max-w-6xl px-4 py-6 md:pb-10",
+          "mx-auto max-w-6xl px-4 py-6 lg:pb-10",
           // Only reserve room for the dock when there is a dock.
           showNav ? "pb-[calc(5.5rem+env(safe-area-inset-bottom))]" : "pb-10",
         )}
       >
+        <ConnectionBanner />
         <PageIn key={pathname}>
           {title ? (
-            <header className="mb-6 flex items-center justify-between gap-4 rounded-[var(--radius-xl)] bg-surface/70 px-5 py-4 shadow-[var(--shadow-border)] sm:px-6">
+            <header className="mb-6 flex items-center justify-between gap-4 px-1">
               <div className="min-w-0">
-                <h1 className="font-display text-3xl font-semibold text-balance sm:text-4xl">{title}</h1>
+                <h1 className="font-display text-2xl font-bold text-balance sm:text-3xl">{title}</h1>
                 {subtitle ? <p className="mt-1.5 max-w-2xl text-[0.95rem] leading-snug text-muted">{subtitle}</p> : null}
               </div>
-              <Spot name={spotForPath(pathname)} className="hidden sm:block sm:h-24 sm:w-[7.5rem]" />
+              <Spot name={spotForPath(pathname)} className="hidden sm:block sm:h-20 sm:w-24" />
             </header>
           ) : null}
           {children}
@@ -497,12 +626,12 @@ export function Shell({
       {showNav ? (
         <>
       {/* The page fades out under the floating bar instead of being cut by it. */}
-      <GradualBlur side="bottom" position="fixed" height="5.5rem" strength={1.6} className="z-[19] md:hidden" />
+      <GradualBlur side="bottom" position="fixed" height="5.5rem" strength={1.6} className="z-[19] lg:hidden" />
       {/* A dock rather than a bar: it floats clear of the page, but every item is
           still a real <Link>, so prefetch, long-press and "open in new tab" work
           the way a tab bar should on a touch device. */}
-      <nav className="fixed inset-x-0 bottom-0 z-20 px-3 pb-[calc(0.65rem+env(safe-area-inset-bottom))] md:hidden">
-        <div className="glass mx-auto grid max-w-md auto-cols-fr grid-flow-col rounded-[var(--radius-pill)] p-1.5 shadow-[0_18px_40px_-24px_rgba(20,28,18,0.75)]">
+      <nav aria-label={t("Main menu")} className="fixed inset-x-0 bottom-0 z-20 px-3 pb-[calc(0.65rem+env(safe-area-inset-bottom))] lg:hidden">
+        <div className="mx-auto grid max-w-md auto-cols-fr grid-flow-col rounded-[var(--radius-xl)] border border-line bg-surface p-1.5 shadow-[0_8px_30px_-12px_rgba(16,24,20,0.28)]">
           {dockItems.map((it) => {
             const active = navActive(pathname, it.to, items);
             const Icon = it.icon;
@@ -512,20 +641,20 @@ export function Shell({
                 to={it.to}
                 activeOptions={{ exact: true }}
                 className={cn(
-                  "relative flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-[var(--radius-pill)] text-[11px] tracking-wide transition-colors duration-200",
-                  active ? "font-semibold text-accent-fg" : "font-medium text-muted",
+                  "relative flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-[var(--radius-lg)] px-0.5 text-xs transition-colors duration-200",
+                  active ? "font-semibold text-accent-2" : "font-medium text-muted",
                 )}
               >
                 {active ? (
                   <motion.span
                     layoutId="shell-dock-active"
-                    className="absolute inset-0 rounded-[var(--radius-pill)] bg-accent shadow-[var(--shadow-accent)]"
+                    className="absolute inset-0 rounded-[var(--radius-lg)] bg-accent/10"
                     transition={{ type: "spring", stiffness: 420, damping: 36 }}
                   />
                 ) : null}
                 <motion.span
                   className="relative z-[1]"
-                  animate={{ y: active ? -1 : 0, scale: active ? 1.08 : 1 }}
+                  animate={{ y: 0, scale: 1 }}
                   transition={{ type: "spring", stiffness: 420, damping: 26 }}
                 >
                   <Icon className="size-5" strokeWidth={active ? 2.25 : 1.75} />
@@ -540,9 +669,9 @@ export function Shell({
               onClick={() => setSheet(true)}
               aria-haspopup="dialog"
               className={cn(
-                "relative flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-[var(--radius-pill)] text-[11px] tracking-wide",
+                "relative flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-[var(--radius-lg)] px-0.5 text-xs",
                 sheetItems.some((it) => navActive(pathname, it.to, items))
-                  ? "bg-accent font-semibold text-accent-fg"
+                  ? "bg-accent/10 font-semibold text-accent-2"
                   : "font-medium text-muted",
               )}
             >
@@ -590,10 +719,11 @@ export function Guard({
     }
     setUser(u);
     setReady(true);
-    void apiGet("/me").catch(() => {
-      clearSession();
-      navigate({ to: "/login" });
-    });
+    // Checks in the background that the session is still good. A 401 is handled inside the client
+    // (it ends the session and sends the person to sign in); any other failure is a network or
+    // server problem, which the connection banner explains. Signing out on every failed request
+    // threw a till operator out of a working session whenever the signal dipped.
+    void apiGet("/me", { background: true }).catch(() => {});
   }, [navigate, roleKey]);
 
   if (!ready || !user) {

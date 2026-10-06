@@ -2,14 +2,14 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/cn";
 import { ArenaMark } from "@/components/mark";
 import { Cover, media } from "@/components/media";
-import { Button, Card, DateField, Field, Input } from "@/components/ui";
+import { Button, Card, Check, DateField, Field, Input } from "@/components/ui";
 import { AnimatePresence, motion } from "motion/react";
 import { Reveal } from "@/components/motion";
 import { GLBackground, Magnet, SplitText, SpotlightCard } from "@/components/fx";
-import { apiPost, homeFor, setSession, type SessionUser } from "@/lib/arena3/client";
+import { ApiClientError, apiPost, homeFor, setSession, type SessionUser } from "@/lib/arena3/client";
+import { CalmToggle } from "@/components/calm-toggle";
 import { LangSwitch } from "@/components/lang-switch";
 import { t, tServer } from "@/lib/i18n";
 
@@ -48,10 +48,20 @@ function Register() {
     dob: "1998-01-15",
     pii_consent: true,
   });
+  /** Opens when the date of birth makes this a minor — the server decides the age, so the form asks only then. */
+  const [askGuardian, setAskGuardian] = useState(false);
+  const [guardian, setGuardian] = useState({ name: "", phone: "" });
   /** The masked address the code went to, e.g. `ng****@example.com`. */
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
+  // Why the last attempt on this step failed, and which input it is about. It stays on the form until
+  // the next attempt: a toast fades after a few seconds, and "that code is not right" is a line a
+  // person reads twice.
+  const [error, setError] = useState<{ message: string; field: string | null } | null>(null);
+  /** For an input: marked invalid, and tied to the message, when the last attempt faulted it. */
+  const faulted = (name: string) =>
+    error?.field === name ? ({ "aria-invalid": true, "aria-describedby": "register-error" } as const) : {};
 
   // Only complain once there is something to complain about — a red line under
   // an empty box the moment the page loads is noise, not help.
@@ -61,13 +71,17 @@ function Register() {
 
   async function send(e: FormEvent) {
     e.preventDefault();
+    setError(null);
     if (form.password !== confirm) {
-      toast.error(t("The two passwords do not match."));
+      setError({ message: t("The two passwords do not match."), field: "confirm" });
       return;
     }
     setBusy(true);
     try {
-      const res = await apiPost<{ otp?: string; sent_to?: string | null }>("/auth/register", form);
+      const res = await apiPost<{ otp?: string; sent_to?: string | null }>(
+        "/auth/register",
+        askGuardian ? { ...form, guardian_name: guardian.name, guardian_phone: guardian.phone } : form,
+      );
       setShown(res.otp ?? "");
       setSentTo(res.sent_to ?? null);
       setStep("otp");
@@ -75,7 +89,9 @@ function Register() {
         res.sent_to ? t("Code sent to {email}", { email: res.sent_to }) : t("Code generated — check with the front desk."),
       );
     } catch (err) {
-      toast.error(err instanceof Error ? tServer(err.message) : t("Could not create the account"));
+      const field = err instanceof ApiClientError ? (err.body.field ?? null) : null;
+      if (field === "guardian_name") setAskGuardian(true);
+      setError({ message: err instanceof Error ? tServer(err.message) : t("Could not create the account"), field });
     } finally {
       setBusy(false);
     }
@@ -83,6 +99,7 @@ function Register() {
 
   async function verify(e: FormEvent) {
     e.preventDefault();
+    setError(null);
     setBusy(true);
     try {
       const res = await apiPost<{ token: string; user: SessionUser }>("/auth/otp/verify", {
@@ -92,7 +109,8 @@ function Register() {
       setSession(res.token, res.user);
       navigate({ to: homeFor(res.user.role) });
     } catch (err) {
-      toast.error(err instanceof Error ? tServer(err.message) : t("That OTP is not right"));
+      // The code box is the only input on this step, so whatever went wrong is about it.
+      setError({ message: err instanceof Error ? tServer(err.message) : t("That OTP is not right"), field: "otp" });
     } finally {
       setBusy(false);
     }
@@ -105,7 +123,7 @@ function Register() {
           <GLBackground
             variant="threads"
             className="opacity-50 mix-blend-screen"
-            color="#eadfcb"
+            color="#dbe5ff"
             amplitude={1}
             speed={0.45}
             opacity={0.28}
@@ -129,13 +147,16 @@ function Register() {
         </Cover>
       </div>
       <div className="relative grid min-h-dvh place-items-center px-4 py-10">
-        <LangSwitch className="absolute right-4 top-3 z-10" />
+        <div className="absolute right-4 top-3 z-10 flex items-center gap-2">
+          <CalmToggle />
+          <LangSwitch />
+        </div>
         <Reveal className="w-full max-w-md" from="up">
         <SpotlightCard className="rounded-[var(--radius-xl)]" size={360} strength={0.1}>
         <Card className="relative z-[2] w-full p-6">
           <div className="flex items-center gap-2">
             <ArenaMark className="size-7" />
-            <p className="text-2xs uppercase tracking-wider text-muted">Arena3</p>
+            <p className="text-2xs text-muted">Arena3</p>
           </div>
           <h1 className="mt-3 font-display text-3xl">{t("Create an account")}</h1>
           <AnimatePresence mode="wait">
@@ -152,40 +173,22 @@ function Register() {
               <Field label={t("Full name")}>
                 <Input
                   required
+                  autoComplete="name"
                   value={form.full_name}
                   onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                  {...faulted("full_name")}
                 />
               </Field>
               <Field label={t("Phone number")}>
                 <Input
                   required
+                  type="tel"
+                  autoComplete="tel"
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   placeholder="0901…"
+                  {...faulted("phone")}
                 />
-              </Field>
-              <Field label={t("Date of birth")}>
-                <DateField value={form.dob} onChange={(v) => setForm({ ...form, dob: v })} aria-label={t("Date of birth")} />
-              </Field>
-              <Field label={t("Password")} hint={tooWeak ? t("At least 8 characters, with a letter and a number.") : undefined}>
-                <div className="relative">
-                  <Input
-                    required
-                    type={show ? "text" : "password"}
-                    value={form.password}
-                    autoComplete="new-password"
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    className={cn("pr-12", tooWeak && "border-danger/60")}
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-1 top-1 grid size-9 place-items-center text-muted hover:text-fg"
-                    onClick={() => setShow((v) => !v)}
-                    aria-label={show ? t("Hide password") : t("Show password")}
-                  >
-                    {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </button>
-                </div>
               </Field>
               <Field
                 label={t("Email")}
@@ -201,6 +204,54 @@ function Register() {
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                 />
               </Field>
+              <Field label={t("Date of birth")}>
+                <DateField value={form.dob} onChange={(v) => setForm({ ...form, dob: v })} aria-label={t("Date of birth")} />
+              </Field>
+              {askGuardian ? (
+                <>
+                  <Field label={t("Guardian name")} hint={error?.field === "guardian_name" ? error.message : undefined}>
+                    <Input
+                      required
+                      autoFocus
+                      autoComplete="off"
+                      value={guardian.name}
+                      onChange={(e) => setGuardian({ ...guardian, name: e.target.value })}
+                      {...faulted("guardian_name")}
+                    />
+                  </Field>
+                  <Field label={t("Guardian phone")}>
+                    <Input
+                      required
+                      type="tel"
+                      autoComplete="off"
+                      value={guardian.phone}
+                      onChange={(e) => setGuardian({ ...guardian, phone: e.target.value })}
+                    />
+                  </Field>
+                </>
+              ) : null}
+              <Field label={t("Password")} hint={tooWeak ? t("At least 8 characters, with a letter and a number.") : undefined}>
+                <div className="relative">
+                  <Input
+                    required
+                    type={show ? "text" : "password"}
+                    value={form.password}
+                    autoComplete="new-password"
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    className="pr-12"
+                    {...faulted("password")}
+                    aria-invalid={tooWeak || error?.field === "password" ? true : undefined}
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-0 top-0 grid size-11 place-items-center text-muted hover:text-fg"
+                    onClick={() => setShow((v) => !v)}
+                    aria-label={show ? t("Hide password") : t("Show password")}
+                  >
+                    {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </Field>
               <Field label={t("Confirm password")} hint={mismatch ? t("The two passwords do not match.") : undefined}>
                 <Input
                   required
@@ -208,18 +259,21 @@ function Register() {
                   value={confirm}
                   autoComplete="new-password"
                   onChange={(e) => setConfirm(e.target.value)}
-                  className={cn(mismatch && "border-danger/60")}
+                  {...faulted("confirm")}
+                  aria-invalid={mismatch || error?.field === "confirm" ? true : undefined}
                 />
               </Field>
-              <label className="flex items-start gap-2 text-sm text-muted">
-                <input
-                  type="checkbox"
-                  className="mt-1 size-4 accent-[var(--color-accent)]"
-                  checked={form.pii_consent}
-                  onChange={(e) => setForm({ ...form, pii_consent: e.target.checked })}
-                />
-                {t("I agree to the terms and to Decree 13/2023 on personal data protection.")}
-              </label>
+              <Check
+                className="text-muted"
+                checked={form.pii_consent}
+                onChange={(e) => setForm({ ...form, pii_consent: e.target.checked })}
+                label={t("I agree to the terms and to Decree 13/2023 on personal data protection.")}
+              />
+              {error ? (
+                <p id="register-error" role="alert" className="text-sm text-danger">
+                  {error.message}
+                </p>
+              ) : null}
               <Magnet radius={140} pull={0.22} wrapperClassName="w-full" className="w-full">
                 <Button
                   type="submit"
@@ -259,8 +313,19 @@ function Register() {
                 </p>
               ) : null}
               <Field label={t("6-digit OTP")}>
-                <Input value={otp} onChange={(e) => setOtp(e.target.value)} inputMode="numeric" />
+                <Input
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  {...faulted("otp")}
+                />
               </Field>
+              {error ? (
+                <p id="register-error" role="alert" className="text-sm text-danger">
+                  {error.message}
+                </p>
+              ) : null}
               <Magnet radius={140} pull={0.22} wrapperClassName="w-full" className="w-full">
                 <Button type="submit" disabled={busy} className="w-full">
                   {t("Verify")}
@@ -271,7 +336,7 @@ function Register() {
           </AnimatePresence>
           <p className="mt-4 text-sm text-muted">
             {t("Already have an account?")}{" "}
-            <Link to="/login" className="text-accent-2 underline underline-offset-2">
+            <Link to="/login" className="hit text-accent-2 underline underline-offset-2">
               {t("Sign in")}
             </Link>
           </p>

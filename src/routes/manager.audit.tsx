@@ -1,14 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { SectionTitle } from "@/components/section";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import { Shell } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Input, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, LoadError, Skeleton } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/motion";
-import { SplitText } from "@/components/fx";
-import { ApiClientError, apiGet } from "@/lib/arena3/client";
 import { roleLabel } from "@/lib/arena3/labels";
-import { locale, t, tk, tServer } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
+import { locale, t, tk } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/manager/audit")({
   component: Page,
@@ -32,7 +31,7 @@ type AuditPage = { items: Entry[]; more: boolean; actions: string[]; entities: s
 
 const PAGE_SIZE = 50;
 const HIDDEN_KEY = "arena3.audit.hidden";
-const selectCls = "h-10 rounded-[var(--radius-sm)] border border-line bg-surface px-3 text-sm";
+const selectCls = "h-11 rounded-[var(--radius-sm)] border border-line bg-surface px-3 text-sm sm:h-10";
 
 function readHidden(): number[] {
   try {
@@ -55,15 +54,18 @@ function detail(v: unknown): string | null {
 // The action names are written for the handlers that record them. Known ones get a
 // friendly, translatable label; a new one falls back to its own name, tidied.
 const ACTION_LABEL: Record<string, string> = {
+  adjust_points: tk("Adjust points"),
   assistant: tk("Assistant question"),
   attendance: tk("Attendance recorded"),
   attendance_correct: tk("Attendance corrected"),
   cancel_booking: tk("Cancel booking"),
   cancel_class: tk("Cancel class"),
+  cancel_series: tk("Cancel fixed booking"),
   cancel_session: tk("Cancel session"),
   change_coach: tk("Change coach"),
   change_password: tk("Change password"),
   change_staff_role: tk("Change staff role"),
+  close_commission: tk("Close commission period"),
   close_shift: tk("Close shift"),
   contact_logged: tk("Contact logged"),
   create_class: tk("Create class"),
@@ -71,9 +73,12 @@ const ACTION_LABEL: Record<string, string> = {
   create_payment: tk("Create payment"),
   create_plan: tk("Create plan"),
   create_promo: tk("Create promo"),
+  create_series: tk("Create fixed booking"),
   create_staff: tk("Create staff"),
+  create_work_order: tk("Create work order"),
   decline_plan_order: tk("Decline plan order"),
   edit_class: tk("Edit class"),
+  export_invoices: tk("Export e-invoices"),
   freeze_sub: tk("Freeze subscription"),
   gate_checkin: tk("Gate check-in"),
   gate_checkin_override: tk("Gate check-in override"),
@@ -88,8 +93,11 @@ const ACTION_LABEL: Record<string, string> = {
   patch_plan: tk("Update plan"),
   patch_promo: tk("Update promo"),
   patch_settings: tk("Update settings"),
+  patch_work_order: tk("Update work order"),
   pause: tk("Pause"),
+  pay_commission: tk("Pay commission"),
   put_plan_on_sale: tk("Put plan on sale"),
+  redeem_points: tk("Redeem points"),
   refund: tk("Refund"),
   refund_approved: tk("Refund approved"),
   refund_pending: tk("Refund pending"),
@@ -102,6 +110,8 @@ const ACTION_LABEL: Record<string, string> = {
   reset_staff_password: tk("Reset staff password"),
   resume: tk("Resume"),
   revoke_staff_sessions: tk("Revoke staff sessions"),
+  sell_day_pass: tk("Sell day pass"),
+  set_coach_rate: tk("Set coach rate"),
   student_level: tk("Student level"),
   ticket_close: tk("Close ticket"),
   ticket_reply: tk("Reply to ticket"),
@@ -110,6 +120,8 @@ const ACTION_LABEL: Record<string, string> = {
   unfreeze_sub: tk("Unfreeze subscription"),
   unlock_staff: tk("Unlock staff"),
   update_member: tk("Update member"),
+  use_day_pass: tk("Use day pass"),
+  void_day_pass: tk("Void day pass"),
   walk_in: tk("Walk-in booking"),
   withdraw_plan_from_sale: tk("Withdraw plan from sale"),
 };
@@ -124,11 +136,15 @@ function actionLabel(a: string): string {
 const ENTITY_LABEL: Record<string, string> = {
   attendance: tk("attendance"),
   booking: tk("booking"),
+  booking_series: tk("fixed booking"),
   chat: tk("chat"),
   class: tk("class"),
+  coach_payout: tk("coach commission"),
   court: tk("court"),
+  day_pass: tk("day pass"),
   equipment: tk("equipment"),
   flags: tk("features"),
+  invoice: tk("invoice"),
   payment: tk("payment"),
   plan: tk("plan"),
   price_rules: tk("price rules"),
@@ -139,6 +155,7 @@ const ENTITY_LABEL: Record<string, string> = {
   subscription: tk("subscription"),
   ticket: tk("ticket"),
   user: tk("user"),
+  work_order: tk("work order"),
 };
 
 function entityLabel(e: string): string {
@@ -154,7 +171,7 @@ function entityLabel(e: string): string {
  * manager is reading this page to find.
  */
 function toneFor(action: string): "danger" | "hold" | "muted" {
-  if (/refund|delete|reject|decline|cancel|lock|revoke/.test(action)) return "danger";
+  if (/refund|delete|reject|decline|cancel|lock|revoke|void/.test(action)) return "danger";
   if (/price|setting|flag|close_shift|freeze|plan|password|role|staff/.test(action)) return "hold";
   return "muted";
 }
@@ -173,7 +190,6 @@ function when(iso: string): string {
 }
 
 function Page() {
-  const [data, setData] = useState<AuditPage | null>(null);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [action, setAction] = useState("");
   const [actor, setActor] = useState("");
@@ -184,7 +200,6 @@ function Page() {
   const [open, setOpen] = useState<number | null>(null);
   const [hidden, setHidden] = useState<number[]>([]);
   const [showHidden, setShowHidden] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // The pickers keep the full set once known, so filtering to one value does
   // not collapse its own menu down to that value.
   const [choices, setChoices] = useState<{ actions: string[]; entities: string[]; actors: Actor[] }>({
@@ -195,32 +210,28 @@ function Page() {
 
   useEffect(() => setHidden(readHidden()), []);
 
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (action) qs.set("action", action);
+  if (actor) qs.set("actor", actor);
+  if (entity) qs.set("entity", entity);
+  if (from) qs.set("from", from);
+  if (to) qs.set("to", to);
+  // The entries already on screen stay (dimmed) while a filter or "Show more" loads; a refused or
+  // failed answer replaces them with the reason, never with a list that does not match the filters.
+  const read = useRead<AuditPage>(`/audit?${qs}`, { keepPrevious: true });
+  const data = useMemo(
+    // A bigserial can arrive as a string; the hidden list compares numbers.
+    () => (read.data ? { ...read.data, items: read.data.items.map((e) => ({ ...e, id: Number(e.id) })) } : null),
+    [read.data],
+  );
+
   useEffect(() => {
-    const qs = new URLSearchParams({ limit: String(limit) });
-    if (action) qs.set("action", action);
-    if (actor) qs.set("actor", actor);
-    if (entity) qs.set("entity", entity);
-    if (from) qs.set("from", from);
-    if (to) qs.set("to", to);
-    setError(null);
-    void apiGet<AuditPage>(`/audit?${qs}`)
-      .then((r) => {
-        // A bigserial can arrive as a string; the hidden list compares numbers.
-        setData({ ...r, items: r.items.map((e) => ({ ...e, id: Number(e.id) })) });
-        if (!action && !actor && !entity) {
-          setChoices({ actions: r.actions ?? [], entities: r.entities ?? [], actors: r.actors ?? [] });
-        }
-      })
-      .catch((e) => {
-        setData({ items: [], more: false, actions: [], entities: [], actors: [] });
-        if (e instanceof ApiClientError && e.body.field) setError(tServer(e.message));
-        else toast.error(e instanceof Error ? tServer(e.message) : t("Could not load the audit log"));
-      });
-  }, [action, actor, entity, from, to, limit]);
+    if (!read.data || read.stale || action || actor || entity) return;
+    setChoices({ actions: read.data.actions ?? [], entities: read.data.entities ?? [], actors: read.data.actors ?? [] });
+  }, [read.data, read.stale, action, actor, entity]);
 
   function pick(set: (v: string) => void) {
     return (v: string) => {
-      setData(null);
       setLimit(PAGE_SIZE);
       setOpen(null);
       set(v);
@@ -306,7 +317,7 @@ function Page() {
             </option>
           ))}
         </select>
-        <label className="grid gap-0.5 text-2xs uppercase tracking-wider text-muted">
+        <label className="grid gap-0.5 text-2xs text-muted">
           {t("From")}
           <input
             type="date"
@@ -316,7 +327,7 @@ function Page() {
             className={selectCls}
           />
         </label>
-        <label className="grid gap-0.5 text-2xs uppercase tracking-wider text-muted">
+        <label className="grid gap-0.5 text-2xs text-muted">
           {t("To")}
           <input
             type="date"
@@ -338,7 +349,6 @@ function Page() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              setData(null);
               setLimit(PAGE_SIZE);
               setAction("");
               setActor("");
@@ -351,15 +361,10 @@ function Page() {
             {t("Clear filters")}
           </Button>
         ) : null}
-        <span className="ml-auto text-2xs uppercase tracking-wider text-muted">
-          {data ? t("{n} shown", { n: rows.length }) : t("Loading")}
+        <span className="ml-auto text-2xs text-muted">
+          {read.error ? "" : data && !read.stale ? t("{n} shown", { n: rows.length }) : t("Loading")}
         </span>
       </div>
-      {error ? (
-        <p role="alert" className="mb-3 text-sm text-danger">
-          {error}
-        </p>
-      ) : null}
       {hiddenHere ? (
         <p className="mb-3 text-xs text-muted">
           {t("{n} hidden on this screen.", { n: hiddenHere })}{" "}
@@ -375,7 +380,10 @@ function Page() {
 
       <SectionTitle text={tk("Activity")} className="mb-3 font-display text-2xl" />
 
-      {!data ? (
+      <div aria-busy={read.stale} className={cn("transition-opacity", read.stale && "opacity-60")}>
+      {read.error ? (
+        <LoadError message={read.error.message} onRetry={read.error.refused ? undefined : read.reload} />
+      ) : !data ? (
         <div className="grid gap-2">
           <Skeleton className="h-12" />
           <Skeleton className="h-12" />
@@ -399,7 +407,7 @@ function Page() {
                     <Badge tone={toneFor(e.action)}>{actionLabel(e.action)}</Badge>
                     <span className="text-sm font-medium">{e.actor_name ?? t("System")}</span>
                     {e.actor_role ? (
-                      <span className="text-2xs uppercase tracking-wider text-muted">{roleLabel(e.actor_role)}</span>
+                      <span className="text-2xs text-muted">{roleLabel(e.actor_role)}</span>
                     ) : null}
                     <span className="text-sm text-muted">
                       {entityLabel(e.entity)}
@@ -413,13 +421,13 @@ function Page() {
                         <div className="grid gap-2 md:grid-cols-2">
                           {before ? (
                             <div>
-                              <p className="mb-1 uppercase tracking-wider text-muted">{t("Before")}</p>
+                              <p className="mb-1 text-muted">{t("Before")}</p>
                               <pre className="max-h-48 overflow-auto rounded-[var(--radius-sm)] bg-wood p-2">{before}</pre>
                             </div>
                           ) : null}
                           {after ? (
                             <div>
-                              <p className="mb-1 uppercase tracking-wider text-muted">{t("After")}</p>
+                              <p className="mb-1 text-muted">{t("After")}</p>
                               <pre className="max-h-48 overflow-auto rounded-[var(--radius-sm)] bg-wood p-2">{after}</pre>
                             </div>
                           ) : null}
@@ -451,17 +459,18 @@ function Page() {
           }
         />
       )}
-      {data?.more ? (
+      {!read.error && data?.more ? (
         <div className="mt-4 flex justify-center">
           <Button
             variant="outline"
             onClick={() => setLimit((n) => Math.min(n + PAGE_SIZE, 200))}
-            disabled={limit >= 200}
+            disabled={limit >= 200 || read.stale}
           >
             {limit >= 200 ? t("Narrow the filters to see older entries") : t("Show more")}
           </Button>
         </div>
       ) : null}
+      </div>
     </Shell>
   );
 }

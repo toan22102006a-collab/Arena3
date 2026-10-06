@@ -6,13 +6,15 @@ import { toast } from "sonner";
 import { MonthCalendar, useAvailability } from "@/components/availability-calendar";
 import { CourtGrid, DateStrip, freeHours, type Court, type OccSlot } from "@/components/court-grid";
 import { Cover, HoldProgress, HoldTimer, MediaCaption, media, sportPhoto } from "@/components/media";
+import { CancelBookingDialog } from "@/components/cancel-booking";
 import { PayOnlineButton } from "@/components/pay-online";
 import { Shell, money, when } from "@/components/shell";
-import { Badge, Button, Card, DateField, Input, Seg, Skeleton, StatusBadge } from "@/components/ui";
+import { Badge, Button, Card, DateField, Input, LoadError, Seg, Skeleton, StatusBadge } from "@/components/ui";
 import { GlareHover, StarBorder } from "@/components/fx";
 import { apiGet, apiPost, openInvoice, ApiClientError } from "@/lib/arena3/client";
 import { todayISO, sportLabel } from "@/lib/arena3/labels";
 import { t } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/app/book")({
   validateSearch: (s: Record<string, unknown>): { sport?: string } => ({
@@ -50,11 +52,17 @@ type MyBooking = {
   court_code: string;
   sport: string;
   can_move: boolean;
+  paid_vnd?: number;
+  price_vnd?: number;
+  series_id?: string | null;
 };
 
 type Hold = {
   booking: { id: string; code: string; hold_until?: string };
   price: number;
+  /** What is asked up front when only a deposit is due; equals the price otherwise. */
+  due_now_vnd?: number;
+  deposit_vnd?: number;
   hold_until: string;
   /** Which slot this is, carried from the tap so the card can name it. */
   court_code?: string;
@@ -73,7 +81,9 @@ type Taken = {
 function Page() {
   const [date, setDate] = useState(todayISO);
   const [sport, setSport] = useState(Route.useSearch().sport ?? "badminton");
-  const [data, setData] = useState<{ courts: Court[]; slots: OccSlot[] } | null>(null);
+  // The day on screen. A day the server will not show comes back as `error` (not a grid of grey
+  // blocks behind a toast), and a late reply for an earlier date never lands on a later one.
+  const { data, error, reload } = useRead<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${date}`);
   const [hold, setHold] = useState<Hold | null>(null);
   // Typed before tapping a slot: the hold is priced when it is made, so the code goes with it.
   const [promoCode, setPromoCode] = useState("");
@@ -88,13 +98,15 @@ function Page() {
   // The booking being moved: the grid's next tap lands on it instead of making a new hold.
   const [moving, setMoving] = useState<MyBooking | null>(null);
   const [moveError, setMoveError] = useState("");
+  const [cancelId, setCancelId] = useState<string | null>(null);
   async function loadMine() {
     try {
       const r = await apiGet<{ items: MyBooking[]; window_hours: number }>("/me/bookings");
       setMine(r.items);
       setWindowHours(r.window_hours);
     } catch {
-      setMine([]);
+      // Keep the list that is already on screen: a failed refresh is not "you have no bookings".
+      // A connection that is really down is the banner's to report.
     }
   }
   const [taken, setTaken] = useState<Taken | null>(null);
@@ -113,9 +125,9 @@ function Page() {
   // A transfer the member has promised but reception has not yet found.
   const [pending, setPending] = useState<{ amount: number; until: string } | null>(null);
 
-  async function load(d = date) {
-    const occ = await apiGet<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${d}`);
-    setData(occ);
+  /** Ask again for the day on screen and for everything counted from it. */
+  function load() {
+    reload();
     setRefresh((n) => n + 1);
     void loadMine();
   }
@@ -139,13 +151,13 @@ function Page() {
       );
       setMoving(null);
       setOverlap(null);
-      await load();
+      load();
     } catch (e) {
       if (e instanceof ApiClientError && e.body.requires_confirm && !confirmOverlap) {
         setOverlap({ court, hour, message: e.body.message });
       } else {
         setMoveError(e instanceof Error ? e.message : t("Could not move that booking"));
-        await load().catch(() => {});
+        load();
       }
     } finally {
       setBusy(false);
@@ -163,9 +175,10 @@ function Page() {
       new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date(b.start_at)),
     );
   }
+  // Opening a day also refreshes the counts on the strip and the member's own list.
   useEffect(() => {
-    setData(null);
-    void load().catch((e) => toast.error(e.message));
+    setRefresh((n) => n + 1);
+    void loadMine();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
@@ -187,7 +200,7 @@ function Page() {
       setOverlap(null);
       setTaken(null);
       toast.success(t("Holding {court} · {code}", { court: court.court_code, code: res.booking.code }));
-      await load();
+      load();
     } catch (e) {
       if (e instanceof ApiClientError && e.body.requires_confirm && !confirmOverlap) {
         setOverlap({ court, hour, message: e.body.message });
@@ -213,7 +226,7 @@ function Page() {
               () => null,
             )
           : null;
-        if (fresh) setData(fresh);
+        if (aboutTheSlot) reload();
         setTaken({
           message,
           alts: fresh ? nearestFree(fresh, court, hour, date) : [],
@@ -238,12 +251,12 @@ function Page() {
         hold_until?: string;
       }>(`/bookings/${hold.booking.id}/confirm`, { method }, true);
       setHold(null);
-      await load();
+      load();
       // A transfer is not a booking yet. Saying "Booking confirmed" here would
       // be the app telling a member their court is theirs while reception has
       // not found a single dong of it in the bank.
       if (res.awaiting_transfer) {
-        setPending({ amount: hold.price, until: res.hold_until ?? hold.hold_until });
+        setPending({ amount: hold.due_now_vnd ?? hold.price, until: res.hold_until ?? hold.hold_until });
         toast.success(t("Transfer noted"), {
           description: t("Your court is held while reception checks the bank."),
         });
@@ -309,7 +322,7 @@ function Page() {
             aria-label={t("Promo code")}
             autoCapitalize="characters"
             maxLength={32}
-            className="h-9 w-44"
+            className="h-11 w-full sm:h-9 sm:w-44"
           />
           <Seg
             value={view}
@@ -329,7 +342,13 @@ function Page() {
               { value: "volleyball", label: sportLabel("volleyball") },
             ]}
           />
-          <DateField value={date} onChange={setDate} aria-label={t("Pick another date")} />
+          <DateField
+            required
+            value={date}
+            onChange={setDate}
+            invalid={error?.refused === true}
+            aria-label={t("Pick another date")}
+          />
         </div>
       </div>
       {moving ? (
@@ -380,6 +399,11 @@ function Page() {
                   ) : b.status === "confirmed" ? (
                     <Badge tone="muted">{t("Within {n}h — can't move", { n: windowHours })}</Badge>
                   ) : null}
+                  {b.status === "confirmed" || b.status === "hold" ? (
+                    <Button size="sm" variant="ghost" onClick={() => setCancelId(b.id)}>
+                      {t("Cancel")}
+                    </Button>
+                  ) : null}
                 </span>
               </div>
             ))}
@@ -388,7 +412,7 @@ function Page() {
             <button
               type="button"
               onClick={() => setShowAllMine((v) => !v)}
-              className="mt-2 text-sm text-accent-2 underline-offset-2 hover:underline"
+              className="hit mt-2 text-sm text-accent-2 underline-offset-2 hover:underline"
             >
               {showAllMine ? t("Show fewer") : t("Show all {n}", { n: mine.length })}
             </button>
@@ -569,6 +593,14 @@ function Page() {
                     </span>
                   ) : null}
                 </p>
+                {hold.due_now_vnd != null && hold.due_now_vnd < hold.price ? (
+                  <p className="mt-1 text-xs text-muted">
+                    {t("Peak hour: pay a {deposit} deposit now, the other {rest} at the desk when you arrive.", {
+                      deposit: money(hold.due_now_vnd),
+                      rest: money(hold.price - hold.due_now_vnd),
+                    })}
+                  </p>
+                ) : null}
               </div>
               <div className="flex flex-wrap gap-2">
                 <StarBorder speed={4}>
@@ -591,7 +623,7 @@ function Page() {
                     variant="outline"
                     onPaid={() => {
                       setHold(null);
-                      void load();
+                      load();
                       toast.success(t("Paid — your court is confirmed and the receipt is in your account."));
                     }}
                   />
@@ -604,7 +636,15 @@ function Page() {
           </motion.div>
         ) : null}
       </AnimatePresence>
-      {data ? (
+      <CancelBookingDialog
+        bookingId={cancelId}
+        open={cancelId != null}
+        onClose={() => setCancelId(null)}
+        onDone={load}
+      />
+      {error ? (
+        <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
+      ) : data ? (
         <CourtGrid
           date={date}
           courts={data.courts}

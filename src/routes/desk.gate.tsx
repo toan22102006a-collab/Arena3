@@ -1,14 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { SectionTitle } from "@/components/section";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
+import { PhotoBanner, media } from "@/components/media";
 import { Shell, hhmm, useSessionUser } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Field, Input, Select, Seg } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, LoadError, Select, Seg, Skeleton } from "@/components/ui";
 import { SplitText } from "@/components/fx";
 import { ApiClientError, apiGet, apiPost } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
-import { t, tk, tServer } from "@/lib/i18n";
+import { t, tk, tServer, tData } from "@/lib/i18n";
+import { readError, useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/desk/gate")({ component: Page });
 
@@ -77,19 +79,8 @@ function Page() {
   const [pending, setPending] = useState<Pending | null>(null);
   const [overrideReason, setOverrideReason] = useState("renewing");
   const [error, setError] = useState<string | null>(null);
-  const [today, setToday] = useState<Entry[] | null>(null);
-
-  const loadToday = useCallback(async () => {
-    try {
-      setToday((await apiGet<{ items: Entry[] }>("/desk/gate-checkins")).items);
-    } catch {
-      setToday([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadToday();
-  }, [loadToday]);
+  const todayRead = useRead<{ items: Entry[] }>("/desk/gate-checkins");
+  const today = todayRead.data?.items ?? null;
 
   const refocus = (id: string) => setTimeout(() => document.getElementById(id)?.focus(), 0);
 
@@ -109,7 +100,7 @@ function Page() {
         setPending(null);
         setScan("");
         setQ("");
-        await loadToday();
+        todayRead.reload();
       }
     } catch (err) {
       setResult(null);
@@ -144,6 +135,7 @@ function Page() {
       title={t("Gate")}
       subtitle={t("Scan a member's code to let them in. Type a phone number only when the code can't be used.")}
     >
+      <PhotoBanner src={media.deskGate} focus="50% 30%" className="mb-4" />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
         <div className="grid content-start gap-4">
           <Card className="grid gap-3">
@@ -240,7 +232,7 @@ function Page() {
               ))}
               {result.plans.map((p) => (
                 <p key={p.id} className="text-sm">
-                  {p.name}
+                  {tData(p.name)}
                   <span className="text-muted">
                     {" "}
                     · {t("until {date}", { date: p.end_on })}
@@ -305,7 +297,14 @@ function Page() {
       <div className="mt-10">
         <SectionTitle text={t("Through the gate today")} className="font-display text-2xl" />
         <div className="mt-3 grid gap-2">
-          {!today ? null : !today.length ? (
+          {todayRead.error ? (
+            <LoadError
+              message={todayRead.error.message}
+              onRetry={todayRead.error.refused ? undefined : todayRead.reload}
+            />
+          ) : !today ? (
+            <Skeleton className="h-16" />
+          ) : !today.length ? (
             <EmptyState title={t("Nobody yet today")} hint={t("Check-ins appear here as they happen.")} />
           ) : (
             today.map((row) => (
@@ -340,6 +339,12 @@ function CameraScanner({ onCode }: { onCode: (code: string) => void }) {
   const [on, setOn] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
   const supported = typeof window !== "undefined" && "BarcodeDetector" in window;
+  // The latest handler, read at scan time. Listing `onCode` itself as a dependency restarted the
+  // camera on every keystroke elsewhere on the screen, because the parent makes a new one each render.
+  const handler = useRef(onCode);
+  useEffect(() => {
+    handler.current = onCode;
+  });
 
   useEffect(() => {
     if (!on) return;
@@ -349,6 +354,11 @@ function CameraScanner({ onCode }: { onCode: (code: string) => void }) {
     (async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        if (stop) {
+          // Switched off while the browser was still asking: do not leave the camera running.
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         if (!video.current) return;
         video.current.srcObject = stream;
         await video.current.play();
@@ -361,7 +371,7 @@ function CameraScanner({ onCode }: { onCode: (code: string) => void }) {
             const raw: string | undefined = found[0]?.rawValue;
             if (raw && raw !== last) {
               last = raw;
-              onCode(raw);
+              handler.current(raw);
               setTimeout(() => (last = ""), 4000);
             }
           } catch {
@@ -379,7 +389,7 @@ function CameraScanner({ onCode }: { onCode: (code: string) => void }) {
       stop = true;
       stream?.getTracks().forEach((track) => track.stop());
     };
-  }, [on, onCode]);
+  }, [on]);
 
   if (!supported) return null;
   return (
@@ -399,23 +409,36 @@ function SelfCheckinCode() {
   const [open, setOpen] = useState(false);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [img, setImg] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [round, setRound] = useState(0);
 
   useEffect(() => {
-    if (!open) return;
+    // Closed: forget the old code, so opening it again never flashes one that has since run out.
+    if (!open) {
+      setEnabled(null);
+      setImg(null);
+      setProblem(null);
+      return;
+    }
     let stop = false;
     let timer: ReturnType<typeof setTimeout>;
     const draw = async () => {
       try {
         const res = await apiGet<{ enabled: boolean; token: string; expires_at: string }>("/desk/checkin-qr");
         if (stop) return;
-        setEnabled(res.enabled);
         if (res.enabled) {
           const url = `${window.location.origin}/app/pass?d=${encodeURIComponent(res.token)}`;
-          setImg(await QRCode.toDataURL(url, { margin: 1, width: 280, errorCorrectionLevel: "M" }));
+          const drawn = await QRCode.toDataURL(url, { margin: 1, width: 280, errorCorrectionLevel: "M" });
+          if (stop) return;
+          setImg(drawn);
         }
+        setEnabled(res.enabled);
+        setProblem(null);
         const wait = Math.max(5000, new Date(res.expires_at).getTime() - Date.now() - 4000);
         timer = setTimeout(() => void draw(), wait);
-      } catch {
+      } catch (e) {
+        if (stop) return;
+        setProblem(readError(e).message);
         timer = setTimeout(() => void draw(), 10000);
       }
     };
@@ -424,7 +447,7 @@ function SelfCheckinCode() {
       stop = true;
       clearTimeout(timer);
     };
-  }, [open]);
+  }, [open, round]);
 
   return (
     <Card className="grid gap-3">
@@ -437,10 +460,20 @@ function SelfCheckinCode() {
           {open ? t("Hide") : t("Show")}
         </Button>
       </div>
-      {open && enabled === false ? (
+      {open && problem ? (
+        <LoadError
+          message={problem}
+          onRetry={() => {
+            setProblem(null);
+            setRound((n) => n + 1);
+          }}
+        />
+      ) : null}
+      {open && !problem && enabled === false ? (
         <p className="text-sm text-muted">{t("Self check-in is switched off. A manager can turn it on in Settings.")}</p>
       ) : null}
-      {open && enabled && img ? (
+      {open && !problem && enabled !== false && !img ? <Skeleton className="mx-auto size-56" /> : null}
+      {open && !problem && enabled && img ? (
         <img src={img} alt={t("Self check-in code")} className="mx-auto size-56 rounded-[var(--radius-md)] bg-white p-2" />
       ) : null}
     </Card>

@@ -69,6 +69,10 @@ describe("rrule", () => {
   it("labels weekly BYDAY in English", () => {
     assert.equal(rruleLabel("FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=18"), "Mon, Wed, Fri · 18:00");
   });
+  it("sorts a scrambled week and collapses all seven days", () => {
+    assert.equal(rruleLabel("FREQ=WEEKLY;BYDAY=TH,TU;BYHOUR=19"), "Tue, Thu · 19:00");
+    assert.equal(rruleLabel("FREQ=WEEKLY;BYDAY=TU,FR,SA,SU,TH,WE,MO;BYHOUR=19"), "Every day · 19:00");
+  });
   it("builds Monday 18:00 ICT from the date+hour helper", () => {
     const start = ictDateTime("2026-09-14", "18:00");
     assert.equal(ictHour(start), 18);

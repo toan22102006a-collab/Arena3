@@ -4,8 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { AnimatePresence, motion } from "@/components/motion";
-import { apiPost } from "@/lib/arena3/client";
-import { cn } from "@/lib/cn";
+import { ApiClientError, apiPost } from "@/lib/arena3/client";
 import { LangSwitch } from "@/components/lang-switch";
 import { t, tServer } from "@/lib/i18n";
 
@@ -53,6 +52,13 @@ function Forgot() {
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Why the last attempt on this step failed, and which input it is about, kept on the form until
+  // the next one: a toast fades after a few seconds, and "that code is not right" is a line a
+  // person reads twice.
+  const [error, setError] = useState<{ message: string; field: string | null } | null>(null);
+  /** For an input: marked invalid, and tied to the message, when the last attempt faulted it. */
+  const faulted = (name: string) =>
+    error?.field === name ? ({ "aria-invalid": true, "aria-describedby": "forgot-error" } as const) : {};
 
   const mismatch = confirm.length > 0 && confirm !== password;
   const tooWeak =
@@ -60,6 +66,7 @@ function Forgot() {
 
   async function requestCode(e: FormEvent) {
     e.preventDefault();
+    setError(null);
     setBusy(true);
     try {
       const res = await apiPost<{ sent_to?: string | null; otp?: string }>("/auth/password/forgot", {
@@ -69,7 +76,10 @@ function Forgot() {
       setDemoOtp(res.otp ?? null);
       setStep("reset");
     } catch (err) {
-      toast.error(err instanceof Error ? tServer(err.message) : t("Could not send a code"));
+      setError({
+        message: err instanceof Error ? tServer(err.message) : t("Could not send a code"),
+        field: err instanceof ApiClientError ? (err.body.field ?? null) : null,
+      });
     } finally {
       setBusy(false);
     }
@@ -77,8 +87,9 @@ function Forgot() {
 
   async function reset(e: FormEvent) {
     e.preventDefault();
+    setError(null);
     if (password !== confirm) {
-      toast.error(t("The two passwords do not match."));
+      setError({ message: t("The two passwords do not match."), field: "confirm" });
       return;
     }
     setBusy(true);
@@ -87,7 +98,10 @@ function Forgot() {
       toast.success(t("Password changed — sign in with the new one."));
       void navigate({ to: "/login" });
     } catch (err) {
-      toast.error(err instanceof Error ? tServer(err.message) : t("That code is not right"));
+      setError({
+        message: err instanceof Error ? tServer(err.message) : t("That code is not right"),
+        field: err instanceof ApiClientError ? (err.body.field ?? null) : null,
+      });
     } finally {
       setBusy(false);
     }
@@ -121,8 +135,14 @@ function Forgot() {
                   autoComplete="tel"
                   placeholder="0901 234 567"
                   onChange={(e) => setPhone(e.target.value)}
+                  {...faulted("phone")}
                 />
               </Field>
+              {error ? (
+                <p id="forgot-error" role="alert" className="text-sm text-danger">
+                  {error.message}
+                </p>
+              ) : null}
               <Button type="submit" disabled={busy || !phone} className="w-full">
                 {busy ? t("Sending…") : t("Send the code")}
               </Button>
@@ -168,6 +188,7 @@ function Forgot() {
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   onChange={(e) => setOtp(e.target.value)}
+                  {...faulted("otp")}
                 />
               </Field>
               <Field label={t("New password")} hint={tooWeak ? t("At least 8 characters, letters and digits.") : undefined}>
@@ -178,11 +199,13 @@ function Forgot() {
                     value={password}
                     autoComplete="new-password"
                     onChange={(e) => setPassword(e.target.value)}
-                    className={cn(tooWeak && "border-danger/60")}
+                    className="pr-12"
+                    {...faulted("password")}
+                    aria-invalid={tooWeak || error?.field === "password" ? true : undefined}
                   />
                   <button
                     type="button"
-                    className="absolute inset-y-0 right-3 grid place-items-center text-muted"
+                    className="absolute right-0 top-0 grid size-11 place-items-center text-muted hover:text-fg"
                     onClick={() => setShow((v) => !v)}
                     aria-label={show ? t("Hide password") : t("Show password")}
                   >
@@ -197,9 +220,15 @@ function Forgot() {
                   value={confirm}
                   autoComplete="new-password"
                   onChange={(e) => setConfirm(e.target.value)}
-                  className={cn(mismatch && "border-danger/60")}
+                  {...faulted("confirm")}
+                  aria-invalid={mismatch || error?.field === "confirm" ? true : undefined}
                 />
               </Field>
+              {error ? (
+                <p id="forgot-error" role="alert" className="text-sm text-danger">
+                  {error.message}
+                </p>
+              ) : null}
               <Button
                 type="submit"
                 disabled={busy || !otp || !password || mismatch || tooWeak}
@@ -213,7 +242,7 @@ function Forgot() {
 
         <p className="mt-6 text-sm text-muted">
           {t("Remembered it?")}{" "}
-          <Link to="/login" className="text-accent-2 underline underline-offset-2">
+          <Link to="/login" className="hit text-accent-2 underline underline-offset-2">
             {t("Sign in")}
           </Link>
         </p>

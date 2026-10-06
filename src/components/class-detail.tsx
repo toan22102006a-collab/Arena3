@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Badge, Button, Field, Input, Modal, Select, Skeleton, StatusBadge } from "@/components/ui";
+import { Badge, Button, Field, Input, LoadError, Modal, Select, Skeleton, StatusBadge } from "@/components/ui";
 import { hhmm, money, when } from "@/components/shell";
-import { apiGet, apiPatch, apiPost } from "@/lib/arena3/client";
+import { apiPatch, apiPost } from "@/lib/arena3/client";
 import { formatDate, kindLabel, levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
+import { scrollBehavior } from "@/lib/calm";
 import { locale, t, tk, tServer } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 /** "Tue 21 Oct" in the centre's timezone. */
 export function sessionDay(iso: string) {
@@ -70,30 +72,19 @@ export function ClassDetailModal({
   manage?: boolean;
   onChanged?: () => void;
 }) {
-  const [data, setData] = useState<ClassDetail | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
+  const { data, error, reload } = useRead<ClassDetail>(classId ? `/classes/${classId}` : null);
   const [action, setAction] = useState<Action | null>(null);
-  const [version, setVersion] = useState(0);
 
+  // Another class never starts with a half-filled form from the last one.
   useEffect(() => {
-    setData(null);
-    setFailed(null);
     setAction(null);
-    if (!classId) return;
-    let live = true;
-    apiGet<ClassDetail>(`/classes/${classId}`)
-      .then((r) => live && setData(r))
-      .catch((e) => live && setFailed(e instanceof Error ? tServer(e.message) : t("Could not load this class")));
-    return () => {
-      live = false;
-    };
-  }, [classId, version]);
+  }, [classId]);
 
   const changed = useCallback(() => {
     setAction(null);
-    setVersion((v) => v + 1);
+    reload();
     onChanged?.();
-  }, [onChanged]);
+  }, [onChanged, reload]);
 
   const c = data?.class;
   const confirmed = data?.roster.filter((r) => r.status === "confirmed") ?? [];
@@ -114,8 +105,8 @@ export function ClassDetailModal({
         </div>
       }
     >
-      {failed ? (
-        <p className="text-sm text-danger">{failed}</p>
+      {error ? (
+        <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
       ) : !c || !data ? (
         <Skeleton className="h-40" />
       ) : (
@@ -138,7 +129,7 @@ export function ClassDetailModal({
           </div>
 
           <section>
-            <h3 className="text-2xs font-medium uppercase tracking-wider text-muted">
+            <h3 className="text-2xs font-medium text-muted">
               {t("Sessions · {n} to come", { n: upcoming.length })}
             </h3>
             {data.sessions.length ? (
@@ -189,7 +180,7 @@ export function ClassDetailModal({
           </section>
 
           <section>
-            <h3 className="text-2xs font-medium uppercase tracking-wider text-muted">
+            <h3 className="text-2xs font-medium text-muted">
               {t("Students · {n}", { n: confirmed.length })}
             </h3>
             {confirmed.length ? (
@@ -213,7 +204,7 @@ export function ClassDetailModal({
 
           {manage && c.status !== "cancelled" ? (
             <section className="grid gap-3 border-t border-line pt-4">
-              <h3 className="text-2xs font-medium uppercase tracking-wider text-muted">{t("Manage this class")}</h3>
+              <h3 className="text-2xs font-medium text-muted">{t("Manage this class")}</h3>
               {action ? (
                 <ActionForm classData={c} action={action} onDone={changed} onBack={() => setAction(null)} />
               ) : (
@@ -263,18 +254,14 @@ function ActionForm({
 }) {
   const [reason, setReason] = useState("");
   const [start, setStart] = useState(action.kind === "move-session" ? toLocalInput(action.startAt) : "");
-  const [coaches, setCoaches] = useState<Array<{ id: string; full_name: string }>>([]);
+  const coachRead = useRead<{ items: Array<{ id: string; full_name: string }> }>(
+    action.kind === "coach" ? "/staff?role=coach&status=active" : null,
+  );
+  const coaches = (coachRead.data?.items ?? []).filter((x) => x.id !== classData.coach_id);
   const [coachId, setCoachId] = useState("");
   const [capacity, setCapacity] = useState(String(classData.capacity));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ field?: string; message: string } | null>(null);
-
-  useEffect(() => {
-    if (action.kind !== "coach") return;
-    void apiGet<{ items: Array<{ id: string; full_name: string }> }>("/staff?role=coach&status=active")
-      .then((r) => setCoaches(r.items.filter((x) => x.id !== classData.coach_id)))
-      .catch((e) => setError({ message: e instanceof Error ? tServer(e.message) : t("Could not load coaches") }));
-  }, [action.kind, classData.coach_id]);
 
   const copy = ACTION_COPY[action.kind];
 
@@ -322,7 +309,7 @@ function ActionForm({
   return (
     <div
       className="grid gap-3 rounded-[var(--radius-sm)] bg-wood/60 p-3"
-      ref={(el) => el?.scrollIntoView({ block: "nearest", behavior: "smooth" })}
+      ref={(el) => el?.scrollIntoView({ block: "nearest", behavior: scrollBehavior() })}
     >
       <p className="text-sm font-medium">
         {t(copy.title)}
@@ -334,16 +321,23 @@ function ActionForm({
         </Field>
       ) : null}
       {action.kind === "coach" ? (
-        <Field label={t("New coach")} hint={at("coach_id")}>
-          <Select value={coachId} onChange={(e) => setCoachId(e.target.value)}>
-            <option value="">{t("Choose…")}</option>
-            {coaches.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.full_name}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        coachRead.error ? (
+          <LoadError
+            message={coachRead.error.message}
+            onRetry={coachRead.error.refused ? undefined : coachRead.reload}
+          />
+        ) : (
+          <Field label={t("New coach")} hint={at("coach_id")}>
+            <Select value={coachId} onChange={(e) => setCoachId(e.target.value)}>
+              <option value="">{t("Choose…")}</option>
+              {coaches.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.full_name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )
       ) : null}
       {action.kind === "capacity" ? (
         <Field label={t("Capacity ({n} enrolled)", { n: classData.enrolled_count })} hint={at("capacity")}>
@@ -355,7 +349,9 @@ function ActionForm({
         </Field>
       )}
       {error && !["start_at", "coach_id", "capacity", "reason"].includes(error.field ?? "") ? (
-        <p className="text-sm text-danger">{error.message}</p>
+        <p role="alert" className="text-sm text-danger">
+          {error.message}
+        </p>
       ) : null}
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onBack} disabled={busy}>
@@ -365,7 +361,7 @@ function ActionForm({
           size="sm"
           variant={action.kind.startsWith("cancel") ? "danger" : "primary"}
           onClick={submit}
-          disabled={busy || (copy.needsReason && !reason.trim())}
+          disabled={busy || (copy.needsReason && !reason.trim()) || (action.kind === "coach" && !!coachRead.error)}
         >
           {t(copy.go)}
         </Button>
@@ -424,21 +420,9 @@ export function OccupancyDetailModal({
   onClose: () => void;
   onOpenClass?: (classId: string) => void;
 }) {
-  const [data, setData] = useState<OccDetail | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
-
-  useEffect(() => {
-    setData(null);
-    setFailed(null);
-    if (!target) return;
-    let live = true;
-    apiGet<OccDetail>(`/occupancy/detail?kind=${encodeURIComponent(target.kind)}&ref=${encodeURIComponent(target.ref)}`)
-      .then((r) => live && setData(r))
-      .catch((e) => live && setFailed(e instanceof Error ? tServer(e.message) : t("Could not load the details")));
-    return () => {
-      live = false;
-    };
-  }, [target]);
+  const { data, error, reload } = useRead<OccDetail>(
+    target ? `/occupancy/detail?kind=${encodeURIComponent(target.kind)}&ref=${encodeURIComponent(target.ref)}` : null,
+  );
 
   const title =
     data?.kind === "booking"
@@ -469,8 +453,8 @@ export function OccupancyDetailModal({
         </div>
       }
     >
-      {failed ? (
-        <p className="text-sm text-danger">{failed}</p>
+      {error ? (
+        <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
       ) : !data ? (
         <Skeleton className="h-32" />
       ) : data.kind === "booking" ? (

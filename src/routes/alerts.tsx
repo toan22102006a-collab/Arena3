@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { NotificationList, type Notification } from "@/components/notifications";
 import { Guard, Shell, useSessionUser } from "@/components/shell";
-import { EmptyState, Skeleton } from "@/components/ui";
-import { apiGet } from "@/lib/arena3/client";
-import { t, tServer } from "@/lib/i18n";
+import { EmptyState, LoadError, Skeleton } from "@/components/ui";
+import { t } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/alerts")({
   component: () => (
@@ -18,20 +17,18 @@ export const Route = createFileRoute("/alerts")({
 /** Staff alerts — a student on a run of absences, for one. Members have their own inbox. */
 function Page() {
   const user = useSessionUser();
+  const { data, error, reload } = useRead<{ items: Notification[] }>("/me/notifications");
+  // The list is the server's copy, marked read here as the person opens things.
   const [items, setItems] = useState<Notification[] | null>(null);
-
   useEffect(() => {
-    void apiGet<{ items: Notification[] }>("/me/notifications")
-      .then((r) => setItems(r.items))
-      .catch((e) => {
-        setItems([]);
-        toast.error(e instanceof Error ? tServer(e.message) : t("Could not load your alerts"));
-      });
-  }, []);
+    setItems(data?.items ?? null);
+  }, [data]);
 
   return (
     <Shell role={user?.role ?? "coach"} title={t("Alerts")} subtitle={t("Things that need a look. Open one to read it.")}>
-      {!items ? (
+      {error ? (
+        <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
+      ) : !items ? (
         <Skeleton className="h-32" />
       ) : !items.length ? (
         <EmptyState title={t("Nothing here yet")} hint={t("You'll be told when a student misses three sessions in a row.")} />

@@ -3,7 +3,7 @@
 
 @theme {
   --font-sans: "Be Vietnam Pro", system-ui, sans-serif;
-  --font-display: "Newsreader", "Be Vietnam Pro", serif;
+  --font-display: "Be Vietnam Pro", system-ui, sans-serif;
   /* Second display voice: heavy condensed block caps for the loud, athletic bits
      (scoreboard numerals, sport names, section kickers). The serif still carries
      the narrative headings — pairing the two is what keeps Arena3 from reading
@@ -11,25 +11,26 @@
   --font-athletic: "Anton", "Be Vietnam Pro", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
-  --color-bg: #e6decd;
-  --color-fg: #141c12;
-  --color-surface: #fffaf2;
-  --color-muted: #2c3429;
-  --color-subtle: #3d4638;
-  --color-line: #d4cec2;
-  --color-line-strong: #b7b0a3;
-  --color-accent: #1f5c43;
-  --color-accent-fg: #fff8ee;
-  --color-accent-2: #164433;
-  --color-hold: #7a4e0c;
-  --color-danger: #8a2424;
-  --color-ink: #141c12;
-  --color-wood: #e7dfd0;
-  --color-on-media: #fff8ee;
-  --color-on-media-muted: #eadfcb;
-  --color-pass: #143226;
-  --color-pass-fg: #fff8ee;
-  --color-pass-muted: #c5d0be;
+  --color-bg: #f4f6fc;
+  --color-fg: #0b1230;
+  --color-surface: #ffffff;
+  --color-muted: #424c6b;
+  --color-subtle: #56617f;
+  --color-line: #dde3f2;
+  --color-line-strong: #bcc6e0;
+  --color-accent: #1e4fd8;
+  --color-accent-fg: #ffffff;
+  --color-accent-2: #15348f;
+  --color-hold: #9a5200;
+  --color-danger: #b4232a;
+  --color-ink: #0b1230;
+  --color-wood: #e8edf9;
+  --color-on-media: #ffffff;
+  --color-on-media-muted: #dbe5ff;
+  --color-pass: #0c1b57;
+  --color-pass-fg: #ffffff;
+  --color-pass-muted: #c3d0f5;
+  --color-volt: #c8f31d;
 
   /* Semantic roles. The palette above is named after what things look like
      (wood, ink, pass); these name what they mean, so a status colour is chosen
@@ -40,7 +41,7 @@
   --color-warning: var(--color-hold);
   --color-success: var(--color-accent-2);
 
-  --text-2xs: 0.6875rem;
+  --text-2xs: 0.75rem;
   --text-2xs--line-height: 1rem;
 
   /* Fluid display sizes: scale smoothly between a phone and a wide desktop
@@ -54,17 +55,16 @@
   --radius-xs: 4px;
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
   --radius-pill: 9999px;
 
-  --shadow-soft: 0 1px 0 rgba(28, 36, 24, 0.04), 0 10px 28px -18px rgba(28, 36, 24, 0.22);
-  --shadow-border: 0 0 0 1px rgba(28, 36, 24, 0.06), 0 1px 2px -1px rgba(28, 36, 24, 0.06),
-    0 8px 24px -16px rgba(28, 36, 24, 0.16);
+  --shadow-soft: 0 1px 2px rgba(11, 18, 48, 0.05), 0 8px 24px -12px rgba(11, 18, 48, 0.18);
+  --shadow-border: 0 0 0 1px rgba(11, 18, 48, 0.07), 0 1px 2px rgba(11, 18, 48, 0.04);
   /* Elevation tinted with the brand colour rather than neutral grey, so a raised
      control reads as "lit from the accent" instead of "floating on grey". */
-  --shadow-accent: 0 8px 22px -12px color-mix(in oklab, var(--color-accent) 75%, transparent);
-  --shadow-accent-lg: 0 18px 38px -16px color-mix(in oklab, var(--color-accent) 80%, transparent);
+  --shadow-accent: 0 1px 2px rgba(11, 18, 48, 0.12);
+  --shadow-accent-lg: 0 4px 12px -4px color-mix(in oklab, var(--color-accent) 55%, transparent);
 
   --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
@@ -195,12 +195,6 @@
   #root {
     min-height: 100%;
     background-color: var(--color-bg);
-    background-image:
-      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(250, 246, 238, 0.65), transparent 55%),
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cpath fill='none' stroke='%23164533' stroke-opacity='0.09' stroke-width='1' d='M18 12h84v96H18z'/%3E%3Cpath fill='none' stroke='%23164533' stroke-opacity='0.06' stroke-width='1' d='M18 60h84M60 12v96M18 36h84M18 84h84M42 12v96M78 12v96'/%3E%3Ccircle cx='60' cy='60' r='10' fill='none' stroke='%23164533' stroke-opacity='0.07'/%3E%3C/svg%3E"),
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='%23d9d0bc' fill-opacity='0.35'/%3E%3C/svg%3E");
-    background-size: auto, 120px 120px, 4px 4px;
-    background-attachment: fixed;
     color: var(--color-fg);
   }
   body {
@@ -218,6 +212,7 @@
   h2,
   h3 {
     font-family: var(--font-display);
+    font-weight: 600;
     /* Newsreader carries an optical-size axis. Letting it choose means headings
        get the display cut — open counters, finer hairlines — instead of the
        text cut scaled up, which is what makes a serif look inflated. */
@@ -238,6 +233,10 @@
   }
   p {
     text-wrap: pretty;
+  }
+  .font-display {
+    font-weight: 600;
+    letter-spacing: -0.02em;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {
@@ -265,6 +264,15 @@
 [tabindex="-1"]:focus-visible {
   outline: none;
   box-shadow: none;
+}
+
+/* A box the page has said is wrong gets a red edge to match the red line that says why. The line of
+   text is the real message; the edge only points at the box. Unlayered, so it beats the utility
+   border colour the field is built with. */
+input[aria-invalid="true"],
+textarea[aria-invalid="true"],
+select[aria-invalid="true"] {
+  border-color: var(--color-danger);
 }
 
 /* First focusable element on every page: hidden until a keyboard user reaches it. */
@@ -295,11 +303,22 @@
   }
 }
 
+/* Calm: the device asks for reduced motion, or the person pressed "Pause animations" (see
+   src/lib/calm.ts). The pseudo-elements are named on purpose: the orbiting light on a StarBorder
+   is a ::before, and a bare `*` does not reach it. */
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     animation: none !important;
     transition: none !important;
   }
+}
+:root[data-calm="1"] *,
+:root[data-calm="1"] *::before,
+:root[data-calm="1"] *::after {
+  animation: none !important;
+  transition: none !important;
 }
 
 .court-lines {
@@ -326,29 +345,29 @@
 
 .hero-scrim {
   background:
-    linear-gradient(90deg, rgba(20, 28, 18, 0.9) 0%, rgba(20, 28, 18, 0.58) 42%, rgba(20, 28, 18, 0.18) 100%),
-    linear-gradient(to top, rgba(20, 28, 18, 0.55) 0%, transparent 42%),
-    linear-gradient(to bottom, rgba(20, 28, 18, 0.35) 0%, transparent 28%);
+    linear-gradient(90deg, rgba(8, 14, 40, 0.9) 0%, rgba(8, 14, 40, 0.58) 42%, rgba(8, 14, 40, 0.18) 100%),
+    linear-gradient(to top, rgba(8, 14, 40, 0.55) 0%, transparent 42%),
+    linear-gradient(to bottom, rgba(8, 14, 40, 0.35) 0%, transparent 28%);
 }
 
 .media-scrim {
   background: linear-gradient(
     to top,
-    rgba(20, 28, 18, 0.55) 0%,
-    rgba(20, 28, 18, 0.12) 48%,
-    rgba(20, 28, 18, 0.08) 100%
+    rgba(8, 14, 40, 0.55) 0%,
+    rgba(8, 14, 40, 0.12) 48%,
+    rgba(8, 14, 40, 0.08) 100%
   );
 }
 
 .caption-bar {
-  background: rgba(20, 28, 18, 0.82);
+  background: rgba(8, 14, 40, 0.82);
   color: var(--color-on-media);
 }
 
 .on-media {
   text-shadow:
-    0 1px 2px rgba(8, 12, 6, 0.7),
-    0 10px 28px rgba(8, 12, 6, 0.45);
+    0 1px 2px rgba(4, 8, 28, 0.7),
+    0 10px 28px rgba(4, 8, 28, 0.45);
 }
 
 .marquee {
@@ -402,35 +421,53 @@
    step numbers. Anton ships a single weight, so size and tracking carry the
    emphasis instead of font-weight. */
 .athletic {
-  font-family: var(--font-athletic);
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  line-height: 0.92;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
 }
 
-/* Scoreboard numerals — the same block-caps voice as `.athletic` with the caps
-   transform taken off.
-   The only letter in a VND figure is the currency mark, and uppercasing
-   "1,500,000đ" gives "1,500,000Đ": a letter Vietnamese does not use for money,
-   set in a heavy condensed face, at the top of every stat tile in the reports.
-   Tracking is pulled back too — Anton's digits are already tight, and the extra
-   0.02em that keeps its caps from colliding just loosens a number. */
+/* Numbers in stat tiles and totals: one clean bold sans, tabular so columns align. */
 .figure {
-  font-family: var(--font-athletic);
-  font-weight: 400;
-  letter-spacing: 0.005em;
-  line-height: 0.92;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
   font-variant-numeric: tabular-nums;
 }
 
-/* Small label that sits above a heading. Same family, opened right up — wide
-   tracking is what stops heavy condensed caps from reading as shouting. */
+/* Small label above a heading or a field: sentence case, semibold, no tracking. */
 .kicker {
-  font-family: var(--font-athletic);
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.005em;
+}
+
+/* A link that looks small but is easy to hit: the hit area grows by padding that an equal negative
+   margin takes back, so nothing moves (24px on a mouse layout, 44px on a phone). */
+.tap {
+  display: inline-block;
+  padding-block: 0.125rem;
+  margin-block: -0.125rem;
+}
+@media (max-width: 639.98px) {
+  .tap {
+    padding-block: 0.75rem;
+    margin-block: -0.75rem;
+  }
+}
+
+/* A stand-alone text link or text button: 44px tall on a phone, 24px with a mouse. */
+.hit {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+}
+@media (max-width: 639.98px) {
+  .hit {
+    min-height: 2.75rem;
+  }
 }
 
 .text-gradient {
@@ -444,7 +481,7 @@
    above vanishes against video. Stays inside the cream/sand family so it still
    reads as Arena3 and not as a stock neon gradient. */
 .text-gradient-media {
-  background: linear-gradient(105deg, var(--color-on-media) 8%, #dcead4 46%, #f0d49a 95%);
+  background: linear-gradient(105deg, var(--color-on-media) 8%, #dbe5ff 46%, #c8f31d 95%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -459,7 +496,7 @@
    overflow-hidden descendants — which is exactly what the word-reveal wrappers
    are. Put this on the heading and `.text-gradient-media` on the span inside. */
 .media-glow {
-  filter: drop-shadow(0 2px 7px rgba(8, 12, 6, 0.6));
+  filter: drop-shadow(0 2px 7px rgba(4, 8, 28, 0.6));
 }
 
 /* Band of light sliding across the glyphs. The two stops are variables rather
@@ -486,8 +523,8 @@
 /* Reversed-out variant for headings sitting on footage or ink. */
 .shiny-on-media {
   --shiny-base: var(--color-on-media);
-  --shiny-glint: #f5e2b4;
-  filter: drop-shadow(0 2px 7px rgba(8, 12, 6, 0.55));
+  --shiny-glint: #e6ff7a;
+  filter: drop-shadow(0 2px 7px rgba(4, 8, 28, 0.55));
 }
 /* Quiet variant for eyebrow labels on cream — reads as a muted kicker until the
    glint passes, so it never competes with the heading under it. */
@@ -562,7 +599,7 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(90deg, transparent, rgba(255, 248, 238, 0.28), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
   transform: translateX(-110%) skewX(-18deg);
 }
 .sweep:hover::after {
@@ -600,6 +637,10 @@
     transform: none;
     opacity: 1;
   }
+}
+:root[data-calm="1"] .split-unit {
+  transform: none;
+  opacity: 1;
 }
 
 /* Expanding halo behind a live/now indicator. */
@@ -645,4 +686,57 @@
 }
 .link-underline:hover::after {
   transform: scaleX(1);
+}
+
+/* Icon motion: every effect leaves the icon fully drawn when animation is off (reduced motion). */
+@keyframes ai-bounce {
+  0%, 62%, 100% { transform: translateY(0) rotate(0); }
+  18% { transform: translateY(-4px) rotate(-8deg); }
+  34% { transform: translateY(0) rotate(0) scale(1.06, 0.9); }
+  48% { transform: translateY(-2px) rotate(6deg); }
+}
+@keyframes ai-wiggle {
+  0%, 70%, 100% { transform: rotate(0); }
+  76% { transform: rotate(-14deg); }
+  84% { transform: rotate(12deg); }
+  92% { transform: rotate(-6deg); }
+}
+@keyframes ai-swing {
+  0%, 100% { transform: rotate(-9deg); }
+  50% { transform: rotate(9deg); }
+}
+@keyframes ai-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes ai-pop {
+  0% { transform: scale(0.4) rotate(-20deg); }
+  60% { transform: scale(1.35) rotate(6deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes ai-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes ai-scan {
+  0% { top: 6%; opacity: 0; }
+  12%, 88% { opacity: 0.5; }
+  100% { top: 94%; opacity: 0; }
+}
+.ai-bounce { animation: ai-bounce 2.6s ease-in-out infinite; transform-origin: 50% 80%; }
+.ai-wiggle { animation: ai-wiggle 3.4s ease-in-out infinite; transform-origin: 40% 60%; }
+.ai-swing { animation: ai-swing 2.8s ease-in-out infinite; transform-origin: 50% 10%; }
+.ai-float { animation: ai-float 3s ease-in-out infinite; }
+.ai-pop { animation: ai-pop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.ai-draw { stroke-dasharray: 1; animation: ai-draw 0.55s 0.1s ease-out both; }
+.ai-scan {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  height: 2px;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  box-shadow: 0 0 12px 2px color-mix(in oklab, var(--color-accent) 60%, transparent);
+  animation: ai-scan 2.4s ease-in-out infinite;
+  pointer-events: none;
 }

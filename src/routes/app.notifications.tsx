@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { NotificationList, type Notification } from "@/components/notifications";
 import { Shell } from "@/components/shell";
-import { Button, EmptyState, Skeleton } from "@/components/ui";
-import { apiGet } from "@/lib/arena3/client";
+import { Button, EmptyState, LoadError, Skeleton } from "@/components/ui";
 import { t } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/app/notifications")({
   component: Page,
@@ -13,17 +12,13 @@ export const Route = createFileRoute("/app/notifications")({
 
 /** The member's inbox, apart from the account menu (G-08). */
 function Page() {
+  const { data, error, reload } = useRead<{ items: Notification[] }>("/me/notifications");
+  // The list is the server's copy, marked read here as the person opens things.
   const [items, setItems] = useState<Notification[] | null>(null);
   const [onlyNew, setOnlyNew] = useState(false);
-
   useEffect(() => {
-    void apiGet<{ items: Notification[] }>("/me/notifications")
-      .then((r) => setItems(r.items))
-      .catch((e) => {
-        setItems([]);
-        toast.error(e instanceof Error ? e.message : t("Could not load your notifications"));
-      });
-  }, []);
+    setItems(data?.items ?? null);
+  }, [data]);
 
   const hasRead = (items ?? []).some((n) => n.read_at);
 
@@ -33,7 +28,9 @@ function Page() {
       title={t("Notifications")}
       subtitle={t("Receipts, booking changes and replies from reception. Open one to read it.")}
     >
-      {!items ? (
+      {error ? (
+        <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
+      ) : !items ? (
         <Skeleton className="h-32" />
       ) : !items.length ? (
         <EmptyState

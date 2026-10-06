@@ -1,11 +1,11 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Shell } from "@/components/shell";
-import { Badge, Card, EmptyState, FilterChip, Input, Pagination, Select, Skeleton, StatusBadge } from "@/components/ui";
-import { apiGet } from "@/lib/arena3/client";
+import { Badge, Card, EmptyState, FilterChip, Input, LoadError, Pagination, Select, Skeleton, StatusBadge } from "@/components/ui";
 import { formatDate, sportLabel } from "@/lib/arena3/labels";
-import { locale, t, tk, tServer } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
+import { locale, t, tk, tData } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/manager/members")({
   component: Page,
@@ -40,7 +40,6 @@ function Page() {
   const [sport, setSport] = useState("");
   const [plan, setPlan] = useState("");
   const [offset, setOffset] = useState(0);
-  const [data, setData] = useState<{ items: Row[]; total: number } | null>(null);
 
   // Typing waits a beat so one search is one request, and any filter change goes back to page one.
   const [term, setTerm] = useState("");
@@ -50,21 +49,15 @@ function Page() {
   }, [q]);
   useEffect(() => setOffset(0), [term, status, sport, plan]);
 
-  useEffect(() => {
-    let live = true;
-    const params = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
-    if (term) params.set("q", term);
-    if (status) params.set("status", status);
-    if (sport) params.set("sport", sport);
-    if (plan) params.set("plan", plan);
-    apiGet<{ items: Row[]; total: number }>(`/directory/members?${params}`)
-      .then((r) => live && setData(r))
-      .catch((e) => live && toast.error(e instanceof Error ? tServer(e.message) : t("Could not load members")));
-    return () => {
-      live = false;
-    };
-  }, [term, status, sport, plan, offset]);
-
+  const params = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
+  if (term) params.set("q", term);
+  if (status) params.set("status", status);
+  if (sport) params.set("sport", sport);
+  if (plan) params.set("plan", plan);
+  // The rows already on screen stay (dimmed) while the next page or filter loads, so paging does not
+  // collapse the list; a failure replaces them with the reason rather than rows that do not match.
+  const read = useRead<{ items: Row[]; total: number }>(`/directory/members?${params}`, { keepPrevious: true });
+  const data = read.data;
   const total = data?.total ?? 0;
 
   const PLAN_CHIPS: Array<{ value: string; label: string }> = [
@@ -105,7 +98,10 @@ function Page() {
         </Select>
       </div>
 
-      {!data ? (
+      <div aria-busy={read.stale} className={cn("transition-opacity", read.stale && "opacity-60")}>
+      {read.error ? (
+        <LoadError message={read.error.message} onRetry={read.error.refused ? undefined : read.reload} />
+      ) : !data ? (
         <Skeleton className="h-48" />
       ) : !data.items.length ? (
         <EmptyState title={t("No members match")} hint={t("Loosen a filter or check the spelling.")} />
@@ -131,7 +127,7 @@ function Page() {
                   >
                     <div className="min-w-0">
                       <p className="flex flex-wrap items-center gap-2 font-medium">
-                        <span className="truncate">{m.full_name}</span>
+                        <span className="break-words">{m.full_name}</span>
                         {m.status !== "active" ? <StatusBadge status={m.status} /> : null}
                       </p>
                       <p className="text-xs tabular-nums text-muted">{m.member_code ?? "—"}</p>
@@ -142,8 +138,8 @@ function Page() {
                         {t(PLAN_LABEL[m.plan_state])}
                       </Badge>
                       {m.plan_name ? (
-                        <span className="truncate text-xs text-muted">
-                          {m.plan_name}
+                        <span className="break-words text-xs text-muted">
+                          {tData(m.plan_name)}
                           {m.end_on ? ` · ${t("until {date}", { date: formatDate(m.end_on) })}` : ""}
                         </span>
                       ) : null}
@@ -159,6 +155,7 @@ function Page() {
           <Pagination offset={offset} total={total} pageSize={PAGE} onChange={setOffset} />
         </>
       )}
+      </div>
     </Shell>
   );
 }

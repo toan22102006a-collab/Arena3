@@ -110,13 +110,18 @@ export const getPublicCatalog = createServerFn({ method: "POST" }).handler(async
         order by price_vnd`,
     ),
     sql.query<CatalogClass>(
-      `select cl.id, cl.sport, cl.level, cl.capacity, cl.enrolled_count, cl.rrule, cl.duration_min,
-              c.court_code, u.full_name as coach_name
-         from classes cl
-         join courts c on c.id = cl.court_id
-         join users u on u.id = cl.coach_id
-        where cl.status = 'open'
-        order by cl.start_on, cl.level`,
+      `select id, sport, level, capacity, enrolled_count, rrule, duration_min, court_code, coach_name
+         from (
+           select distinct on (cl.court_id, cl.sport, cl.level, cl.rrule)
+                  cl.id, cl.sport, cl.level, cl.capacity, cl.enrolled_count, cl.rrule, cl.duration_min,
+                  c.court_code, u.full_name as coach_name
+             from classes cl
+             join courts c on c.id = cl.court_id
+             join users u on u.id = cl.coach_id
+            where cl.status = 'open'
+            order by cl.court_id, cl.sport, cl.level, cl.rrule, cl.enrolled_count desc, cl.start_on
+         ) s
+        order by court_code, rrule`,
     ),
     sql.query<CatalogPrice>(
       `select sport, court_id, day_kind, start_local::text, end_local::text, price_vnd, is_peak

@@ -2,12 +2,13 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Shell, money } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Input, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, LoadError, MoneyInput, Skeleton } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/motion";
 import { StarBorder } from "@/components/fx";
-import { ApiClientError, apiGet, apiPut } from "@/lib/arena3/client";
+import { ApiClientError, apiPut } from "@/lib/arena3/client";
 import { DAY_KIND_LABEL, sportLabel } from "@/lib/arena3/labels";
-import { t, tk, tServer } from "@/lib/i18n";
+import { t, tk, tServer, tData } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 import { SectionTitle } from "@/components/section";
 import { Banknote, ChevronDown, Percent, Ticket } from "lucide-react";
 
@@ -46,29 +47,27 @@ const SPORT_ORDER = ["badminton", "basketball", "volleyball"];
  * changed in one place.
  */
 function Page() {
-  const [items, setItems] = useState<Rule[] | null>(null);
-  const [plans, setPlans] = useState<Plan[] | null>(null);
-  const [vat, setVat] = useState<number | null>(null);
-  const [courtCodes, setCourtCodes] = useState<Record<string, string>>({});
+  const rulesRead = useRead<{ items: Rule[] }>("/price-rules");
+  const plansRead = useRead<{ items: Plan[] }>("/plans");
+  const vatRead = useRead<{ vat_rate?: string | number }>("/settings");
+  // Court codes only name the rows that apply to one court; without them such a row still reads "One court only".
+  const courtsRead = useRead<{ items: { id: string; court_code: string }[] }>("/courts");
+  const courtCodes = useMemo(
+    () => Object.fromEntries((courtsRead.data?.items ?? []).map((c) => [c.id, c.court_code])) as Record<string, string>,
+    [courtsRead.data],
+  );
+  const plans = plansRead.data?.items ?? null;
+  const vat = vatRead.data?.vat_rate == null ? null : Number(vatRead.data.vat_rate);
+
+  // The rates the manager edits start from what the server holds; a failed read leaves nothing to edit.
+  const [edited, setEdited] = useState<Rule[] | null>(null);
+  useEffect(() => {
+    if (rulesRead.data) setEdited(rulesRead.data.items);
+  }, [rulesRead.data]);
+  const items = rulesRead.error ? null : edited;
   const [bad, setBad] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
-
-  async function load() {
-    setItems((await apiGet<{ items: Rule[] }>("/price-rules")).items);
-  }
-  useEffect(() => {
-    void load().catch((e) => toast.error(tServer(e.message)));
-    void apiGet<{ items: Plan[] }>("/plans")
-      .then((r) => setPlans(r.items))
-      .catch(() => setPlans([]));
-    void apiGet<{ items: { id: string; court_code: string }[] }>("/courts")
-      .then((r) => setCourtCodes(Object.fromEntries(r.items.map((c) => [c.id, c.court_code]))))
-      .catch(() => {});
-    void apiGet<{ vat_rate?: string | number }>("/settings")
-      .then((s) => setVat(s.vat_rate == null ? null : Number(s.vat_rate)))
-      .catch(() => setVat(null));
-  }, []);
 
   // Rows keep their index in the flat list: the save sends that list as-is.
   const groups = useMemo(() => {
@@ -89,7 +88,7 @@ function Page() {
     if (!items) return;
     const next = [...items];
     next[index] = { ...next[index], price_vnd: value === "" ? Number.NaN : Number(value) };
-    setItems(next);
+    setEdited(next);
     setBad(null);
     setMessage("");
   }
@@ -102,7 +101,7 @@ function Page() {
     try {
       await apiPut("/price-rules", { items });
       toast.success(t("Pricing saved"));
-      await load();
+      rulesRead.reload();
     } catch (e) {
       if (e instanceof ApiClientError && typeof e.body.index === "number") setBad(e.body.index);
       setMessage(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
@@ -127,7 +126,9 @@ function Page() {
           hint={t("Price per hour, by sport, day and time of day. Peak hours are the busy evening slots.")}
           className="mb-3"
         />
-        {!items ? (
+        {rulesRead.error ? (
+          <LoadError message={rulesRead.error.message} onRetry={rulesRead.error.refused ? undefined : rulesRead.reload} />
+        ) : !items ? (
           <Skeleton className="h-40" />
         ) : !items.length ? (
           <EmptyState title={t("No court rates yet")} hint={t("Without a rate a court cannot be quoted, so no booking can be made.")} />
@@ -135,7 +136,7 @@ function Page() {
           <div className="grid gap-5">
             {groups.map(([sport, rows], gi) => (
               <details key={sport} open={gi === 0 || rows.some((x) => x.index === bad)} className="group">
-                <summary className="mb-2 flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-md)] bg-surface px-3 text-sm font-medium uppercase tracking-wider text-muted [&::-webkit-details-marker]:hidden">
+                <summary className="mb-2 flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-md)] bg-surface px-3 text-sm font-medium text-muted [&::-webkit-details-marker]:hidden">
                   <span>
                     {sportLabel(sport)} <span className="normal-case tracking-normal">· {t("{n} rates", { n: rows.length })}</span>
                   </span>
@@ -145,7 +146,7 @@ function Page() {
                   {rows.map(({ rule: r, index }) => (
                     <StaggerItem key={r.id}>
                       <Card
-                        className={`grid grid-cols-2 items-center gap-2 p-3 md:grid-cols-5 ${
+                        className={`grid grid-cols-2 items-center gap-2 p-3 md:grid-cols-4 ${
                           bad === index ? "border-danger" : ""
                         }`}
                       >
@@ -161,20 +162,15 @@ function Page() {
                         <span>
                           <Badge tone={r.is_peak ? "accent" : "muted"}>{r.is_peak ? t("Peak") : t("Off-peak")}</Badge>
                         </span>
-                        <Input
-                          type="number"
-                          min={0}
+                        <MoneyInput
                           aria-label={t("{sport} {day} {time} price", {
                             sport: sportLabel(r.sport),
                             day: DAY_KIND_LABEL[r.day_kind] ?? r.day_kind,
                             time: r.start_local.slice(0, 5),
                           })}
-                          value={Number.isNaN(r.price_vnd) ? "" : r.price_vnd}
-                          onChange={(e) => edit(index, e.target.value)}
+                          value={Number.isNaN(r.price_vnd) ? "" : String(r.price_vnd)}
+                          onChange={(v) => edit(index, v)}
                         />
-                        <span className="text-right text-sm tabular-nums">
-                          {Number.isNaN(r.price_vnd) ? "—" : money(r.price_vnd)}
-                        </span>
                       </Card>
                     </StaggerItem>
                   ))}
@@ -203,15 +199,17 @@ function Page() {
             text={tk("Membership plans")}
             hint={t("What each plan on sale costs and what it includes.")}
           />
-          <Link to="/manager/plans" className="text-sm underline">
+          <Link to="/manager/plans" className="hit text-sm underline">
             {t("Edit plans")}
           </Link>
         </div>
-        {!plans ? (
+        {plansRead.error ? (
+          <LoadError message={plansRead.error.message} onRetry={plansRead.error.refused ? undefined : plansRead.reload} />
+        ) : !plans ? (
           <Skeleton className="h-24" />
         ) : !onSale.length ? (
           <EmptyState title={t("No plan is on sale")} hint={t("Members cannot buy a plan until you put one on sale.")}>
-            <Link to="/manager/plans" className="text-sm underline">
+            <Link to="/manager/plans" className="hit text-sm underline">
               {t("Go to plans")}
             </Link>
           </EmptyState>
@@ -220,7 +218,7 @@ function Page() {
             {onSale.map((p) => (
               <Card key={p.id} className="flex items-center justify-between gap-3 p-3">
                 <span>
-                  <span className="block text-sm font-medium">{p.name}</span>
+                  <span className="block text-sm font-medium">{tData(p.name)}</span>
                   <span className="block text-xs text-muted">
                     {sportLabel(p.sport_scope)} · {p.duration_days ? t("{n} days", { n: p.duration_days }) : t("per session")} ·{" "}
                     {t("{n} court hours", { n: p.court_hours })} · {t("{pct}% off courts", { pct: p.court_discount_pct })}
@@ -243,7 +241,11 @@ function Page() {
         />
         <Card className="flex items-center justify-between gap-3 p-4">
           <span className="text-sm">
-            {vat == null ? (
+            {vatRead.error ? (
+              t("VAT rate not available.")
+            ) : !vatRead.data ? (
+              <Skeleton className="h-5 w-40" />
+            ) : vat == null ? (
               t("VAT rate not available.")
             ) : (
               <>
@@ -251,7 +253,7 @@ function Page() {
               </>
             )}
           </span>
-          <Link to="/manager/settings" className="text-sm underline">
+          <Link to="/manager/settings" className="hit text-sm underline">
             {t("Change in Settings")}
           </Link>
         </Card>

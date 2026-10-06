@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { VI } from "@/lib/i18n/vi";
+import { viData } from "@/lib/i18n/vi.data";
 import { VI_SERVER_EXACT, VI_SERVER_PATTERNS } from "@/lib/i18n/vi.srv";
 
 /**
@@ -50,6 +51,11 @@ export function tServer(msg: string): string {
   return msg;
 }
 
+/** Seeded demo content stored in English in the database (plan, gear and staff names, health notes). */
+export function tData<T extends string | null | undefined>(s: T): T {
+  return (current === "vi" && s ? viData(s) : s) as T;
+}
+
 export const getLang = (): Lang => current;
 /** The locale to hand to Intl / toLocale*String so dates and numbers read natively. */
 export const locale = (): string => (current === "vi" ? "vi-VN" : "en-GB");
@@ -57,9 +63,10 @@ export const locale = (): string => (current === "vi" ? "vi-VN" : "en-GB");
 function apply(next: Lang) {
   if (next === current) return;
   current = next;
+  // Screen readers pick the voice from this, so it must change even when storage is blocked.
+  if (typeof document !== "undefined") document.documentElement.lang = next;
   try {
     localStorage.setItem(STORAGE_KEY, next);
-    document.documentElement.lang = next;
   } catch {
     /* private mode: the choice just lasts until reload */
   }

@@ -12,6 +12,7 @@ import {
   str,
 } from "../helpers";
 import { isValidVnPhone, normalizePhone } from "../phone";
+import { depositFor, dueNow, quoteCancel } from "../policy";
 import { applyDiscount, lookupPrice, memberDiscount } from "../pricing";
 import { quotePromo, redeemForBooking, restoreIfFullyRefunded } from "../promos";
 import { requireRole, type PublicUser } from "../session";
@@ -197,12 +198,15 @@ export async function meBookings(sql: Sql, user: PublicUser) {
     start_at: string;
     end_at: string;
     price_vnd: number;
+    paid_vnd: number;
+    deposit_vnd: number;
+    series_id: string | null;
     quota_hours: string | number;
     court_id: string;
     court_code: string;
     sport: string;
   }>(
-    `select b.id, b.code, b.status::text as status, b.start_at, b.end_at, b.price_vnd, b.quota_hours,
+    `select b.id, b.code, b.status::text as status, b.start_at, b.end_at, b.price_vnd, b.paid_vnd, b.deposit_vnd, b.series_id, b.quota_hours,
             b.court_id, c.court_code, c.sport::text as sport
        from court_bookings b join courts c on c.id = b.court_id
       where b.user_id = $1 and b.status in ('hold','confirmed','in_use') and b.end_at > now()
@@ -215,6 +219,7 @@ export async function meBookings(sql: Sql, user: PublicUser) {
     status: 200,
     body: {
       window_hours: settings.cancel_court_hours,
+      cancel_tiers: settings.cancel_tiers,
       items: rows.map((r) => ({
         ...r,
         can_move:
@@ -431,6 +436,14 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
       })
     : null;
   const price = promo ? promo.final_vnd : planPrice;
+  // A peak slot asks for a deposit up front; the rest is paid at the desk (deposit_vnd = 0 means pay in full).
+  const deposit = depositFor({
+    priceVnd: price,
+    pct: settings.deposit_pct,
+    peakOnly: settings.deposit_peak_only,
+    isPeak: list.is_peak,
+    round: settings.round_vnd,
+  });
   const bookingIdRow = await one<{ id: string }>(sql, `select gen_random_uuid() as id`);
   const bookingId = bookingIdRow!.id;
   const holdUntil = new Date(Date.now() + settings.hold_minutes * 60_000);
@@ -450,8 +463,8 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
   await sql.query(
     `insert into court_bookings
        (id, code, court_id, user_id, start_at, end_at, status, channel, price_vnd, discount_pct, vat_rate, hold_until, occupancy_id,
-        promo_id, promo_discount_vnd)
-     values ($1,$2,$3,$4,$5,$6,'hold','app',$7,$8,$9,$10,$11,$12,$13)`,
+        promo_id, promo_discount_vnd, deposit_vnd)
+     values ($1,$2,$3,$4,$5,$6,'hold','app',$7,$8,$9,$10,$11,$12,$13,$14)`,
     [
       bookingId,
       code,
@@ -466,6 +479,7 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
       occId,
       promo?.promo_id ?? null,
       promo?.discount_vnd ?? 0,
+      deposit,
     ],
   );
   const booking = await one(sql, `select * from court_bookings where id = $1`, [bookingId]);
@@ -475,6 +489,8 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
       booking,
       hold_until: holdUntil.toISOString(),
       price,
+      deposit_vnd: deposit,
+      due_now_vnd: deposit > 0 ? deposit : price,
       list_price: list.price_vnd,
       promo: promo ? { code: promo.code, name: promo.name, discount_vnd: promo.discount_vnd } : null,
     },
@@ -493,6 +509,7 @@ type HeldBooking = {
   start_at: string;
   end_at: string;
   price_vnd: number;
+  deposit_vnd?: number;
   discount_pct: number;
   vat_rate: string | number;
   quota_hours: string | number;
@@ -558,7 +575,9 @@ export async function settleHeldBooking(
   if (opts.payAmount > 0) await redeemForBooking(sql, booking.id, booking.user_id, pay!.id);
   await sql.query(
     `update court_bookings
-        set status = 'confirmed', quota_hours = $2, price_vnd = $3,
+        set status = 'confirmed', quota_hours = $2,
+            price_vnd = case when $3::int > 0 then price_vnd else 0 end,
+            paid_vnd = $3,
             hold_until = null, transfer_requested_at = null,
             promo_id = case when $3::int > 0 then promo_id else null end,
             promo_discount_vnd = case when $3::int > 0 then promo_discount_vnd else 0 end
@@ -573,7 +592,7 @@ export async function settleHeldBooking(
     amountVnd: opts.payAmount,
     vatRate: Number(booking.vat_rate ?? 0),
     description:
-      `Thuê sân ${court.court_code} — ` +
+      `${opts.payAmount < booking.price_vnd ? "Cọc thuê sân" : "Thuê sân"} ${court.court_code} — ` +
       `${ictStamp(booking.start_at)}–${ictClock(booking.end_at)}`,
     unit: "giờ",
     settings,
@@ -663,7 +682,7 @@ export async function bookingsConfirm(sql: Sql, id: string, request: Request, us
       "inapp",
       "transfer_requested",
       user.id,
-      { booking_id: booking.id, code: booking.code, amount_vnd: booking.price_vnd },
+      { booking_id: booking.id, code: booking.code, amount_vnd: dueNow(booking) },
       `transfer_requested|${booking.id}`,
     );
     const fresh = await one(sql, `select * from court_bookings where id = $1`, [id]);
@@ -675,12 +694,12 @@ export async function bookingsConfirm(sql: Sql, id: string, request: Request, us
         invoice_id: null,
         awaiting_transfer: true,
         hold_until: until.toISOString(),
-        amount_vnd: booking.price_vnd,
+        amount_vnd: dueNow(booking),
       },
     };
   }
 
-  let payAmount = booking.price_vnd;
+  let payAmount = dueNow(booking);
   let quotaHours = 0;
   if (method === "quota") {
     const disc = await memberDiscount(sql, user.id, court.sport);
@@ -730,7 +749,7 @@ export async function bookingsTransferConfirm(sql: Sql, id: string, user: Public
   const buyer = await bookingBuyer(sql, booking.id);
   const settled = await settleHeldBooking(sql, booking, court, {
     method: "transfer",
-    payAmount: booking.price_vnd,
+    payAmount: dueNow(booking),
     quotaHours: 0,
     buyerName: buyer.name,
     buyerPhone: buyer.phone,
@@ -773,16 +792,50 @@ export async function bookingsTransferReject(
   return { status: 200, body: { booking_id: id, released: true } };
 }
 
-export async function bookingsCancel(sql: Sql, id: string, user: PublicUser) {
-  const booking = await one<{
-    id: string;
-    user_id: string | null;
-    status: string;
-    start_at: string;
-    price_vnd: number;
-    quota_hours: string | number;
-    court_id: string;
-  }>(sql, `select * from court_bookings where id = $1 for update`, [id]);
+type CancelRow = {
+  id: string;
+  user_id: string | null;
+  status: string;
+  start_at: string;
+  price_vnd: number;
+  paid_vnd: number;
+  quota_hours: string | number;
+  court_id: string;
+};
+
+/**
+ * What cancelling a booking would cost, right now.
+ *
+ * Read-only, so the app can show "cancel now: refund 50%, lose 125,000đ" before
+ * the member presses the button. Staff may ask for it waived (the centre cancelled,
+ * a flood, an emergency): that is the force-majeure rule — never charge a customer
+ * for something that is not their doing.
+ */
+export async function bookingsCancelQuote(sql: Sql, id: string, request: Request, user: PublicUser) {
+  const booking = await one<CancelRow>(sql, `select * from court_bookings where id = $1`, [id]);
+  if (!booking) throw err.notFound();
+  if (user.role === "member" && booking.user_id !== user.id) throw err.forbidden();
+  if (!["hold", "confirmed"].includes(booking.status)) {
+    throw err.conflictState("A booking in this state cannot be cancelled.");
+  }
+  const settings = await getSettings(sql);
+  const staff = user.role === "receptionist" || user.role === "manager";
+  const waived = staff && new URL(request.url).searchParams.get("waive") === "1";
+  const quote = quoteCancel({
+    tiers: settings.cancel_tiers,
+    startAt: booking.start_at,
+    paidVnd: booking.status === "hold" ? 0 : booking.paid_vnd,
+    waived,
+  });
+  return {
+    status: 200,
+    body: { ...quote, tiers: settings.cancel_tiers, quota_hours: Number(booking.quota_hours) || 0 },
+  };
+}
+
+export async function bookingsCancel(sql: Sql, id: string, user: PublicUser, request?: Request) {
+  const body = request ? await readJson(request) : {};
+  const booking = await one<CancelRow>(sql, `select * from court_bookings where id = $1 for update`, [id]);
   if (!booking) throw err.notFound();
   if (user.role === "member" && booking.user_id !== user.id) throw err.forbidden();
   if (!["hold", "confirmed"].includes(booking.status)) {
@@ -793,13 +846,26 @@ export async function bookingsCancel(sql: Sql, id: string, user: PublicUser) {
     await sql.query(`select occupancy_release_booking($1::uuid, 'cancelled'::booking_status)`, [id]);
     return { status: 200, body: { refund: null, booking_id: id } };
   }
-  const hoursLeft = (new Date(booking.start_at).getTime() - Date.now()) / 3600000;
-  const refundable = hoursLeft >= settings.cancel_court_hours;
+  const staff = user.role === "receptionist" || user.role === "manager";
+  const waived = staff && body.waive === true;
+  const reason = str(body.reason) ?? null;
+  const quote = quoteCancel({
+    tiers: settings.cancel_tiers,
+    startAt: booking.start_at,
+    paidVnd: booking.paid_vnd,
+    waived,
+  });
   await sql.query(`select occupancy_release_booking($1::uuid, 'cancelled'::booking_status)`, [id]);
+  await sql.query(`update court_bookings set cancel_refund_pct = $2, cancel_fee_vnd = $3 where id = $1`, [
+    id,
+    quote.refund_pct,
+    quote.fee_vnd,
+  ]);
   let refund = null;
-  if (refundable) {
-    const qh = Number(booking.quota_hours) || 0;
-    if (qh > 0 && booking.user_id) {
+  const qh = Number(booking.quota_hours) || 0;
+  if (qh > 0 && booking.user_id) {
+    // Plan hours cannot be split: half a notice or better gives the hour back.
+    if (quote.refund_pct >= 50) {
       const court = await courtById(sql, booking.court_id);
       const disc = await memberDiscount(sql, booking.user_id, court.sport);
       if (disc.sub_id) {
@@ -809,24 +875,98 @@ export async function bookingsCancel(sql: Sql, id: string, user: PublicUser) {
         ]);
       }
       refund = { kind: "quota", hours: qh };
-    } else if (booking.price_vnd > 0) {
-      const payCode = await nextCode(sql, "PAY");
-      const amount = -booking.price_vnd;
-      const needMgr = Math.abs(amount) >= settings.refund_manager_vnd;
-      const st = needMgr ? "refund_pending" : "posted";
-      refund = await one(
-        sql,
-        `insert into payments (code, user_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by)
-         values ($1,$2,'cash',$3,0,$4,'booking',$5,$6) returning *`,
-        [payCode, booking.user_id, amount, st, id, user.id],
-      );
-      // A full refund gives the member their use of the code back (BR-45).
-      await restoreIfFullyRefunded(sql, "booking", id);
     }
+  } else if (quote.refund_vnd > 0) {
+    const payCode = await nextCode(sql, "PAY");
+    const amount = -quote.refund_vnd;
+    const needMgr = Math.abs(amount) >= settings.refund_manager_vnd;
+    const st = needMgr ? "refund_pending" : "posted";
+    refund = await one(
+      sql,
+      `insert into payments (code, user_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by)
+       values ($1,$2,'cash',$3,0,$4,'booking',$5,$6) returning *`,
+      [payCode, booking.user_id, amount, st, id, user.id],
+    );
+    // A full refund gives the member their use of the code back (BR-45).
+    if (quote.fee_vnd === 0) await restoreIfFullyRefunded(sql, "booking", id);
   }
-  await enqueue(sql, "inapp", "booking_cancelled", booking.user_id, { id }, `booking_cancelled|${id}`);
-  await audit(sql, user.id, "cancel_booking", "booking", id);
-  return { status: 200, body: { refund, refundable } };
+  await enqueue(
+    sql,
+    "inapp",
+    "booking_cancelled",
+    booking.user_id,
+    { id, fee_vnd: quote.fee_vnd, refund_vnd: quote.refund_vnd },
+    `booking_cancelled|${id}`,
+  );
+  await audit(sql, user.id, "cancel_booking", "booking", id, null, {
+    refund_pct: quote.refund_pct,
+    fee_vnd: quote.fee_vnd,
+    waived,
+    reason,
+  });
+  return { status: 200, body: { refund, refundable: quote.refund_vnd > 0 || refund !== null, quote } };
+}
+
+/**
+ * Take the rest of the price at the desk, usually when the customer turns up.
+ * A deposit booking is confirmed with only part of the money in; this is the
+ * other part, as a payment row of its own with its own invoice.
+ */
+export async function bookingsCollectBalance(sql: Sql, id: string, request: Request, user: PublicUser) {
+  requireRole(user, ["receptionist", "manager"]);
+  const b = await readJson(request);
+  const method = str(b.method) ?? "cash";
+  if (!["cash", "card", "transfer"].includes(method)) throw err.validation("Pick cash, card or transfer.");
+  const booking = await one<CancelRow & { vat_rate: string | number }>(
+    sql,
+    `select * from court_bookings where id = $1 for update`,
+    [id],
+  );
+  if (!booking) throw err.notFound();
+  if (!["confirmed", "in_use"].includes(booking.status)) {
+    throw err.conflictState("Only a confirmed booking has a balance to collect.");
+  }
+  const due = booking.price_vnd - booking.paid_vnd;
+  if (due <= 0) throw err.conflictState("Nothing left to pay on this booking.");
+  let shiftId: string | null = null;
+  if (user.role === "receptionist") {
+    const shift = await one<{ id: string }>(
+      sql,
+      `select id from cashier_shifts where receptionist_id = $1 and closed_at is null`,
+      [user.id],
+    );
+    if (!shift) throw err.br("BR-49", "Open a till shift before taking payment.");
+    shiftId = shift.id;
+  }
+  const pay = await one<{ id: string }>(
+    sql,
+    `insert into payments (code, user_id, shift_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by)
+     values ($1,$2,$3,$4,$5,$6,'posted','booking',$7,$8) returning id`,
+    [await nextCode(sql, "PAY"), booking.user_id, shiftId, method, due, Number(booking.vat_rate), id, user.id],
+  );
+  await sql.query(`update court_bookings set paid_vnd = price_vnd where id = $1`, [id]);
+  const court = await courtById(sql, booking.court_id);
+  const buyer = await bookingBuyer(sql, id);
+  const settings = await getSettings(sql);
+  const invoiceId = await issueInvoice(sql, {
+    paymentId: pay!.id,
+    buyerName: buyer.name,
+    buyerPhone: buyer.phone,
+    amountVnd: due,
+    vatRate: Number(booking.vat_rate ?? 0),
+    description: `Thanh toán còn lại thuê sân ${court.court_code} — ${ictStamp(booking.start_at)}`,
+    unit: "giờ",
+    settings,
+  });
+  await enqueueReceipt(sql, booking.user_id, {
+    payment_id: pay!.id,
+    invoice_id: invoiceId,
+    amount_vnd: due,
+    method,
+  });
+  await audit(sql, user.id, "collect_balance", "booking", id, null, { amount_vnd: due, method });
+  const fresh = await one(sql, `select * from court_bookings where id = $1`, [id]);
+  return { status: 200, body: { booking: fresh, payment_id: pay!.id, invoice_id: invoiceId, amount_vnd: due } };
 }
 
 /**
@@ -1039,9 +1179,10 @@ export async function walkIn(sql: Sql, request: Request, user: PublicUser) {
     ],
   );
   await sql.query(`select occupancy_confirm_hold($1::uuid)`, [occId]);
-  await sql.query(`update court_bookings set status = 'confirmed', hold_until = null where id = $1`, [
-    bookingId,
-  ]);
+  await sql.query(
+    `update court_bookings set status = 'confirmed', hold_until = null, paid_vnd = price_vnd where id = $1`,
+    [bookingId],
+  );
   const payCode = await nextCode(sql, "PAY");
   const shiftId = user.role === "receptionist" ? (b as { _shift?: string })._shift : str(b.shift_id);
   const pay = await one<{ id: string }>(

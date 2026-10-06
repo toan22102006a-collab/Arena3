@@ -26,13 +26,15 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "@/lib/cn";
+import { useCalm } from "@/lib/calm";
 
 /**
  * Shared motion vocabulary for Arena3.
  *
  * Every primitive here degrades to a plain, fully-visible element when the
  * visitor asks for reduced motion — content never depends on an animation
- * having run.
+ * having run. (The pause button in `@/lib/calm` does not swap elements: see
+ * `MotionProvider`.)
  */
 
 export const EASE_SMOOTH = [0.22, 1, 0.36, 1] as const;
@@ -40,8 +42,11 @@ export const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
 /** Wrap a subtree so every nested transition shares the house easing. */
 export function MotionProvider({ children }: { children: ReactNode }) {
+  // "always" is what the pause button asks for; "user" leaves it to the device setting. Slides
+  // become fades either way and nothing remounts, so pressing the button never costs typed text.
+  const calm = useCalm();
   return (
-    <MotionConfig reducedMotion="user" transition={{ duration: 0.5, ease: EASE_SMOOTH }}>
+    <MotionConfig reducedMotion={calm ? "always" : "user"} transition={{ duration: 0.5, ease: EASE_SMOOTH }}>
       {children}
     </MotionConfig>
   );
@@ -329,7 +334,11 @@ export function Tilt({
   );
 }
 
-/** Lift-on-hover wrapper for cards and tiles. */
+/**
+ * Lift-on-hover wrapper for cards and tiles. No whileTap here on purpose: Motion makes any
+ * element with a press gesture keyboard-focusable (tabindex=0), which turned every card into
+ * a nameless Tab stop.
+ */
 export function Lift({
   children,
   className,
@@ -342,7 +351,6 @@ export function Lift({
     <motion.div
       className={className}
       whileHover={{ y: amount }}
-      whileTap={{ scale: 0.99 }}
       transition={{ type: "spring", stiffness: 320, damping: 26 }}
       {...rest}
     >

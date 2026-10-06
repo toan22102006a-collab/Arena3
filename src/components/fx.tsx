@@ -24,6 +24,7 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "@/lib/cn";
+import { isCalm, useCalm } from "@/lib/calm";
 
 /**
  * Arena3's effect layer.
@@ -36,7 +37,9 @@ import { cn } from "@/lib/cn";
  *
  * Two rules hold everywhere in this file:
  *   1. `prefers-reduced-motion` collapses the effect to a plain element. Nothing
- *      here is load-bearing for content.
+ *      here is load-bearing for content. The pause button (`@/lib/calm`) goes
+ *      further for the things that loop on their own — the shader backgrounds
+ *      and the ticker below — and CSS stops the rest.
  *   2. Pointer effects check `pointerType === "mouse"`. A spotlight that chases
  *      a finger is just a smear, and most of Arena3's traffic is on a phone.
  */
@@ -428,8 +431,9 @@ export function SplitText({
 export function ScrollReveal({
   children,
   className,
-  blur = 5,
-  baseOpacity = 0.14,
+  blur = 3,
+  // Unread words stay at 3:1 against the page (large text), so nothing is invisible before it is scrolled to.
+  baseOpacity = 0.5,
 }: {
   children: string;
   className?: string;
@@ -577,7 +581,7 @@ export function ScrollVelocity({
   baseVelocity?: number;
   copies?: number;
 }) {
-  const reduced = useReducedMotion();
+  const reduced = useCalm();
   const baseX = useMotionValue(0);
   const { scrollY } = useScroll();
   const scrollVelocity = useVelocity(scrollY);
@@ -587,27 +591,39 @@ export function ScrollVelocity({
   const factor = useTransform(smooth, [0, 1000], [0, 4], { clamp: false });
   const x = useTransform(baseX, (v) => `${wrap(-50, 0, v)}%`);
   const direction = useRef(1);
+  const paused = useRef(false);
 
   useAnimationFrame((_, delta) => {
-    if (reduced) return;
+    if (reduced || paused.current) return;
     let moveBy = direction.current * baseVelocity * (delta / 1000);
-    const f = factor.get();
+    // A flick used to multiply this without a ceiling. Keep the boost to at most double.
+    const f = Math.max(-1, Math.min(1, factor.get()));
     if (f < 0) direction.current = -1;
     else if (f > 0) direction.current = 1;
     moveBy += direction.current * moveBy * Math.abs(f);
     baseX.set(baseX.get() + moveBy);
   });
 
+  // A standing strip would clip everything past the first screenful with no way to reach it, so
+  // when nothing moves it wraps onto as many rows as it needs.
   if (reduced) {
     return (
-      <div className={cn("overflow-hidden", className)}>
-        <div className="flex w-max">{children}</div>
+      <div className={cn("mx-auto max-w-6xl px-4", className)}>
+        <div className="flex flex-wrap items-center gap-y-3">{children}</div>
       </div>
     );
   }
 
   return (
-    <div className={cn("marquee", className)}>
+    <div
+      className={cn("marquee", className)}
+      onMouseEnter={() => {
+        paused.current = true;
+      }}
+      onMouseLeave={() => {
+        paused.current = false;
+      }}
+    >
       {/* Duplicated `copies` times and wrapped over half the track, so the seam
           is always off-screen no matter how wide the content is. */}
       <motion.div className="flex w-max will-change-transform" style={{ x }}>
@@ -896,7 +912,7 @@ export function StarBorder({
  * Mounted once at the app root.
  */
 export function ClickSpark({
-  color = "#1f5c43",
+  color = "#1e4fd8",
   count = 8,
   length = 13,
   duration = 380,
@@ -954,6 +970,9 @@ export function ClickSpark({
     };
 
     const onClick = (e: MouseEvent) => {
+      // "Pause animations" also silences this: it is a reply to a click, but a person who asked for
+      // stillness did not mean "except sparks".
+      if (isCalm()) return;
       const now = performance.now();
       const jitter = Math.random() * Math.PI;
       for (let i = 0; i < count; i++) {
@@ -1022,7 +1041,7 @@ export function GLBackground({
   radius?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const reduced = useReducedMotion();
+  const reduced = useCalm();
   const mounted = useMounted();
   const near = useNearViewport(ref);
   const live = mounted && near && !reduced;

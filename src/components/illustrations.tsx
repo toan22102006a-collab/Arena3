@@ -30,7 +30,7 @@ export type SpotName =
 
 const G = "var(--color-accent)";
 const G2 = "var(--color-accent-2)";
-const AMBER = "var(--color-hold)";
+const AMBER = "#f5a30a";
 const INK = "var(--color-ink)";
 const PAPER = "var(--color-surface)";
 const WOOD = "var(--color-wood)";

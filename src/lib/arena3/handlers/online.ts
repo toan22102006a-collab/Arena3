@@ -21,6 +21,7 @@ import {
 } from "../payos";
 import { requireRole, type PublicUser } from "../session";
 import { one } from "../tx";
+import { dueNow } from "../policy";
 import { redeemPromo } from "../promos";
 import { settleHeldBooking } from "./bookings";
 import { activateSubscription } from "./desk";
@@ -221,13 +222,14 @@ export async function onlineCreate(sql: Sql, request: Request, user: PublicUser)
       user_id: string;
       status: string;
       price_vnd: number;
+      deposit_vnd: number;
       hold_until: string | null;
-    }>(sql, `select id, user_id, status, price_vnd, hold_until from court_bookings where id = $1`, [refId]);
+    }>(sql, `select id, user_id, status, price_vnd, deposit_vnd, hold_until from court_bookings where id = $1`, [refId]);
     if (!booking) throw err.notFound();
     if (!staff && booking.user_id !== user.id) throw err.forbidden();
     if (booking.status !== "hold") throw err.conflictState("That booking is not waiting for payment.");
     if (!booking.hold_until || new Date(booking.hold_until) < new Date()) throw err.holdExpired();
-    amount = booking.price_vnd;
+    amount = dueNow(booking);
     payerId = booking.user_id;
     label = "court";
   } else if (refType === "subscription") {

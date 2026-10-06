@@ -1,19 +1,21 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { SectionTitle } from "@/components/section";
-import { Map, Ticket, Wallet } from "lucide-react";
+import { Map, Star, Ticket, Wallet } from "lucide-react";
 import { AssistantMark } from "@/components/mark";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PassCard } from "@/components/media";
 import { NotificationList, type Notification } from "@/components/notifications";
+import { CancelBookingDialog } from "@/components/cancel-booking";
 import { PayOnlineButton } from "@/components/pay-online";
 import { Shell, hhmm, money, when } from "@/components/shell";
-import { Button, Card, EmptyState, Skeleton, StatusBadge } from "@/components/ui";
+import { Button, ButtonLink, Card, EmptyState, LoadError, Skeleton, StatusBadge } from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { GlareHover, ShinyText, SplitText, SpotlightCard } from "@/components/fx";
 import { apiGet, apiPost, getStoredUser } from "@/lib/arena3/client";
 import { formatDate, levelLabel, planBenefits, sportLabel, todayISO } from "@/lib/arena3/labels";
-import { t, tk } from "@/lib/i18n";
+import { t, tk, tData } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/app/")({
   component: Page,
@@ -58,18 +60,19 @@ type Me = {
 };
 
 function Page() {
+  const { data, error, reload } = useRead<Me>("/me");
+  // The server's copy, with notifications marked read here as the member opens them.
   const [me, setMe] = useState<Me | null>(null);
+  useEffect(() => {
+    setMe(data);
+  }, [data]);
+  const [cancelId, setCancelId] = useState<string | null>(null);
   // Whether the centre takes payment online at all.
   const [onlineOn, setOnlineOn] = useState(false);
   useEffect(() => {
     void apiGet<{ capabilities?: { online_payment?: boolean } }>("/flags")
       .then((r) => setOnlineOn(Boolean(r.capabilities?.online_payment)))
       .catch(() => setOnlineOn(false));
-  }, []);
-  useEffect(() => {
-    void apiGet<Me>("/me")
-      .then(setMe)
-      .catch((e) => toast.error(e.message));
   }, []);
   const u = getStoredUser();
   const live = me?.subscriptions.filter((s) => s.status === "active") ?? [];
@@ -107,7 +110,7 @@ function Page() {
       <div className="mb-6 flex items-end justify-between gap-3">
         <div>
           <ShinyText
-            className="shiny-muted mb-1 block text-[11px] font-semibold uppercase tracking-widest"
+            className="shiny-muted mb-1 block text-xs font-semibold"
             speed={6}
           >
             {t("Member")}
@@ -141,7 +144,7 @@ function Page() {
                   try {
                     await apiPost(`/waitlist/${o.id}/accept`);
                     toast.success(t("Seat claimed"));
-                    setMe(await apiGet("/me"));
+                    reload();
                   } catch (e) {
                     toast.error(e instanceof Error ? e.message : t("Offer expired"));
                   }
@@ -160,7 +163,7 @@ function Page() {
           <p className="mt-1 text-sm text-muted">
             {t("{plans} — ask the desk to unfreeze.", {
               plans: frozen
-                .map((s) => t("{plan} · new end date {date}", { plan: s.plan_name, date: formatDate(s.end_on) }))
+                .map((s) => t("{plan} · new end date {date}", { plan: tData(s.plan_name), date: formatDate(s.end_on) }))
                 .join(" · "),
             })}
           </p>
@@ -175,7 +178,7 @@ function Page() {
               plans: expiring
                 .map((s) =>
                   t("{plan} — {n} days left (until {date})", {
-                    plan: s.plan_name,
+                    plan: tData(s.plan_name),
                     n: daysUntil(s.end_on),
                     date: formatDate(s.end_on),
                   }),
@@ -183,13 +186,15 @@ function Page() {
                 .join(" · "),
             })}
           </p>
-          <Link to="/app/plans" className="mt-3 inline-block">
-            <Button size="sm">{t("Renew")}</Button>
-          </Link>
+          <ButtonLink to="/app/plans" size="sm" className="mt-3">
+            {t("Renew")}
+          </ButtonLink>
         </Card>
       ) : null}
 
-      {!me ? (
+      {error ? (
+        <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
+      ) : !me ? (
         <div className="grid gap-3 md:grid-cols-2">
           <Skeleton className="h-40" />
           <Skeleton className="h-40" />
@@ -209,21 +214,20 @@ function Page() {
               </GlareHover>
             ) : (
               <EmptyState title={t("No active plan")} hint={t("Buy a plan to enrol in classes and book courts.")}>
-                <Link to="/app/plans">
-                  <Button>{t("Browse plans")}</Button>
-                </Link>
+                <ButtonLink to="/app/plans">{t("Browse plans")}</ButtonLink>
               </EmptyState>
             )}
           </Reveal>
 
           <div className="order-2 hidden md:order-3 md:col-span-2 md:block">
             <SectionTitle text={t("Quick actions")} className="font-display text-lg tracking-tight" />
-            <Stagger className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4" gap={0.06}>
+            <Stagger className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5" gap={0.06}>
               {(
                 [
                   { to: "/app/book" as const, label: t("Book a court"), Icon: Map },
                   { to: "/app/classes" as const, label: t("Classes"), Icon: Ticket },
                   { to: "/app/plans" as const, label: t("Plans"), Icon: Wallet },
+                  { to: "/app/points" as const, label: t("Points"), Icon: Star },
                   { to: "/app/assistant" as const, label: t("Ask AI"), Icon: AssistantMark },
                 ] as const
               ).map((a) => (
@@ -289,22 +293,14 @@ function Page() {
                               refType="booking"
                               refId={ev.bookingId}
                               label={t("Pay online")}
-                              onPaid={async () => setMe(await apiGet("/me"))}
+                              onPaid={reload}
                             />
                           ) : null}
                           {ev.bookingId && (ev.status === "hold" || ev.status === "confirmed") ? (
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={async () => {
-                                try {
-                                  await apiPost(`/bookings/${ev.bookingId}/cancel`);
-                                  toast.success(t("Booking cancelled"));
-                                  setMe(await apiGet("/me"));
-                                } catch (e) {
-                                  toast.error(e instanceof Error ? e.message : t("Something went wrong"));
-                                }
-                              }}
+                              onClick={() => setCancelId(ev.bookingId ?? null)}
                             >
                               {t("Cancel")}
                             </Button>
@@ -318,14 +314,12 @@ function Page() {
                 <div className="mt-2">
                   <p className="text-sm text-muted">{t("Nothing on the calendar.")}</p>
                   <div className="mt-3 flex gap-2">
-                    <Link to="/app/book">
-                      <Button size="sm">{t("Book a court")}</Button>
-                    </Link>
-                    <Link to="/app/classes">
-                      <Button size="sm" variant="outline">
-                        {t("Join a class")}
-                      </Button>
-                    </Link>
+                    <ButtonLink to="/app/book" size="sm">
+                      {t("Book a court")}
+                    </ButtonLink>
+                    <ButtonLink to="/app/classes" size="sm" variant="outline">
+                      {t("Join a class")}
+                    </ButtonLink>
                   </div>
                 </div>
               )}
@@ -346,8 +340,8 @@ function Page() {
               <StaggerItem key={s.id}>
                 <Link to={forCourts ? "/app/book" : "/app/classes"} search={{ sport }} className="block h-full">
                   <Card interactive className="h-full">
-                    <p className="text-2xs uppercase tracking-wider text-muted">{sportLabel(s.sport_scope)}</p>
-                    <p className="mt-1 font-medium text-fg">{s.plan_name}</p>
+                    <p className="text-2xs text-muted">{sportLabel(s.sport_scope)}</p>
+                    <p className="mt-1 font-medium text-fg">{tData(s.plan_name)}</p>
                     <p className="text-sm text-muted">{t("Until {date}", { date: formatDate(s.end_on) })}</p>
                     <p className="text-sm text-muted">{planBenefits(s).join(" · ")}</p>
                   </Card>
@@ -360,7 +354,7 @@ function Page() {
 
       <div className="mt-8 flex items-end justify-between gap-3">
         <SectionTitle text={t("Notifications")} className="font-display text-2xl" />
-        <Link to="/app/notifications" className="text-sm underline">
+        <Link to="/app/notifications" className="hit text-sm underline">
           {t("Open inbox")}
         </Link>
       </div>
@@ -383,6 +377,12 @@ function Page() {
         />
       ) : null}
       {me && !me.inbox.length ? <p className="mt-3 text-sm text-muted">{t("Nothing here yet.")}</p> : null}
+      <CancelBookingDialog
+        bookingId={cancelId}
+        open={cancelId != null}
+        onClose={() => setCancelId(null)}
+        onDone={reload}
+      />
     </Shell>
   );
 }

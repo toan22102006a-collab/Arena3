@@ -14,6 +14,7 @@ import {
 } from "../helpers";
 import { quotePromo, redeemForBooking, redeemPromo, restoreIfFullyRefunded, type PromoQuote } from "../promos";
 import { methodLabelVi } from "../labels";
+import { parseCancelTiers } from "../policy";
 import { renderInvoicePdf } from "../pdf";
 import { validatePriceRules } from "../rules";
 import { requireRole, type PublicUser } from "../session";
@@ -37,14 +38,19 @@ export async function shiftOpen(sql: Sql, user: PublicUser) {
   return { status: 201, body: { shift: row } };
 }
 
-export async function shiftCurrent(sql: Sql, user: PublicUser) {
+export async function shiftCurrent(sql: Sql, user: PublicUser, request: Request) {
   requireRole(user, ["receptionist", "manager"]);
   const row = await one(
     sql,
     `select * from cashier_shifts where receptionist_id = $1 and closed_at is null`,
     [user.id],
   );
-  if (!row) throw err.notFound("No till shift is open.");
+  if (!row) {
+    // The desk screens ask with ?optional=1: "no till open yet" is a normal state for them, so they
+    // get an empty answer instead of a 404 in the browser console. Everyone else keeps the 404.
+    if (new URL(request.url).searchParams.get("optional") === "1") return { status: 200, body: { shift: null, totals: null } };
+    throw err.notFound("No till shift is open.");
+  }
   const totals = await one<{ cash: number; all: number }>(
     sql,
     `select coalesce(sum(amount_vnd) filter (where method = 'cash' and status = 'posted'),0)::int as cash,
@@ -541,7 +547,7 @@ export async function paymentsPending(sql: Sql, request: Request, user: PublicUs
   // showing them would invite a receptionist to confirm money into a booking
   // that no longer owns its slot.
   const awaiting = await sql.query(
-    `select b.id, b.code, b.price_vnd, b.start_at, b.end_at,
+    `select b.id, b.code, b.price_vnd, b.deposit_vnd, b.start_at, b.end_at,
             b.transfer_requested_at, b.hold_until,
             c.court_code, c.sport,
             u.full_name as member_name, u.member_code, u.phone
@@ -954,13 +960,15 @@ export async function settingsPatch(sql: Sql, request: Request, user: PublicUser
   requireRole(user, ["manager"]);
   const b = await readJson(request);
   const patch = parseSettingsPatch(b);
+  if (b.cancel_tiers !== undefined) patch.cancel_tiers = JSON.stringify(parseCancelTiers(b.cancel_tiers));
   const keys = Object.keys(patch);
   const current = await one<Record<string, string>>(
     sql,
     `select open_time::text, close_time::text, hold_minutes, book_ahead_days, max_slots_per_day,
             cancel_court_hours, cancel_class_hours, noshow_grace_minutes, checkin_before_minutes,
             refund_manager_vnd, self_checkin_enabled, gate_dedup_minutes, at_risk_idle_days, minor_age, vat_rate, legal_name, tax_code, address,
-            freeze_max_days_year, waitlist_offer_hours
+            freeze_max_days_year, waitlist_offer_hours, deposit_pct, deposit_peak_only, cancel_tiers::text,
+            series_min_weeks, series_max_weeks, series_discount_pct, loyalty_earn_vnd, loyalty_redeem_vnd, day_pass_vnd
        from center_settings where id = 1`,
   );
   if (keys.length === 0) return { status: 200, body: await one(sql, `select * from center_settings where id = 1`) };
@@ -969,7 +977,10 @@ export async function settingsPatch(sql: Sql, request: Request, user: PublicUser
     (patch.open_time as string | undefined) ?? current!.open_time,
     (patch.close_time as string | undefined) ?? current!.close_time,
   );
-  const sets = keys.map((k, i) => `${k} = $${i + 1}`);
+  const minW = Number(patch.series_min_weeks ?? current!.series_min_weeks);
+  const maxW = Number(patch.series_max_weeks ?? current!.series_max_weeks);
+  if (minW > maxW) throw err.field("series_max_weeks", "The maximum cannot be below the minimum.");
+  const sets = keys.map((k, i) => `${k} = ${i + 1}${k === "cancel_tiers" ? "::jsonb" : ""}`);
   await sql.query(`update center_settings set ${sets.join(", ")} where id = 1`, keys.map((k) => patch[k]));
   await audit(
     sql,

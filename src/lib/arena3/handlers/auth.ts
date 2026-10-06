@@ -74,10 +74,11 @@ export async function register(sql: Sql, request: Request) {
   const dob = str(body.dob) ?? str(body.date_of_birth);
   const email = str(body.email);
   const pii = body.pii_consent === true;
-  if (!full_name) throw err.validation("Full name is required.");
-  if (!isValidVnPhone(phone)) throw err.validation("That phone number is not valid.");
+  // `field` names the input at fault, so the form can mark it and not only say what went wrong.
+  if (!full_name) throw err.validation("Full name is required.", { field: "full_name" });
+  if (!isValidVnPhone(phone)) throw err.validation("That phone number is not valid.", { field: "phone" });
   if (!password || !passwordOk(password)) {
-    throw err.br("BR-02", "Password needs at least 8 characters, with letters and numbers.");
+    throw err.br("BR-02", "Password needs at least 8 characters, with letters and numbers.", { field: "password" });
   }
   if (!pii) throw err.br("BR-08", "You must accept the terms and the data-privacy notice.");
   const settings = await getSettings(sql);
@@ -86,7 +87,7 @@ export async function register(sql: Sql, request: Request) {
     if (age < settings.minor_age) {
       const gn = str(body.guardian_name);
       const gp = str(body.guardian_phone);
-      if (!gn || !gp) throw err.br("BR-07", "A minor needs guardian details.");
+      if (!gn || !gp) throw err.br("BR-07", "A minor needs guardian details.", { field: "guardian_name" });
     }
   }
   const exists = await one(sql, `select id from users where phone = $1 or email = $2`, [
@@ -154,16 +155,16 @@ export async function verifyOtp(sql: Sql, request: Request) {
       for update`,
     [phone, purpose],
   );
-  if (!ch) throw err.validation("No OTP request is pending.");
+  if (!ch) throw err.validation("No OTP request is pending.", { field: "otp" });
   if (ch.attempts >= 5) throw err.rateLimited("Too many OTP attempts — locked for 15 minutes.");
-  if (new Date(ch.expires_at) < new Date()) throw err.validation("That OTP has expired.");
+  if (new Date(ch.expires_at) < new Date()) throw err.validation("That OTP has expired.", { field: "otp" });
   if (ch.otp_hash !== hashOtp(otp)) {
     await sql.query(`update otp_challenges set attempts = attempts + 1 where id = $1`, [ch.id]);
-    throw err.validation("That OTP is not correct.");
+    throw err.validation("That OTP is not correct.", { field: "otp" });
   }
   if (purpose === "reset") {
     const newPw = str(body.password);
-    if (!newPw || !passwordOk(newPw)) throw err.br("BR-02", "The new password is not valid.");
+    if (!newPw || !passwordOk(newPw)) throw err.br("BR-02", "The new password is not valid.", { field: "password" });
     await sql.query(`update users set password_hash = $1, failed_logins = 0, locked_until = null where phone = $2`, [
       hashPassword(newPw),
       phone,
@@ -251,7 +252,7 @@ export async function logout(sql: Sql, request: Request, user: PublicUser) {
 export async function forgot(sql: Sql, request: Request) {
   const body = await readJson(request);
   const phone = normalizePhone(str(body.phone) ?? "");
-  if (!isValidVnPhone(phone)) throw err.validation("That phone number is not valid.");
+  if (!isValidVnPhone(phone)) throw err.validation("That phone number is not valid.", { field: "phone" });
   const user = await one<{ id: string; email: string | null }>(
     sql,
     `select id, email from users where phone = $1`,
@@ -418,15 +419,19 @@ export async function mePassword(sql: Sql, request: Request, user: PublicUser) {
   const next = str(body.new_password) ?? "";
   const confirm = str(body.confirm_password);
   if (!current || !next) throw err.validation("current_password and new_password are required.");
-  if (confirm !== undefined && confirm !== next) throw err.validation("The two new passwords do not match.");
+  if (confirm !== undefined && confirm !== next) {
+    throw err.validation("The two new passwords do not match.", { field: "confirm_password" });
+  }
   limit(`pw:${user.id}`, RULES.passwordChange, "password changes");
   if (!passwordOk(next)) {
-    throw err.validation("Use at least 8 characters with a letter and a number.");
+    throw err.validation("Use at least 8 characters with a letter and a number.", { field: "new_password" });
   }
-  if (next === current) throw err.validation("Pick a password you have not used here before.");
+  if (next === current) {
+    throw err.validation("Pick a password you have not used here before.", { field: "new_password" });
+  }
   const row = await one<{ password_hash: string }>(sql, `select password_hash from users where id = $1`, [user.id]);
   if (!row || !verifyPassword(current, row.password_hash)) {
-    throw err.validation("That is not your current password.");
+    throw err.validation("That is not your current password.", { field: "current_password" });
   }
   await sql.query(
     `update users set password_hash = $1, must_change_password = false, failed_logins = 0, locked_until = null

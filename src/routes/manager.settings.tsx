@@ -3,13 +3,14 @@ import { SectionTitle } from "@/components/section";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Shell } from "@/components/shell";
-import { Button, Card, Field, Input, Seg, Skeleton } from "@/components/ui";
+import { Button, Card, Check, Field, Input, LoadError, MoneyInput, Seg, Skeleton } from "@/components/ui";
 import { Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
 import { SplitText } from "@/components/fx";
 import { cn } from "@/lib/cn";
-import { ApiClientError, apiGet, apiPatch } from "@/lib/arena3/client";
+import { ApiClientError, apiPatch } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
 import { t, tk, tServer } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/manager/settings")({
   component: Page,
@@ -35,21 +36,37 @@ const SETTINGS_FORM_KEYS = [
   "self_checkin_enabled",
   "freeze_max_days_year",
   "waitlist_offer_hours",
+  "deposit_pct",
+  "deposit_peak_only",
+  "series_min_weeks",
+  "series_max_weeks",
+  "series_discount_pct",
+  "loyalty_earn_vnd",
+  "loyalty_redeem_vnd",
+  "day_pass_vnd",
 ];
 
+type Tier = { hours: number | string; refund_pct: number | string };
+
 function Page() {
-  const [s, setS] = useState<Record<string, unknown> | null>(null);
-  const [flags, setFlags] = useState<Record<string, boolean>>({});
+  const read = useRead<Record<string, unknown>>("/settings");
+  const flagsRead = useRead<{ flags: Record<string, boolean> }>("/flags");
+  // What the manager has typed or switched replaces what the server sent, from the first change on.
+  const [typed, setS] = useState<Record<string, unknown> | null>(null);
+  const [switched, setFlags] = useState<Record<string, boolean> | null>(null);
+  const s = typed ?? read.data;
+  const flags = switched ?? flagsRead.data?.flags ?? {};
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    void apiGet<Record<string, unknown>>("/settings")
-      .then(setS)
-      .catch((e) => toast.error(tServer(e.message)));
-    void apiGet<{ flags: Record<string, boolean> }>("/flags")
-      .then((r) => setFlags(r.flags))
-      .catch(() => undefined);
-  }, []);
+  // A form that cannot be filled from the server is not shown at all: a blank one would look like
+  // the centre has no details, and saving it would send those blanks back.
+  if (read.error) {
+    return (
+      <Shell role="manager" title={t("Centre settings")}>
+        <LoadError message={read.error.message} onRetry={read.error.refused ? undefined : read.reload} />
+      </Shell>
+    );
+  }
   if (!s) {
     return (
       <Shell role="manager" title={t("Centre settings")}>
@@ -57,28 +74,42 @@ function Page() {
       </Shell>
     );
   }
+  const tiers = (Array.isArray(s.cancel_tiers) ? s.cancel_tiers : []) as Tier[];
   /** One input of the Centre details form; the server's message for it shows underneath. */
-  function f(key: string, label: string, type: "text" | "number" | "time" = "text") {
+  function f(key: string, label: string, type: "text" | "number" | "time" | "money" = "text") {
     const raw = s![key];
     const value = type === "time" ? String(raw ?? "").slice(0, 5) : String(raw ?? "");
+    const change = (next: string) => {
+      setS({ ...s!, [key]: next });
+      if (fieldErrors[key]) setFieldErrors(({ [key]: _gone, ...rest }) => rest);
+    };
     return (
       <Field label={label} hint={fieldErrors[key]}>
-        <Input
-          type={type}
-          inputMode={type === "number" ? "numeric" : undefined}
-          value={value}
-          aria-invalid={fieldErrors[key] ? true : undefined}
-          onChange={(e) => {
-            setS({ ...s!, [key]: e.target.value });
-            if (fieldErrors[key]) setFieldErrors(({ [key]: _gone, ...rest }) => rest);
-          }}
-        />
+        {type === "money" ? (
+          <MoneyInput value={value} aria-invalid={fieldErrors[key] ? true : undefined} onChange={change} />
+        ) : (
+          <Input
+            type={type}
+            inputMode={type === "number" ? "numeric" : undefined}
+            value={value}
+            aria-invalid={fieldErrors[key] ? true : undefined}
+            onChange={(e) => change(e.target.value)}
+          />
+        )}
       </Field>
     );
   }
   return (
     <Shell role="manager" title={t("Centre settings")} subtitle={t("New transactions pick these up within a minute.")}>
       <SectionTitle text={tk("Features")} className="mb-3 font-display text-2xl" />
+      {flagsRead.error ? (
+        // Switches that cannot be read must not show "off": that would be a guess presented as the state.
+        <div className="mb-6">
+          <LoadError message={flagsRead.error.message} onRetry={flagsRead.error.refused ? undefined : flagsRead.reload} />
+        </div>
+      ) : !flagsRead.data && !switched ? (
+        <Skeleton className="mb-6 h-24" />
+      ) : (
       <Stagger className="mb-6 grid gap-2 md:grid-cols-2" gap={0.05}>
         {FLAG_META.map((fl) => (
           <StaggerItem key={fl.key}>
@@ -101,21 +132,26 @@ function Page() {
                   toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
                 }
               }}
-              className={`h-8 w-14 rounded-full p-1 transition-colors ${flags[fl.key] ? "bg-accent" : "bg-wood"}`}
-              aria-pressed={!!flags[fl.key]}
+              className="grid h-11 w-14 shrink-0 place-items-center rounded-full sm:h-8"
+              role="switch"
+              aria-checked={!!flags[fl.key]}
               aria-label={t(fl.label)}
             >
-              <motion.span
-                layout
-                className="block size-6 rounded-full bg-surface shadow"
-                style={{ marginLeft: flags[fl.key] ? "1.5rem" : 0 }}
-                transition={{ type: "spring", stiffness: 500, damping: 34 }}
-              />
+              {/* The button is the 44px target; the track inside is what you see. */}
+              <span className={`block h-8 w-14 rounded-full p-1 transition-colors ${flags[fl.key] ? "bg-accent" : "bg-subtle"}`}>
+                <motion.span
+                  layout
+                  className="block size-6 rounded-full bg-surface shadow"
+                  style={{ marginLeft: flags[fl.key] ? "1.5rem" : 0 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 34 }}
+                />
+              </span>
             </button>
           </Card>
           </StaggerItem>
         ))}
       </Stagger>
+      )}
       <SectionTitle text={tk("Courts")} className="mb-1 font-display text-2xl" />
       <p className="mb-3 text-sm text-muted">
         {t("Taking a court out of service stops new bookings on it. Anything already booked stays — the desk sorts those out.")}
@@ -137,20 +173,67 @@ function Page() {
         {f("at_risk_idle_days", t("At-risk after no visit for (days)"), "number")}
         {f("freeze_max_days_year", t("Freeze cap (days per year)"), "number")}
         {f("waitlist_offer_hours", t("Waitlist offer window (hours)"), "number")}
-        <label className="flex items-start gap-3 text-sm md:col-span-2">
-          <input
-            type="checkbox"
-            className="mt-1 size-4 accent-[var(--color-accent)]"
-            checked={s.self_checkin_enabled === true}
-            onChange={(e) => setS({ ...s, self_checkin_enabled: e.target.checked })}
-          />
-          <span>
-            {t("Let members check in themselves")}
-            <span className="block text-xs text-muted">
-              {t("Off by default. When on, the front desk shows a code that changes every 30 seconds and a member scans it from their own phone. Members without a plan or booking are still sent to the desk.")}
-            </span>
-          </span>
-        </label>
+        <p className="mt-2 font-medium md:col-span-2">{t("Deposit and late-cancel fee")}</p>
+        {f("deposit_pct", t("Deposit when booking online (%)"), "number")}
+        <Check
+          checked={s.deposit_peak_only === true}
+          onChange={(e) => setS({ ...s, deposit_peak_only: e.target.checked })}
+          label={t("Ask for a deposit on peak hours only")}
+        />
+        <div className="md:col-span-2">
+          <p className="mb-1 text-sm">{t("Refund by how early they cancel")}</p>
+          {fieldErrors.cancel_tiers ? <p role="alert" className="mb-1 text-xs text-danger">{fieldErrors.cancel_tiers}</p> : null}
+          <div className="grid gap-2">
+            {tiers.map((tier, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
+                <span>{t("Cancelled at least")}</span>
+                <Input
+                  className="w-20"
+                  inputMode="numeric"
+                  aria-label={t("Hours before start")}
+                  value={String(tier.hours)}
+                  onChange={(e) => setS({ ...s, cancel_tiers: tiers.map((x, j) => (j === i ? { ...x, hours: e.target.value } : x)) })}
+                />
+                <span>{t("hours before start → refund")}</span>
+                <Input
+                  className="w-20"
+                  inputMode="numeric"
+                  aria-label={t("Refund percent")}
+                  value={String(tier.refund_pct)}
+                  onChange={(e) => setS({ ...s, cancel_tiers: tiers.map((x, j) => (j === i ? { ...x, refund_pct: e.target.value } : x)) })}
+                />
+                <span>%</span>
+                {tiers.length > 1 ? (
+                  <Button size="sm" variant="outline" onClick={() => setS({ ...s, cancel_tiers: tiers.filter((_, j) => j !== i) })}>
+                    {t("Remove")}
+                  </Button>
+                ) : null}
+              </div>
+            ))}
+            {tiers.length < 6 ? (
+              <div>
+                <Button size="sm" variant="outline" onClick={() => setS({ ...s, cancel_tiers: [...tiers, { hours: 0, refund_pct: 0 }] })}>
+                  {t("Add a step")}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs text-muted">{t("The last step must be 0 hours: that is the refund for cancelling at the last minute.")}</p>
+        </div>
+        <p className="mt-2 font-medium md:col-span-2">{t("Fixed weekly bookings, points and day pass")}</p>
+        {f("series_min_weeks", t("Fixed booking: fewest weeks"), "number")}
+        {f("series_max_weeks", t("Fixed booking: most weeks"), "number")}
+        {f("series_discount_pct", t("Fixed booking discount (%)"), "number")}
+        {f("day_pass_vnd", t("Day pass price (đ)"), "money")}
+        {f("loyalty_earn_vnd", t("Spend for 1 point (đ)"), "money")}
+        {f("loyalty_redeem_vnd", t("Value of 1 point (đ)"), "money")}
+        <Check
+          className="md:col-span-2"
+          checked={s.self_checkin_enabled === true}
+          onChange={(e) => setS({ ...s, self_checkin_enabled: e.target.checked })}
+          label={t("Let members check in themselves")}
+          hint={t("Off by default. When on, the front desk shows a code that changes every 30 seconds and a member scans it from their own phone. Members without a plan or booking are still sent to the desk.")}
+        />
         <p className="text-xs text-muted md:col-span-2">
           {t("Time zone ({tz}) and currency ({currency}) are fixed for this centre.", {
             tz: String(s.timezone ?? "—"),
@@ -168,6 +251,7 @@ function Page() {
                 // input that is wrong, so a blank never becomes a silent null.
                 const body: Record<string, unknown> = {};
                 for (const k of SETTINGS_FORM_KEYS) body[k] = s[k] ?? "";
+                body.cancel_tiers = tiers.map((x) => ({ hours: Number(x.hours), refund_pct: Number(x.refund_pct) }));
                 body.open_time = String(s.open_time ?? "").slice(0, 5);
                 body.close_time = String(s.close_time ?? "").slice(0, 5);
                 setS(await apiPatch("/settings", body));
@@ -202,15 +286,15 @@ const STATUSES = [
 ];
 
 function Courts() {
+  const read = useRead<{ items: Court[] }>("/courts");
   const [items, setItems] = useState<Court[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [sport, setSport] = useState("");
 
+  // The list starts from the server's answer; a status change moves its pill at once and the server confirms.
   useEffect(() => {
-    void apiGet<{ items: Court[] }>("/courts")
-      .then((r) => setItems(r.items))
-      .catch((e) => toast.error(e instanceof Error ? tServer(e.message) : t("Could not load the courts")));
-  }, []);
+    if (read.data) setItems(read.data.items);
+  }, [read.data]);
 
   async function set(court: Court, status: string) {
     if (court.status === status || busy) return;
@@ -240,6 +324,7 @@ function Courts() {
     }
   }
 
+  if (read.error) return <LoadError message={read.error.message} onRetry={read.error.refused ? undefined : read.reload} />;
   if (!items) return <Skeleton className="h-40" />;
 
   const shown = sport ? items.filter((c) => c.sport === sport) : items;
@@ -273,9 +358,9 @@ function Courts() {
                 <p className="text-xs text-muted">{sportLabel(c.sport)}</p>
               </div>
               <div
-                role="radiogroup"
+                role="group"
                 aria-label={t("Status for {code}", { code: c.court_code })}
-                className="inline-flex rounded-[var(--radius-pill)] bg-wood p-1"
+                className="inline-flex rounded-[var(--radius-md)] bg-wood p-1"
               >
                 {STATUSES.map((st) => {
                   const on = c.status === st.value;
@@ -283,12 +368,11 @@ function Courts() {
                     <button
                       key={st.value}
                       type="button"
-                      role="radio"
-                      aria-checked={on}
+                      aria-pressed={on}
                       disabled={busy === c.id}
                       onClick={() => void set(c, st.value)}
                       className={cn(
-                        "relative min-h-8 rounded-[var(--radius-pill)] px-3 text-2xs font-semibold uppercase tracking-wider transition-colors duration-200 disabled:opacity-60",
+                        "relative min-h-11 rounded-[var(--radius-sm)] px-3 text-2xs font-semibold transition-colors duration-200 disabled:opacity-60 sm:min-h-8",
                         on ? "text-bg" : "text-muted hover:text-fg",
                       )}
                     >
@@ -296,7 +380,7 @@ function Courts() {
                         <motion.span
                           layoutId={`court-status-${c.id}`}
                           className={cn(
-                            "absolute inset-0 rounded-[var(--radius-pill)]",
+                            "absolute inset-0 rounded-[var(--radius-sm)]",
                             st.tone === "accent" ? "bg-accent" : st.tone === "hold" ? "bg-hold" : "bg-danger",
                           )}
                           transition={{ type: "spring", stiffness: 420, damping: 34 }}

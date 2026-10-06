@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { SectionTitle } from "@/components/section";
 import { toast } from "sonner";
-import { Badge, Button, Card, EmptyState, DateField, Field, Input, Select, Skeleton, Textarea } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, DateField, Field, Input, LoadError, Select, Skeleton, Textarea } from "@/components/ui";
 import { Reveal } from "@/components/motion";
 import { SplitText } from "@/components/fx";
 import { hhmm } from "@/components/shell";
 import { sessionDay } from "@/components/class-detail";
 import { apiGet, apiPatch, apiPost, apiPut } from "@/lib/arena3/client";
 import { addDaysISO, formatDate } from "@/lib/arena3/labels";
+import { scrollBehavior } from "@/lib/calm";
 import { t, tk, tServer } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 type Msg = (e: unknown) => string;
 const say: Msg = (e) => (e instanceof Error ? e.message : t("Something went wrong"));
@@ -53,25 +55,16 @@ function toDraft(r: ResultRow): Draft {
 }
 
 export function ResultsPanel({ sessionId, cancelled }: { sessionId: string; cancelled: boolean }) {
+  const { data, error, reload } = useRead<{ items: ResultRow[] }>(`/sessions/${sessionId}/results`);
   const [rows, setRows] = useState<ResultRow[] | null>(null);
   const [draft, setDraft] = useState<Record<string, Draft>>({});
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const r = await apiGet<{ items: ResultRow[] }>(`/sessions/${sessionId}/results`);
-      setRows(r.items);
-      setDraft(Object.fromEntries(r.items.map((x) => [x.user_id, toDraft(x)])));
-    } catch (e) {
-      toast.error(say(e));
-      setRows([]);
-    }
-  }, [sessionId]);
-
+  // What the server holds is where the form starts; typing after that stays in the form until it is saved.
   useEffect(() => {
-    setRows(null);
-    void load();
-  }, [load]);
+    setRows(data?.items ?? null);
+    setDraft(Object.fromEntries((data?.items ?? []).map((x) => [x.user_id, toDraft(x)])));
+  }, [data]);
 
   async function save() {
     setSaving(true);
@@ -102,66 +95,85 @@ export function ResultsPanel({ sessionId, cancelled }: { sessionId: string; canc
     setDraft((d) => ({ ...d, [id]: { ...d[id]!, [k]: v } as Draft }));
 
   return (
-    <div className="mt-10">
+    <div>
       <SectionTitle text={t("Results")} className="font-display text-2xl" />
       <p className="mt-1 text-sm text-muted">
         {t("How much of the plan each student got through, and any numbers worth tracking. Leave a row blank to record nothing.")}
       </p>
-      {!rows ? (
-        <Skeleton className="mt-3 h-24" />
-      ) : cancelled ? (
+      {cancelled ? (
         <p className="mt-3 text-sm text-muted">{t("This session was cancelled, so there is nothing to record.")}</p>
+      ) : error ? (
+        <div className="mt-3">
+          <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
+        </div>
+      ) : !rows ? (
+        <Skeleton className="mt-3 h-24" />
       ) : !rows.length ? (
         <p className="mt-3 text-sm text-muted">{t("Nobody is enrolled in this class yet.")}</p>
       ) : (
         <>
-          <div className="mt-3 grid gap-2">
-            {rows.map((r) => {
-              const d = draft[r.user_id];
-              if (!d) return null;
-              return (
-                <Card key={r.user_id} className="grid gap-3 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-medium">
-                      {r.full_name} <span className="text-xs text-muted">{r.member_code}</span>
-                    </p>
-                    {r.attendance ? <Badge tone={r.attendance === "absent" ? "danger" : "muted"}>{t(r.attendance)}</Badge> : null}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                    <Field label={t("Plan done %")}>
-                      <Input
-                        inputMode="numeric"
-                        placeholder="0–100"
-                        value={d.pct}
-                        onChange={(e) => set(r.user_id, "pct", e.target.value)}
-                      />
-                    </Field>
-                    {METRICS.map((m) => (
-                      <Field key={m.key} label={t(m.label)}>
-                        <Input
-                          inputMode="numeric"
-                          placeholder={t(m.hint)}
-                          value={d[m.key]}
-                          onChange={(e) => set(r.user_id, m.key, e.target.value)}
-                        />
-                      </Field>
-                    ))}
-                  </div>
-                  <Field label={t("Note")}>
+          {/* One row per student, columns shared: numbers line up so a column can be filled straight down. */}
+          <Card className="mt-3 overflow-hidden p-0">
+            <div className="hidden grid-cols-[minmax(0,1.4fr)_repeat(4,5.5rem)] gap-2 border-b border-line bg-wood/60 px-4 py-2 text-xs font-semibold text-muted md:grid">
+              <span>{t("Student")}</span>
+              <span>{t("Plan done %")}</span>
+              {METRICS.map((m) => (
+                <span key={m.key}>{t(m.label)}</span>
+              ))}
+            </div>
+            <ul className="divide-y divide-line">
+              {rows.map((r) => {
+                const d = draft[r.user_id];
+                if (!d) return null;
+                return (
+                  <li key={r.user_id} className="grid gap-2 px-4 py-3">
+                    <div className="grid items-center gap-2 md:grid-cols-[minmax(0,1.4fr)_repeat(4,5.5rem)]">
+                      <p className="flex min-w-0 flex-wrap items-center gap-x-2 font-medium">
+                        {r.full_name}
+                        {r.attendance ? (
+                          <Badge tone={r.attendance === "absent" ? "danger" : "muted"}>{t(r.attendance)}</Badge>
+                        ) : null}
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 md:contents">
+                        <label className="grid gap-1">
+                          <span className="text-xs text-muted md:sr-only">{t("Plan done %")}</span>
+                          <Input
+                            inputMode="numeric"
+                            placeholder="0–100"
+                            value={d.pct}
+                            onChange={(e) => set(r.user_id, "pct", e.target.value)}
+                          />
+                        </label>
+                        {METRICS.map((m) => (
+                          <label key={m.key} className="grid gap-1">
+                            <span className="text-xs text-muted md:sr-only">{t(m.label)}</span>
+                            <Input
+                              inputMode="numeric"
+                              placeholder={t(m.hint)}
+                              value={d[m.key]}
+                              onChange={(e) => set(r.user_id, m.key, e.target.value)}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                     <Input
+                      aria-label={t("Note")}
                       maxLength={1000}
                       placeholder={t("What stood out today")}
                       value={d.note}
                       onChange={(e) => set(r.user_id, "note", e.target.value)}
                     />
-                  </Field>
-                </Card>
-              );
-            })}
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+          <div className="sticky bottom-24 z-10 mt-4 md:bottom-4">
+            <Button size="lg" className="w-full shadow-[var(--shadow-soft)]" onClick={save} disabled={saving}>
+              {saving ? t("Saving…") : t("Save results")}
+            </Button>
           </div>
-          <Button className="mt-4" onClick={save} disabled={saving}>
-            {saving ? t("Saving…") : t("Save results")}
-          </Button>
         </>
       )}
     </div>
@@ -265,7 +277,11 @@ function lastWeekMonday(iso: string) {
 }
 
 export function PlanPanel({ session, f5 }: { session: TrainingSession; f5: boolean }) {
-  const [plans, setPlans] = useState<PlanRow[] | null>(null);
+  const plansRead = useRead<{ items: PlanRow[] }>(`/training-plans?class_id=${session.class_id}`);
+  const plans = plansRead.data?.items ?? null;
+  // Templates are an extra: if they do not come, the coach simply builds the plan from scratch.
+  const tplRead = useRead<{ items: Template[] }>(`/training-plans/templates?sport=${session.sport}&level=${session.level}`);
+  const templates = tplRead.data?.items ?? [];
   const [blocks, setBlocks] = useState<Block[]>([blank()]);
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
@@ -273,31 +289,9 @@ export function PlanPanel({ session, f5 }: { session: TrainingSession; f5: boole
   const [busy, setBusy] = useState(false);
   // The plan being changed. Its payload is carried so goal / sport / level survive an edit.
   const [editing, setEditing] = useState<PlanRow | null>(null);
-  const [templates, setTemplates] = useState<Template[]>([]);
   const [templateId, setTemplateId] = useState("");
   const [open, setOpen] = useState<Record<number, boolean>>({ 0: true });
   const [history, setHistory] = useState<{ plan: PlanRow; items: Version[] } | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const r = await apiGet<{ items: PlanRow[] }>(`/training-plans?class_id=${session.class_id}`);
-      setPlans(r.items);
-    } catch (e) {
-      toast.error(say(e));
-      setPlans([]);
-    }
-  }, [session.class_id]);
-
-  useEffect(() => {
-    setPlans(null);
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    apiGet<{ items: Template[] }>(`/training-plans/templates?sport=${session.sport}&level=${session.level}`)
-      .then((r) => setTemplates(r.items))
-      .catch(() => setTemplates([]));
-  }, [session.sport, session.level]);
 
   function reset() {
     setBlocks([blank()]);
@@ -369,7 +363,7 @@ export function PlanPanel({ session, f5 }: { session: TrainingSession; f5: boole
         warn(r.warnings);
       }
       reset();
-      await load();
+      plansRead.reload();
     } catch (e) {
       toast.error(say(e));
     } finally {
@@ -383,16 +377,17 @@ export function PlanPanel({ session, f5 }: { session: TrainingSession; f5: boole
     setNote(p.payload.note ?? "");
     setBlocks(fromPlanBlocks(p.payload.blocks));
     setOpen({ 0: true });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: scrollBehavior() });
   }
 
   async function toggle(p: PlanRow) {
     try {
       await apiPatch(`/training-plans/${p.id}`, { published: !p.published });
-      setPlans((l) => l?.map((x) => (x.id === p.id ? { ...x, published: !p.published } : x)) ?? l);
     } catch (e) {
       toast.error(say(e));
     }
+    // Either way the list shows what the server holds now, so a plan someone else changed does not linger.
+    plansRead.reload();
   }
 
   async function saveTemplate(p: PlanRow) {
@@ -403,8 +398,7 @@ export function PlanPanel({ session, f5 }: { session: TrainingSession; f5: boole
         level: p.payload.level ?? session.level,
       });
       toast.success(t("Saved as a template for this sport and level"));
-      const r = await apiGet<{ items: Template[] }>(`/training-plans/templates?sport=${session.sport}&level=${session.level}`);
-      setTemplates(r.items);
+      tplRead.reload();
     } catch (e) {
       toast.error(say(e));
     }
@@ -445,7 +439,7 @@ export function PlanPanel({ session, f5 }: { session: TrainingSession; f5: boole
               : t("Nothing copied — {n} sessions already planned, past or missing.", { n: skipped })
             : t("Last week had no plans to copy."),
       );
-      await load();
+      plansRead.reload();
     } catch (e) {
       toast.error(say(e));
     }
@@ -463,7 +457,7 @@ export function PlanPanel({ session, f5 }: { session: TrainingSession; f5: boole
     });
 
   return (
-    <div className="mt-10">
+    <div>
       <SectionTitle text={t("Session plan")} className="font-display text-2xl" />
       <p className="mt-1 text-sm text-muted">
         {t("Plan this session block by block — what to do, how hard, with what, and what good looks like.")}{" "}
@@ -655,7 +649,12 @@ export function PlanPanel({ session, f5 }: { session: TrainingSession; f5: boole
       </Reveal>
 
       <div className="mt-4 grid gap-2">
-        {!plans ? (
+        {plansRead.error ? (
+          <LoadError
+            message={plansRead.error.message}
+            onRetry={plansRead.error.refused ? undefined : plansRead.reload}
+          />
+        ) : !plans ? (
           <Skeleton className="h-16" />
         ) : !plans.length ? (
           <EmptyState title={t("No plans for this class yet")} hint={t("Build one above, or copy last week's.")} />
@@ -725,27 +724,13 @@ type HwRow = {
 };
 
 export function HomeworkPanel({ classId }: { classId: string }) {
-  const [items, setItems] = useState<HwRow[] | null>(null);
+  const { data, error, reload } = useRead<{ items: HwRow[] }>(`/homework?class_id=${classId}`);
+  const items = data?.items ?? null;
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [lines, setLines] = useState("");
   const [due, setDue] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async () => {
-    try {
-      const r = await apiGet<{ items: HwRow[] }>(`/homework?class_id=${classId}`);
-      setItems(r.items);
-    } catch (e) {
-      toast.error(say(e));
-      setItems([]);
-    }
-  }, [classId]);
-
-  useEffect(() => {
-    setItems(null);
-    void load();
-  }, [load]);
 
   async function assign() {
     setBusy(true);
@@ -767,7 +752,7 @@ export function HomeworkPanel({ classId }: { classId: string }) {
       setBody("");
       setLines("");
       setDue("");
-      await load();
+      reload();
     } catch (e) {
       toast.error(say(e));
     } finally {
@@ -776,7 +761,7 @@ export function HomeworkPanel({ classId }: { classId: string }) {
   }
 
   return (
-    <div className="mt-10">
+    <div>
       <SectionTitle text={t("Homework")} className="font-display text-2xl" />
       <p className="mt-1 text-sm text-muted">{t("Something to practise before the next class. Students tick items off as they go.")}</p>
       <Card className="mt-3 grid gap-3">
@@ -801,8 +786,12 @@ export function HomeworkPanel({ classId }: { classId: string }) {
         </div>
       </Card>
       <div className="mt-3 grid gap-2">
-        {!items ? (
+        {error ? (
+          <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
+        ) : !items ? (
           <Skeleton className="h-16" />
+        ) : items.length === 0 ? (
+          <EmptyState title={t("No homework assigned.")} />
         ) : (
           items.map((h) => (
             <Card key={h.id} className="flex flex-wrap items-center justify-between gap-3 p-4">

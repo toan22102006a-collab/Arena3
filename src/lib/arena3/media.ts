@@ -23,6 +23,14 @@ export const media = {
   coachLan: "/media/coach-lan.jpg",
   coachAnh: "/media/coach-anh.jpg",
   coachViet: "/media/coach-viet.jpg",
+  coachWhistle: "/media/coach-whistle.jpg",
+  coachDrill: "/media/coach-drill.jpg",
+  classGroup: "/media/class-group.jpg",
+  trainProgress: "/media/train-progress.jpg",
+  deskGate: "/media/desk-gate.jpg",
+  memberCard: "/media/member-card.jpg",
+  emptyCourt: "/media/empty-court.jpg",
+  wellness: "/media/wellness.jpg",
 } as const;
 
 export function sportPhoto(sport: string): string {

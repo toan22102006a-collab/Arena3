@@ -1,15 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { CourtGrid, DateStrip, sportLabel, type Court, type OccSlot } from "@/components/court-grid";
 import { Shell, money } from "@/components/shell";
-import { Button, Card, DateField, Field, Input, Select, Seg, Skeleton } from "@/components/ui";
+import { Button, Card, DateField, Field, Input, LoadError, Select, Seg, Skeleton } from "@/components/ui";
 import { AnimatePresence, motion } from "motion/react";
 import { SpotlightCard, StarBorder } from "@/components/fx";
 import { ClassDetailModal, OccupancyDetailModal } from "@/components/class-detail";
-import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
+import { apiPost, openInvoice } from "@/lib/arena3/client";
 import { todayISO } from "@/lib/arena3/labels";
 import { t, tServer } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/desk/courts")({
   component: Page,
@@ -18,21 +19,12 @@ export const Route = createFileRoute("/desk/courts")({
 function Page() {
   const [date, setDate] = useState(todayISO);
   const [sport, setSport] = useState("");
-  const [data, setData] = useState<{ courts: Court[]; slots: OccSlot[] } | null>(null);
+  const { data, error, reload } = useRead<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${date}`);
   const [pick, setPick] = useState<{ court: Court; hour: number } | null>(null);
   const [form, setForm] = useState({ guest_name: "", guest_phone: "", method: "cash" });
   // The taken hour whose owner the desk is looking up, and the class it may lead to.
   const [look, setLook] = useState<{ kind: string; ref: string } | null>(null);
   const [lookClass, setLookClass] = useState<string | null>(null);
-
-  async function load() {
-    setData(await apiGet(`/occupancy?date=${date}`));
-  }
-  useEffect(() => {
-    setData(null);
-    void load().catch((e) => toast.error(tServer(e.message)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date]);
 
   function isoAt(hour: number) {
     return `${date}T${String(hour).padStart(2, "0")}:00:00+07:00`;
@@ -57,7 +49,7 @@ function Page() {
               { value: "volleyball", label: t("Volleyball") },
             ]}
           />
-          <DateField value={date} onChange={setDate} />
+          <DateField required value={date} onChange={setDate} invalid={error?.refused === true} />
         </div>
       </div>
       <AnimatePresence>
@@ -113,7 +105,7 @@ function Page() {
                     toast.success(t("Took {amount} · {code}", { amount: money(res.payment.amount_vnd), code: res.payment.code }));
                     setPick(null);
                     setForm({ guest_name: "", guest_phone: "", method: "cash" });
-                    await load();
+                    reload();
                     if (res.invoice_id) await openInvoice(res.invoice_id);
                   } catch (e) {
                     toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
@@ -132,7 +124,9 @@ function Page() {
         </motion.div>
       ) : null}
       </AnimatePresence>
-      {data ? (
+      {error ? (
+        <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
+      ) : data ? (
         <CourtGrid
           date={date}
           courts={data.courts}

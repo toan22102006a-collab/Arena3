@@ -178,7 +178,7 @@ export function PayOnlineButton({
               </div>
             )}
             <p className="font-display text-3xl tabular-nums">{money(raised.amount_vnd)}</p>
-            <p className="text-2xs uppercase tracking-wider text-muted">{raised.payment_code}</p>
+            <p className="text-2xs text-muted">{raised.payment_code}</p>
             <p className="text-sm text-muted">
               {raised.raised_by === "member"
                 ? t("We are waiting for your bank. Do not pay twice — this confirms by itself.")

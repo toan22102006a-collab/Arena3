@@ -3,13 +3,15 @@ import { SectionTitle } from "@/components/section";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { sessionDay } from "@/components/class-detail";
+import { PhotoBanner, media } from "@/components/media";
 import { Shell, hhmm } from "@/components/shell";
-import { Badge, Card, EmptyState, Select, Skeleton } from "@/components/ui";
+import { Badge, Card, Check, EmptyState, LoadError, Select, Skeleton } from "@/components/ui";
 import { Lift, Stagger, StaggerItem, motion } from "@/components/motion";
 import { SpotlightCard } from "@/components/fx";
-import { apiGet, apiPut } from "@/lib/arena3/client";
+import { apiPut } from "@/lib/arena3/client";
 import { formatDate, levelLabel, sportLabel } from "@/lib/arena3/labels";
 import { t, tk } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/app/train")({ component: Page });
 
@@ -75,19 +77,12 @@ type Progress = {
 const say = (e: unknown) => (e instanceof Error ? e.message : t("Something went wrong"));
 
 function Page() {
+  const { data, error, reload } = useRead<Progress>("/me/training");
+  // The server's copy, with the member's ticks and goal shown here as soon as they are made.
   const [d, setD] = useState<Progress | null>(null);
-
-  async function load() {
-    try {
-      setD(await apiGet<Progress>("/me/training"));
-    } catch (e) {
-      toast.error(say(e));
-      setD({ goal: null, levels: [], next_sessions: [], results: [], reviews: [], homework: [] });
-    }
-  }
   useEffect(() => {
-    void load();
-  }, []);
+    setD(data);
+  }, [data]);
 
   async function setGoal(goal: string) {
     try {
@@ -113,7 +108,7 @@ function Page() {
       }
     } catch (e) {
       toast.error(say(e));
-      await load();
+      reload();
     }
   }
 
@@ -123,10 +118,13 @@ function Page() {
       title={t("My progress")}
       subtitle={t("Your plans, homework and what your coach has noticed. AI only suggests — a coach approves what reaches you.")}
     >
-      {!d ? (
+      {error ? (
+        <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
+      ) : !d ? (
         <Skeleton className="h-40" />
       ) : (
         <div className="grid gap-10">
+          <PhotoBanner src={media.trainProgress} focus="50% 38%" />
           <Card className="grid gap-4 md:grid-cols-2">
             <div>
               <p className="kicker text-2xs text-muted">{t("Your goal")}</p>
@@ -164,7 +162,7 @@ function Page() {
                     <Lift className="h-full">
                       <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={320} strength={0.1}>
                         <Card interactive className="relative z-[2] h-full">
-                          <p className="text-2xs uppercase tracking-wider text-muted">
+                          <p className="text-2xs text-muted">
                             {sessionDay(s.start_at)} · {hhmm(s.start_at)} · {sportLabel(s.sport)} · {s.court_code}
                           </p>
                           {s.plans.length ? (
@@ -218,15 +216,11 @@ function Page() {
                     <ul className="mt-3 grid gap-1">
                       {h.checklist.map((item, i) => (
                         <li key={i}>
-                          <label className="flex min-h-9 cursor-pointer items-center gap-3 text-sm">
-                            <input
-                              type="checkbox"
-                              className="size-4 accent-[var(--color-accent)]"
-                              checked={h.done_items.includes(i)}
-                              onChange={() => void tick(h, i)}
-                            />
-                            <span className={h.done_items.includes(i) ? "text-muted line-through" : ""}>{item}</span>
-                          </label>
+                          <Check
+                            checked={h.done_items.includes(i)}
+                            onChange={() => void tick(h, i)}
+                            label={<span className={h.done_items.includes(i) ? "text-muted line-through" : ""}>{item}</span>}
+                          />
                         </li>
                       ))}
                     </ul>

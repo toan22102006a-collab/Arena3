@@ -2,6 +2,7 @@ import type { Sql } from "@/lib/db";
 import { sha256 } from "./crypto";
 import { err } from "./errors";
 import type { PublicUser } from "./session";
+import type { CancelTier } from "./policy";
 import { one } from "./tx";
 
 export type Settings = {
@@ -31,6 +32,15 @@ export type Settings = {
   tax_code: string | null;
   legal_name: string | null;
   address: string | null;
+  deposit_pct: number;
+  deposit_peak_only: boolean;
+  cancel_tiers: CancelTier[];
+  series_min_weeks: number;
+  series_max_weeks: number;
+  series_discount_pct: number;
+  loyalty_earn_vnd: number;
+  loyalty_redeem_vnd: number;
+  day_pass_vnd: number;
 };
 
 export async function getSettings(sql: Sql): Promise<Settings> {
@@ -42,7 +52,9 @@ export async function getSettings(sql: Sql): Promise<Settings> {
             noshow_grace_minutes, checkin_before_minutes, refund_manager_vnd,
             freeze_max_days_year, minor_age, vat_rate, round_vnd, waitlist_offer_hours,
             self_checkin_enabled, gate_dedup_minutes, at_risk_idle_days,
-            tax_code, legal_name, address
+            tax_code, legal_name, address,
+            deposit_pct, deposit_peak_only, cancel_tiers, series_min_weeks, series_max_weeks,
+            series_discount_pct, loyalty_earn_vnd, loyalty_redeem_vnd, day_pass_vnd
        from center_settings where id = 1`,
   );
   if (!row) throw err.validation("center_settings is missing.");

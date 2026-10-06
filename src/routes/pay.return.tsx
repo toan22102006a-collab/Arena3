@@ -1,7 +1,7 @@
-import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Shell, money } from "@/components/shell";
-import { Button, Card, Skeleton } from "@/components/ui";
+import { ButtonLink, Card, Skeleton } from "@/components/ui";
 import { apiPost } from "@/lib/arena3/client";
 import { t } from "@/lib/i18n";
 
@@ -81,7 +81,7 @@ function Page() {
 
   return (
     <Shell role="member" title={t("Payment")} subtitle={t("Back from the payment page.")}>
-      <Card className="mx-auto max-w-md p-6 text-center">
+      <Card className="mx-auto max-w-md p-6 text-center" aria-live="polite" aria-busy={outcome === "checking"}>
         {outcome === "checking" ? (
           <div className="grid gap-3">
             <p className="font-display text-2xl">{t("Checking with the bank…")}</p>
@@ -100,12 +100,10 @@ function Page() {
               {t("Your court is confirmed and the receipt is in your account.")}
             </p>
             <div className="mt-2 flex justify-center gap-2">
-              <Link to="/account">
-                <Button variant="outline">{t("See the receipt")}</Button>
-              </Link>
-              <Link to="/app">
-                <Button>{t("My schedule")}</Button>
-              </Link>
+              <ButtonLink to="/account" variant="outline">
+                {t("See the receipt")}
+              </ButtonLink>
+              <ButtonLink to="/app">{t("My schedule")}</ButtonLink>
             </div>
           </div>
         ) : null}
@@ -116,9 +114,9 @@ function Page() {
             <p className="text-sm text-muted">
               {t("The bank has not told us about it. If the money has left your account it will post by itself — your receipt will appear in your account. Please do not pay twice.")}
             </p>
-            <Link to="/account" className="mt-2">
-              <Button variant="outline">{t("Check my receipts")}</Button>
-            </Link>
+            <ButtonLink to="/account" variant="outline" className="mt-2">
+              {t("Check my receipts")}
+            </ButtonLink>
           </div>
         ) : null}
 
@@ -128,9 +126,9 @@ function Page() {
             <p className="text-sm text-muted">
               {t("Nothing was taken. The court is released unless you booked it again.")}
             </p>
-            <Link to="/app/book" className="mt-2">
-              <Button>{t("Book again")}</Button>
-            </Link>
+            <ButtonLink to="/app/book" className="mt-2">
+              {t("Book again")}
+            </ButtonLink>
           </div>
         ) : null}
 
@@ -140,9 +138,9 @@ function Page() {
             <p className="text-sm text-muted">
               {t("If money left your account, the front desk can look it up by the time and amount.")}
             </p>
-            <Link to="/account" className="mt-2">
-              <Button variant="outline">{t("My receipts")}</Button>
-            </Link>
+            <ButtonLink to="/account" variant="outline" className="mt-2">
+              {t("My receipts")}
+            </ButtonLink>
           </div>
         ) : null}
       </Card>

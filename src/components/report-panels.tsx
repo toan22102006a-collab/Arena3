@@ -4,10 +4,11 @@ import { CardTitle, SectionTitle } from "@/components/section";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { money } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Select, Skeleton, Stat } from "@/components/ui";
-import { apiGet, downloadReport } from "@/lib/arena3/client";
+import { Badge, Button, Card, EmptyState, LoadError, Select, Skeleton, Stat } from "@/components/ui";
+import { downloadReport } from "@/lib/arena3/client";
 import { levelLabel, sportLabel } from "@/lib/arena3/labels";
 import { t, tk, tServer } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 type Kind = "revenue" | "capacity" | "members" | "attendance" | "at-risk";
 
@@ -17,11 +18,14 @@ export function ExportButtons({
   from,
   to,
   extra = {},
+  disabled = false,
 }: {
   kind: Kind;
   from: string;
   to: string;
   extra?: Record<string, string | null | undefined>;
+  /** The period on screen is one the server refuses, so there is nothing to export. */
+  disabled?: boolean;
 }) {
   const [busy, setBusy] = useState<"xlsx" | "pdf" | null>(null);
   async function go(format: "xlsx" | "pdf") {
@@ -39,31 +43,14 @@ export function ExportButtons({
   }
   return (
     <div className="flex flex-wrap gap-2">
-      <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => void go("xlsx")}>
+      <Button variant="outline" size="sm" disabled={disabled || busy !== null} onClick={() => void go("xlsx")}>
         {busy === "xlsx" ? t("Preparing…") : t("Export Excel")}
       </Button>
-      <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => void go("pdf")}>
+      <Button variant="outline" size="sm" disabled={disabled || busy !== null} onClick={() => void go("pdf")}>
         {busy === "pdf" ? t("Preparing…") : t("Export PDF")}
       </Button>
     </div>
   );
-}
-
-function useReport<T>(path: string) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    setData(null);
-    setError(null);
-    apiGet<T>(path)
-      .then((d) => live && setData(d))
-      .catch((e: Error) => live && setError(tServer(e.message)));
-    return () => {
-      live = false;
-    };
-  }, [path]);
-  return { data, error };
 }
 
 const SPORTS = ["badminton", "basketball", "volleyball"];
@@ -116,7 +103,7 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
   const [sport, setSport] = useState("");
   const q = new URLSearchParams({ from, to });
   if (sport) q.set("sport", sport);
-  const { data, error } = useReport<Capacity>(`/reports/capacity?${q}`);
+  const { data, error, reload } = useRead<Capacity>(`/reports/capacity?${q}`);
 
   return (
     <section className="mt-10" aria-labelledby="cap-h">
@@ -134,9 +121,9 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
       </div>
 
       {error ? (
-        <p role="alert" className="mt-4 text-sm text-danger">
-          {error}
-        </p>
+        <div className="mt-4">
+          <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
+        </div>
       ) : !data ? (
         <Skeleton className="mt-4 h-64" />
       ) : data.courts.length === 0 ? (
@@ -159,9 +146,9 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
             />
           </div>
 
-          <Card className="mt-3 overflow-x-auto p-0" role="region" aria-label={t("Table, scrolls sideways")} tabIndex={0}>
+          <Card className="mt-3 overflow-x-auto p-0" role="region" aria-label={t("Court use table, scrolls sideways")} tabIndex={0}>
             <table className="w-full text-sm">
-              <thead className="text-left text-2xs uppercase tracking-wider text-muted">
+              <thead className="text-left text-2xs text-muted">
                 <tr>
                   <th className="px-4 py-2 font-medium">{t("Sport")}</th>
                   <th className="px-3 py-2 text-right font-medium">{t("Sold")}</th>
@@ -270,7 +257,7 @@ export function MembersPanel({ from, to }: { from: string; to: string }) {
   useEffect(() => setChartReady(true), []);
   const q = new URLSearchParams({ from, to });
   if (sport) q.set("sport", sport);
-  const { data, error } = useReport<MembersReport>(`/reports/members?${q}`);
+  const { data, error, reload } = useRead<MembersReport>(`/reports/members?${q}`);
   const showAttendance = !!data?.attendance_on;
 
   return (
@@ -289,9 +276,9 @@ export function MembersPanel({ from, to }: { from: string; to: string }) {
       </div>
 
       {error ? (
-        <p role="alert" className="mt-4 text-sm text-danger">
-          {error}
-        </p>
+        <div className="mt-4">
+          <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
+        </div>
       ) : !data ? (
         <Skeleton className="mt-4 h-64" />
       ) : (
@@ -316,13 +303,13 @@ export function MembersPanel({ from, to }: { from: string; to: string }) {
                     <CartesianGrid vertical={false} stroke="var(--color-line)" strokeDasharray="2 4" />
                     <XAxis
                       dataKey="month"
-                      tick={{ fontSize: 11 }}
+                      tick={{ fontSize: 12 }}
                       stroke="var(--color-muted)"
                       tickLine={false}
                       tickFormatter={(m: string) => `${m.slice(5)}/${m.slice(2, 4)}`}
                     />
                     <YAxis
-                      tick={{ fontSize: 11 }}
+                      tick={{ fontSize: 12 }}
                       stroke="var(--color-muted)"
                       tickLine={false}
                       axisLine={false}
@@ -349,13 +336,13 @@ export function MembersPanel({ from, to }: { from: string; to: string }) {
             )}
           </Card>
 
-          <Card className="mt-3 overflow-x-auto p-0" role="region" aria-label={t("Table, scrolls sideways")} tabIndex={0}>
+          <Card className="mt-3 overflow-x-auto p-0" role="region" aria-label={t("Classes table, scrolls sideways")} tabIndex={0}>
             <CardTitle className="px-4 pt-4" icon={CalendarDays} title={t("Classes running in this period")} hint={t("How full each class was.")} />
             {data.classes.length === 0 ? (
               <p className="px-4 pb-4 pt-2 text-sm text-muted">{t("No classes were running in this period.")}</p>
             ) : (
               <table className="mt-2 w-full min-w-[560px] text-sm">
-                <thead className="text-left text-2xs uppercase tracking-wider text-muted">
+                <thead className="text-left text-2xs text-muted">
                   <tr>
                     <th className="px-4 py-2 font-medium">{t("Class")}</th>
                     <th className="px-3 py-2 font-medium">{t("Coach")}</th>

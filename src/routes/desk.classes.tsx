@@ -1,13 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
 import { ClassDetailModal } from "@/components/class-detail";
 import { Shell } from "@/components/shell";
-import { Button, Card, EmptyState, ShowMore, Skeleton, StatusBadge } from "@/components/ui";
+import { Button, Card, EmptyState, LoadError, ShowMore, Skeleton, StatusBadge } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/motion";
-import { apiGet } from "@/lib/arena3/client";
-import { t, tServer } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import { levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/desk/classes")({
   component: Page,
@@ -28,19 +27,16 @@ type Row = {
 
 /** The same classes the manager sees, so the desk can answer "who is in it, and when?" (D-07). */
 function Page() {
-  const [items, setItems] = useState<Row[] | null>(null);
+  const read = useRead<{ items: Row[] }>("/classes");
+  const items = read.data?.items ?? null;
   const [detail, setDetail] = useState<string | null>(null);
   const [limit, setLimit] = useState(8);
 
-  useEffect(() => {
-    void apiGet<{ items: Row[] }>("/classes")
-      .then((r) => setItems(r.items))
-      .catch((e) => toast.error(tServer(e.message)));
-  }, []);
-
   return (
     <Shell role="receptionist" title={t("Classes")} subtitle={t("Open a class to see its sessions, court, coach and who is enrolled.")}>
-      {!items ? (
+      {read.error ? (
+        <LoadError message={read.error.message} onRetry={read.error.refused ? undefined : read.reload} />
+      ) : !items ? (
         <Skeleton className="h-36" />
       ) : !items.length ? (
         <EmptyState title={t("No classes are open")} hint={t("The manager publishes classes from the Classes screen.")} />

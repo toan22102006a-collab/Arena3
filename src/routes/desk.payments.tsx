@@ -6,13 +6,26 @@ import { ArrowUpRight, Banknote, Clock3, CreditCard, Landmark, Ticket, Undo2 } f
 import { HoldTimer } from "@/components/media";
 import { PayOnlineButton } from "@/components/pay-online";
 import { Shell, money, useSessionUser, when } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Input, Pagination, Seg, Select, Skeleton } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  ButtonLink,
+  Card,
+  EmptyState,
+  Input,
+  LoadError,
+  Pagination,
+  Seg,
+  Select,
+  Skeleton,
+} from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
 import { GLBackground, SpotlightCard, StarBorder } from "@/components/fx";
 import { PromoInput } from "@/components/promo-input";
-import { api, apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
-import { sportLabel } from "@/lib/arena3/labels";
-import { t, tk, tServer } from "@/lib/i18n";
+import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
+import { refTypeLabel, sportLabel } from "@/lib/arena3/labels";
+import { t, tk, tServer, tData } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/desk/payments")({
   component: Page,
@@ -71,6 +84,7 @@ type Awaiting = {
   id: string;
   code: string;
   price_vnd: number;
+  deposit_vnd: number;
   start_at: string;
   end_at: string;
   transfer_requested_at: string;
@@ -116,12 +130,6 @@ function methodLabel(m: string) {
   return label ? t(label) : m;
 }
 
-/** What a payment or refund was raised against, in words the desk uses. */
-function refTypeLabel(r: string) {
-  const label = ({ subscription: tk("Plan"), booking: tk("Booking") } as Record<string, string>)[r];
-  return label ? t(label) : r;
-}
-
 /* With one method in the list the icon was decoration; with four it is how you
    scan the column without reading every line. */
 function MethodIcon({ method }: { method: string }) {
@@ -139,7 +147,6 @@ function daysWaiting(dateOnly: string) {
 function Page() {
   const me = useSessionUser();
   const isManager = me?.role === "manager";
-  const [data, setData] = useState<Queue | null>(null);
   const [days, setDays] = useState("7");
   const [payMethod, setPayMethod] = useState("all");
   const [receiptQuery, setReceiptQuery] = useState("");
@@ -152,31 +159,29 @@ function Page() {
       .then((r) => setOnlineOn(Boolean(r.capabilities?.online_payment)))
       .catch(() => setOnlineOn(false));
   }, []);
-  const [shift, setShift] = useState<{ shift: { id: string } } | null>(null);
+  // A manager signs refunds off here and never runs a till, so only the desk asks about one — and
+  // only once it is known who is asking.
+  const shiftRead = useRead<{ shift: { id: string } | null }>(me && !isManager ? "/shifts/current?optional=1" : null);
+  // undefined = not known (still asking, or the question failed); null = asked, and no till is open.
+  const shift = shiftRead.data === null ? undefined : shiftRead.data.shift;
   // Method and busy flag are per-order: the desk works one member at a time,
   // but a slow network should never grey out the whole queue.
   const [method, setMethod] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [promo, setPromo] = useState<Record<string, { code: string; discount_vnd: number } | null>>({});
 
-  // `api` rather than `apiGet`: the de-duplicator hands back an identical GET
-  // that is already in flight, and every refresh here runs straight after a
-  // mutation. Two rows actioned in quick succession would otherwise let the
-  // second one adopt the first one's older answer and redraw a row that has
-  // just been paid for.
-  const load = useCallback(async () => {
-    setData(await api<Queue>(`/payments/pending?days=${days}`));
-  }, [days]);
-
+  // Every refresh here runs straight after a mutation, and `reload()` never joins a read that was
+  // already in flight: two rows actioned in quick succession would otherwise let the second one adopt
+  // the first one's older answer and redraw a row that has just been paid for.
+  const read = useRead<Queue>(`/payments/pending?days=${days}`);
+  // Only the receipts depend on the window. The last answer stays on screen while another window is
+  // being asked for, so the transfers, orders and refunds do not vanish and come back with each tap.
+  const [last, setLast] = useState<Queue | null>(null);
   useEffect(() => {
-    void load().catch((e) => toast.error(e instanceof Error ? tServer(e.message) : t("Could not load the queue")));
-  }, [load]);
-
-  useEffect(() => {
-    void apiGet<{ shift: { id: string } }>("/shifts/current")
-      .then(setShift)
-      .catch(() => setShift(null));
-  }, []);
+    if (read.data) setLast(read.data);
+    else if (read.error) setLast(null);
+  }, [read.data, read.error]);
+  const data = read.error ? null : (read.data ?? last);
 
   const awaiting = data?.awaiting ?? [];
   const orders = data?.orders ?? [];
@@ -185,7 +190,7 @@ function Page() {
   // filter either way, and narrowing a list already on screen should not cost a
   // round trip while somebody is reading down a statement.
   const needle = receiptQuery.trim().toLowerCase();
-  const receipts = (data?.receipts ?? []).filter(
+  const receipts = (read.data?.receipts ?? []).filter(
     (r) =>
       (payMethod === "all" || r.method === payMethod) &&
       (!needle ||
@@ -202,21 +207,20 @@ function Page() {
   // A receptionist without an open till cannot post anything; saying so once at
   // the top beats a row of buttons that each fail the same way when pressed.
   const canTake = isManager || !!shift;
+  // Only "no till" is known to be the reason; while the answer is still coming (or failed) the button keeps its own words.
+  const noTill = !isManager && shift === null;
 
   /**
    * Refresh after a mutation that has already succeeded.
    *
-   * Never rethrows. Once the server has taken the money, a failed refresh is a
-   * stale screen, not a failed payment — letting it reach the caller's `catch`
-   * would put "Payment did not go through" on top of a payment that went
-   * through perfectly, which is the one lie this screen must not tell.
+   * It does not wait for the answer or throw. Once the server has taken the money, a failed refresh
+   * is a stale screen, not a failed payment — letting it reach the caller's `catch` would put
+   * "Payment did not go through" on top of a payment that went through perfectly, which is the one
+   * lie this screen must not tell. If the refresh itself fails the queue is replaced by the reason
+   * and a "Try again" button, rather than leaving rows on screen that may already be paid.
    */
-  async function refresh() {
-    try {
-      await load();
-    } catch {
-      toast.warning(t("Done — but the queue could not be refreshed. Reload to see where it stands."));
-    }
+  function refresh() {
+    read.reload();
   }
 
   // What the desk is charging for an order: list price, less any code the member
@@ -246,7 +250,7 @@ function Page() {
       // refreshed before anything else is attempted. Printing is the step most
       // likely to fail — a blocked popup is enough — and a failed print must
       // not leave a paid row sitting here inviting somebody to charge it twice.
-      await refresh();
+      refresh();
       if (res.invoice?.id) {
         try {
           await openInvoice(res.invoice.id);
@@ -266,7 +270,7 @@ function Page() {
     try {
       await apiPost(`/subscriptions/${o.id}/decline`);
       toast.success(t("Order cleared from the queue"));
-      await refresh();
+      refresh();
     } catch (e) {
       toast.error(e instanceof Error ? tServer(e.message) : t("Could not clear that order"));
     } finally {
@@ -290,7 +294,7 @@ function Page() {
       toast.success(
         received ? t("Confirmed — {court} is booked", { court: a.court_code }) : t("Slot released back to the grid"),
       );
-      await refresh();
+      refresh();
       if (received && res.invoice_id) {
         try {
           await openInvoice(res.invoice_id);
@@ -310,7 +314,7 @@ function Page() {
     try {
       await apiPost(`/payments/${r.id}/${approve ? "approve-refund" : "reject-refund"}`);
       toast.success(approve ? t("Refund approved") : t("Refund rejected"));
-      await refresh();
+      refresh();
     } catch (e) {
       toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
     } finally {
@@ -330,7 +334,7 @@ function Page() {
         variant="dotgrid"
         position="fixed"
         className="-z-[1]"
-        color="#1f5c43"
+        color="#1e4fd8"
         gap={32}
         dot={1.5}
         radius={130}
@@ -341,9 +345,14 @@ function Page() {
         className="mb-6 flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] bg-surface p-3 shadow-[var(--shadow-border)]"
         from="down"
       >
-        <Badge tone={orders.length ? "accent" : "muted"}>
-          {t("{n} waiting · {amount} owed", { n: orders.length, amount: money(owed) })}
-        </Badge>
+        {/* "0 waiting · 0đ owed" is a claim; until the queue has answered there is nothing to claim. */}
+        {data ? (
+          <Badge tone={orders.length ? "accent" : "muted"}>
+            {t("{n} waiting · {amount} owed", { n: orders.length, amount: money(owed) })}
+          </Badge>
+        ) : read.error ? null : (
+          <Skeleton className="h-6 w-40" />
+        )}
         {awaiting.length ? (
           <Badge tone="hold">{t("{n} transfers to check", { n: awaiting.length })}</Badge>
         ) : null}
@@ -353,17 +362,34 @@ function Page() {
           used to say "open a shift at the desk" and then leave the reader to
           find it.
         */}
-        {!canTake ? (
-          <Link to="/desk">
+        {noTill ? (
+          <Link to="/desk" className="hit">
             <Badge tone="hold">{t("No shift open — open one to take payment")}</Badge>
           </Link>
         ) : null}
         {/* A manager came here from the manager menu, so "back" is their own
             home — `/desk` is the receptionist's counter, with a till they do not run. */}
-        <Link to={isManager ? "/manager" : "/desk"} className="ml-auto">
-          <Button variant="ink">{isManager ? t("Back to reports") : t("Back to the desk")}</Button>
-        </Link>
+        <ButtonLink to={isManager ? "/manager" : "/desk"} variant="ink" className="ml-auto">
+          {isManager ? t("Back to reports") : t("Back to the desk")}
+        </ButtonLink>
       </Reveal>
+
+      {/* The till could not be looked up, so "take payment" stays off until it can be — said here, not by a button that is silently dead. */}
+      {shiftRead.error ? (
+        <div className="mb-6">
+          <LoadError
+            message={shiftRead.error.message}
+            onRetry={shiftRead.error.refused ? undefined : shiftRead.reload}
+          />
+        </div>
+      ) : null}
+
+      {/* One alert for the whole queue: the transfers, orders, refunds and receipts all come from the same answer. */}
+      {read.error ? (
+        <div className="mb-6">
+          <LoadError message={read.error.message} onRetry={read.error.refused ? undefined : read.reload} />
+        </div>
+      ) : null}
 
       {awaiting.length ? (
         <div className="mb-10">
@@ -383,7 +409,7 @@ function Page() {
                             <Clock3 className="size-4 text-hold" />
                             <h3 className="font-display text-xl">{a.member_name ?? t("Walk-in")}</h3>
                             <Badge tone="hold">
-                              <HoldTimer until={a.hold_until} onExpire={() => void refresh()} /> {t("left")}
+                              <HoldTimer until={a.hold_until} onExpire={refresh} /> {t("left")}
                             </Badge>
                           </div>
                           <p className="mt-1 text-xs tabular-nums text-muted">
@@ -395,7 +421,16 @@ function Page() {
                             {when(a.start_at)}
                           </p>
                         </div>
-                        <p className="font-display text-2xl tabular-nums">{money(a.price_vnd)}</p>
+                        <div className="text-right">
+                          <p className="font-display text-2xl tabular-nums">
+                            {money(a.deposit_vnd > 0 && a.deposit_vnd < a.price_vnd ? a.deposit_vnd : a.price_vnd)}
+                          </p>
+                          {a.deposit_vnd > 0 && a.deposit_vnd < a.price_vnd ? (
+                            <p className="text-xs text-muted">
+                              {t("Deposit — of {total}", { total: money(a.price_vnd) })}
+                            </p>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="mt-4 flex flex-wrap items-center gap-2">
                         <StarBorder speed={4}>
@@ -424,7 +459,7 @@ function Page() {
       <p className="mt-1 text-sm text-muted">
         {t("A member picked a plan in the app and still owes for it. Taking payment here activates the plan and prints the receipt.")}
       </p>
-      {!data ? (
+      {read.error ? null : !data ? (
         <div className="mt-3 grid gap-3">
           <Skeleton className="h-32" />
           <Skeleton className="h-32" />
@@ -457,7 +492,7 @@ function Page() {
                             {o.member_code ?? t("No code yet")} · {o.phone}
                           </p>
                           <p className="mt-2 text-sm">
-                            {o.plan_name} · {t("runs to {date}", { date: o.end_on })}
+                            {tData(o.plan_name)} · {t("runs to {date}", { date: o.end_on })}
                           </p>
                         </div>
                         <div className="text-right">
@@ -507,9 +542,9 @@ function Page() {
                           >
                             {settled
                               ? t("Paid in full — ask a manager")
-                              : canTake
-                                ? t("Take {amount} & print", { amount: money(due) })
-                                : t("Open a shift first")}
+                              : noTill
+                                ? t("Open a shift first")
+                                : t("Take {amount} & print", { amount: money(due) })}
                           </Button>
                         </StarBorder>
                         {/*
@@ -523,14 +558,12 @@ function Page() {
                             refType="subscription"
                             refId={o.id}
                             label={t("Online {amount}", { amount: money(due) })}
-                            onPaid={() => void load()}
+                            onPaid={refresh}
                           />
                         ) : null}
-                        <Link to="/desk/member/$id" params={{ id: o.user_id }}>
-                          <Button variant="outline">
-                            {t("Profile")} <ArrowUpRight className="ml-1 size-4" />
-                          </Button>
-                        </Link>
+                        <ButtonLink to="/desk/member/$id" params={{ id: o.user_id }} variant="outline">
+                          {t("Profile")} <ArrowUpRight className="ml-1 size-4" />
+                        </ButtonLink>
                         <Button
                           variant="ghost"
                           className="ml-auto"
@@ -620,7 +653,7 @@ function Page() {
           onChange={(e) => setReceiptQuery(e.target.value)}
           aria-label={t("Search receipts")}
         />
-        {!data ? (
+        {read.error ? null : !read.data ? (
           <Skeleton className="mt-3 h-24" />
         ) : receipts.length ? (
           <Stagger key={receiptOffset} className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2" gap={0.04}>
@@ -633,8 +666,8 @@ function Page() {
                 >
                   <MethodIcon method={rc.method} />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{rc.member_name ?? t("Walk-in")}</p>
-                    <p className="truncate text-xs tabular-nums text-muted">
+                    <p className="text-sm font-medium [overflow-wrap:anywhere]">{rc.member_name ?? t("Walk-in")}</p>
+                    <p className="text-xs tabular-nums text-muted [overflow-wrap:anywhere]">
                       {rc.code} · {methodLabel(rc.method)} · {refTypeLabel(rc.ref_type)} · {when(rc.created_at)}
                       {rc.buyer_phone && !rc.member_code ? ` · ${rc.buyer_phone}` : ""}
                       {rc.taken_by ? ` · ${rc.taken_by}` : ""}
@@ -670,9 +703,9 @@ function Page() {
           </div>
         )}
         <Pagination offset={receiptOffset} total={receipts.length} pageSize={RECEIPT_PAGE} onChange={setReceiptOffset} />
-        {data?.capped ? (
+        {read.data?.capped ? (
           <p className="mt-3 text-xs text-muted">
-            {t("Showing the {n} most recent — there are older receipts in this window that this list does not reach. Pull the full period from Reports to reconcile it.", { n: data.receipts.length })}
+            {t("Showing the {n} most recent — there are older receipts in this window that this list does not reach. Pull the full period from Reports to reconcile it.", { n: read.data.receipts.length })}
           </p>
         ) : null}
       </div>

@@ -1,15 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Cover, MediaCaption, sportPhoto } from "@/components/media";
 import { Shell, money } from "@/components/shell";
-import { Button, Card, EmptyState, Input, Skeleton } from "@/components/ui";
+import { Button, Card, EmptyState, Input, LoadError, Skeleton } from "@/components/ui";
 import { Lift, Stagger, StaggerItem } from "@/components/motion";
 import { GlareHover, SpotlightCard } from "@/components/fx";
-import { apiGet, apiPost } from "@/lib/arena3/client";
+import { apiPost } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
-import { t } from "@/lib/i18n";
+import { t, tData } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/app/plans")({
   component: Page,
@@ -27,7 +28,8 @@ type Plan = {
 };
 
 function Page() {
-  const [items, setItems] = useState<Plan[] | null>(null);
+  const { data, error, reload } = useRead<{ items: Plan[] }>("/plans");
+  const items = data?.items ?? null;
   // Which plan is mid-request. One at a time: the server refuses a second live
   // subscription on the same sport anyway, and letting two buttons spin at once
   // only makes it look as though both worked.
@@ -37,12 +39,6 @@ function Page() {
   // request the rate limiter will reject.
   const [ordered, setOrdered] = useState<Record<string, string>>({});
   const [promoCode, setPromoCode] = useState("");
-
-  useEffect(() => {
-    void apiGet<{ items: Plan[] }>("/plans")
-      .then((r) => setItems(r.items))
-      .catch((e) => toast.error(e.message));
-  }, []);
 
   async function order(p: Plan) {
     if (busy) return;
@@ -85,7 +81,9 @@ function Page() {
       title={t("Membership plans")}
       subtitle={t("Order here, pay at the desk — you see the new end date before anything is charged.")}
     >
-      {!items ? (
+      {error ? (
+        <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
+      ) : !items ? (
         <div className="grid gap-3 md:grid-cols-3">
           <Skeleton className="h-56" />
           <Skeleton className="h-56" />
@@ -112,12 +110,12 @@ function Page() {
               <GlareHover>
                 <Cover src={sportPhoto(p.sport_scope)} alt="" scrim="none" className="h-36">
                   <MediaCaption>
-                    <p className="text-2xs uppercase tracking-wider">{sportLabel(p.sport_scope)}</p>
+                    <p className="text-2xs">{sportLabel(p.sport_scope)}</p>
                   </MediaCaption>
                 </Cover>
               </GlareHover>
               <div className="flex flex-1 flex-col p-5">
-                <h2 className="font-display text-2xl">{p.name}</h2>
+                <h2 className="font-display text-2xl">{tData(p.name)}</h2>
                 <p className="mt-3 font-display text-3xl tabular-nums">{money(p.price_vnd)}</p>
                 <ul className="mt-4 grid gap-2 text-sm text-muted">
                   <li className="flex items-center gap-2">

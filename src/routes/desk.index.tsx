@@ -1,14 +1,30 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Dumbbell, Repeat, Ticket, UserMinus, Wrench } from "lucide-react";
 import { SectionTitle } from "@/components/section";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Shell, money } from "@/components/shell";
-import { Badge, Button, Card, Field, Input, Modal, Select, StatusBadge } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  ButtonLink,
+  Card,
+  EmptyState,
+  Field,
+  Input,
+  LoadError,
+  Modal,
+  MoneyInput,
+  Select,
+  Skeleton,
+  StatusBadge,
+} from "@/components/ui";
 import { Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
 import { GLBackground, SpotlightCard, StarBorder } from "@/components/fx";
 import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
-import { t, tServer } from "@/lib/i18n";
+import { t, tServer, tData } from "@/lib/i18n";
+import { readError, useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/desk/")({
   component: Page,
@@ -31,29 +47,53 @@ type Plan = {
   court_hours: number;
 };
 
+type Ticket = { id: string; body: string; full_name: string | null; phone: string | null; created_at: string };
+type ShiftNow = { shift: { id: string; opened_at: string } | null; totals?: { cash: number } | null };
+
+/**
+ * With a physical keyboard the desk can start typing the moment the page opens. On a phone or
+ * tablet that would pop the on-screen keyboard up over the list before anyone touched anything.
+ */
+const hasKeyboard = () => typeof window !== "undefined" && window.matchMedia?.("(pointer: fine)").matches === true;
+
 function Page() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [items, setItems] = useState<Hit[]>([]);
-  const [shift, setShift] = useState<{ shift: { id: string; opened_at: string }; totals?: { cash: number } } | null>(
-    null,
-  );
+  // Which text the list on screen is the answer to, so "no match" is only said about a search that came back.
+  const [answered, setAnswered] = useState<string | null>(null);
+  const [searchErr, setSearchErr] = useState<string | null>(null);
+  const [searchTry, setSearchTry] = useState(0);
+  // `optional`: no open till is an ordinary answer here, not an error for the console.
+  const shiftRead = useRead<ShiftNow>("/shifts/current?optional=1");
+  // undefined = not known (still asking, or the question failed); null = asked, and no till is open.
+  const shift =
+    shiftRead.data === null
+      ? undefined
+      : shiftRead.data.shift
+        ? { shift: shiftRead.data.shift, totals: shiftRead.data.totals ?? undefined }
+        : null;
   const [form, setForm] = useState({ full_name: "", phone: "" });
   const [closeOpen, setCloseOpen] = useState(false);
   const [cash, setCash] = useState("");
-  const [tickets, setTickets] = useState<
-    Array<{ id: string; body: string; full_name: string | null; phone: string | null; created_at: string }>
-  >([]);
+  const ticketsRead = useRead<{ items: Ticket[] }>("/tickets");
+  // The server's list, with a request dropped from it here as soon as the desk closes or answers it.
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  useEffect(() => {
+    setTickets(ticketsRead.data?.items ?? []);
+  }, [ticketsRead.data]);
   // Which request the desk is writing an answer to, and the answer so far. One
   // at a time: the box opens on the row being answered rather than sitting
   // under all of them, so it is obvious whose complaint is being replied to.
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [reply, setReply] = useState("");
   const [replying, setReplying] = useState(false);
-  const [plans, setPlans] = useState<Plan[]>([]);
+  const plansRead = useRead<{ items: Plan[] }>("/plans");
+  const plans = plansRead.data?.items ?? [];
   // Just the count — the queue itself lives one screen over, but a receptionist
-  // has to be able to see from here that somebody is owed attention.
-  const [waiting, setWaiting] = useState(0);
+  // has to be able to see from here that somebody is owed attention. A hint only: if it cannot
+  // be read, the queue itself says why.
+  const waiting = useRead<{ waiting: number }>("/payments/pending?brief=1").data?.waiting ?? 0;
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [newUser, setNewUser] = useState<{
     id: string;
@@ -66,38 +106,35 @@ function Page() {
   const [method, setMethod] = useState("cash");
   const [busy, setBusy] = useState(false);
 
-  async function loadShift() {
-    try {
-      setShift(await apiGet("/shifts/current"));
-    } catch {
-      setShift(null);
-    }
-  }
   useEffect(() => {
-    void loadShift();
-    void apiGet<{ items: typeof tickets }>("/tickets")
-      .then((r) => setTickets(r.items))
-      .catch(() => undefined);
-    void apiGet<{ items: Plan[] }>("/plans")
-      .then((r) => setPlans(r.items))
-      .catch(() => undefined);
-    void apiGet<{ waiting: number }>("/payments/pending?brief=1")
-      .then((r) => setWaiting(r.waiting))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
+    setSearchErr(null);
     if (q.trim().length < 3) {
       setItems([]);
+      setAnswered(null);
       return;
     }
+    // A reply to text that has since been changed must not land on the newer list.
+    let stale = false;
     const timer = setTimeout(() => {
-      void apiGet<{ items: Hit[] }>(`/members?q=${encodeURIComponent(q)}`)
-        .then((r) => setItems(r.items))
-        .catch((e) => toast.error(tServer(e.message)));
+      apiGet<{ items: Hit[] }>(`/members?q=${encodeURIComponent(q)}`).then(
+        (r) => {
+          if (stale) return;
+          setItems(r.items);
+          setAnswered(q);
+        },
+        (e: unknown) => {
+          if (stale) return;
+          setItems([]);
+          setAnswered(null);
+          setSearchErr(readError(e).message);
+        },
+      );
     }, 180);
-    return () => clearTimeout(timer);
-  }, [q]);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [q, searchTry]);
 
   function resetWizard() {
     setStep(1);
@@ -116,21 +153,31 @@ function Page() {
         variant="dotgrid"
         position="fixed"
         className="-z-[1]"
-        color="#1f5c43"
+        color="#1e4fd8"
         gap={32}
         dot={1.5}
         radius={130}
         opacity={0.12}
       />
       <Reveal className="mb-5 flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] bg-surface p-3 shadow-[var(--shadow-border)]" from="down">
-        {shift ? (
+        {shiftRead.error ? (
+          // Not "no till is open": the screen does not know, and saying so would send the desk to open a second one.
+          <div className="w-full">
+            <LoadError
+              message={shiftRead.error.message}
+              onRetry={shiftRead.error.refused ? undefined : shiftRead.reload}
+            />
+          </div>
+        ) : shift === undefined ? (
+          <Skeleton className="h-9 w-44" />
+        ) : shift ? (
           <Badge tone="accent">{t("Shift open · cash {amount}", { amount: money(shift.totals?.cash ?? 0) })}</Badge>
         ) : (
           <Button
             onClick={async () => {
               try {
                 await apiPost("/shifts/open");
-                await loadShift();
+                shiftRead.reload();
                 toast.success(t("Shift opened"));
               } catch (e) {
                 toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
@@ -147,9 +194,9 @@ function Page() {
             {t("Open shift")}
           </Button>
         )}
-        {shift ? null : (
+        {shift === null ? (
           <span className="text-sm text-muted">{t("Open your cash shift first — payments can’t be taken without one.")}</span>
-        )}
+        ) : null}
         {shift ? (
           <Button
             variant="outline"
@@ -161,32 +208,52 @@ function Page() {
             {t("Close shift")}
           </Button>
         ) : null}
-        <Link to="/desk/payments" className="ml-auto">
-          <Button variant="outline">
-            {t("Payments")}
-            {waiting ? (
-              <span className="rounded-full bg-hold px-2 py-0.5 text-2xs font-semibold tabular-nums text-bg">
-                {waiting}
-              </span>
-            ) : null}
-          </Button>
-        </Link>
-        <Link to="/desk/courts">
-          <Button variant="ink">{t("Court map")}</Button>
-        </Link>
+        <ButtonLink to="/desk/payments" variant="outline" className="ml-auto">
+          {t("Payments")}
+          {waiting ? (
+            <span className="rounded-full bg-hold px-2 py-0.5 text-2xs font-semibold tabular-nums text-bg">
+              {waiting}
+            </span>
+          ) : null}
+        </ButtonLink>
+        <ButtonLink to="/desk/courts" variant="ink">
+          {t("Court map")}
+        </ButtonLink>
       </Reveal>
+
+      {/* The tab row only has room for the busiest pages, and on a tablet or phone the rest sit behind "More". */}
+      <nav aria-label={t("Quick links")} className="mb-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+        {(
+          [
+            { to: "/desk/day-passes" as const, label: t("Day passes"), Icon: Ticket },
+            { to: "/desk/series" as const, label: t("Fixed bookings"), Icon: Repeat },
+            { to: "/desk/gear" as const, label: t("Gear"), Icon: Dumbbell },
+            { to: "/desk/maintenance" as const, label: t("Maintenance"), Icon: Wrench },
+            { to: "/desk/at-risk" as const, label: t("At risk"), Icon: UserMinus },
+          ] as const
+        ).map((a) => (
+          <ButtonLink key={a.to} to={a.to} variant="outline" size="sm">
+            <a.Icon aria-hidden="true" className="size-4 text-muted" strokeWidth={1.75} />
+            {a.label}
+          </ButtonLink>
+        ))}
+      </nav>
 
       <Field label={t("Find a member")} tone="muted">
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={t("Name, phone or member code")}
-          autoFocus
+          autoFocus={hasKeyboard()}
         />
       </Field>
       <div className="mt-3 grid gap-2">
         {q.trim().length > 0 && q.trim().length < 3 ? (
           <p className="text-sm text-muted">{t("Type at least 3 characters.")}</p>
+        ) : null}
+        {searchErr ? <LoadError message={searchErr} onRetry={() => setSearchTry((n) => n + 1)} /> : null}
+        {answered === q && q.trim().length >= 3 && items.length === 0 ? (
+          <p className="text-sm text-muted">{t("No members match")}</p>
         ) : null}
         {items.map((m, i) => (
           <motion.button
@@ -211,7 +278,7 @@ function Page() {
 
       <SectionTitle text={t("New member")} className="mt-8 font-display text-2xl" />
       <p className="mt-1 text-sm text-muted">{t("Three steps: profile → plan → payment.")}</p>
-      <ol className="mt-3 flex gap-2 text-2xs font-medium uppercase tracking-wider">
+      <ol className="mt-3 flex gap-2 text-2xs font-medium">
         {[
           [1, t("Profile")],
           [2, t("Plan")],
@@ -296,30 +363,44 @@ function Page() {
             </p>
             {newUser.temp_password ? (
               <Card className="mb-4 border border-hold/30 bg-hold/5 p-4">
-                <p className="text-2xs uppercase tracking-wider text-muted">{t("Temporary password — hand this to the member so they can sign in")}</p>
+                <p className="text-2xs text-muted">{t("Temporary password — hand this to the member so they can sign in")}</p>
                 <p className="mt-1 font-mono text-lg font-semibold tracking-wide">{newUser.temp_password}</p>
                 <p className="mt-1 text-xs text-muted">{t("They change it after the first sign-in.")}</p>
               </Card>
             ) : null}
-            <div className="grid gap-2 sm:grid-cols-2">
-              {plans.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setPicked(p)}
-                  className={`rounded-[var(--radius-lg)] border px-4 py-3 text-left transition-[background-color,border-color,transform] duration-200 active:scale-[0.98] ${
-                    picked?.id === p.id ? "border-accent bg-accent/10" : "border-line hover:bg-wood"
-                  }`}
-                >
-                  <p className="text-2xs uppercase tracking-wider text-muted">{sportLabel(p.sport_scope)}</p>
-                  <p className="font-medium">{p.name}</p>
-                  <p className="text-sm tabular-nums text-muted">
-                    {money(p.price_vnd)}
-                    {p.duration_days ? ` · ${t("{n} days", { n: p.duration_days })}` : ""} · {t("{n} court hours", { n: p.court_hours })}
-                  </p>
-                </button>
-              ))}
-            </div>
+            {plansRead.error ? (
+              <LoadError
+                message={plansRead.error.message}
+                onRetry={plansRead.error.refused ? undefined : plansRead.reload}
+              />
+            ) : !plansRead.data ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Skeleton className="h-20" />
+                <Skeleton className="h-20" />
+              </div>
+            ) : !plans.length ? (
+              <EmptyState title={t("No plans on sale right now")} />
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {plans.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setPicked(p)}
+                    className={`rounded-[var(--radius-lg)] border px-4 py-3 text-left transition-[background-color,border-color,transform] duration-200 active:scale-[0.98] ${
+                      picked?.id === p.id ? "border-accent bg-accent/10" : "border-line hover:bg-wood"
+                    }`}
+                  >
+                    <p className="text-2xs text-muted">{sportLabel(p.sport_scope)}</p>
+                    <p className="font-medium">{tData(p.name)}</p>
+                    <p className="text-sm tabular-nums text-muted">
+                      {money(p.price_vnd)}
+                      {p.duration_days ? ` · ${t("{n} days", { n: p.duration_days })}` : ""} · {t("{n} court hours", { n: p.court_hours })}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="mt-4 flex gap-2">
               <Button variant="ghost" onClick={() => setStep(1)}>
                 {t("Back")}
@@ -399,7 +480,7 @@ function Page() {
                   }
                 }}
               >
-                {shift ? t("Take payment & print") : t("Open a shift first")}
+                {shift === null ? t("Open a shift first") : t("Take payment & print")}
               </Button>
               </StarBorder>
               <Button variant="ghost" onClick={() => setStep(2)}>
@@ -427,7 +508,7 @@ function Page() {
                   await apiPost(`/shifts/${shift.shift.id}/close`, { cash_declared_vnd: Number(cash) });
                   toast.success(t("Shift closed"));
                   setCloseOpen(false);
-                  await loadShift();
+                  shiftRead.reload();
                 } catch (e) {
                   toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
                 }
@@ -439,12 +520,22 @@ function Page() {
         }
       >
         <Field label={t("Cash counted (VND)")}>
-          <Input inputMode="numeric" value={cash} onChange={(e) => setCash(e.target.value)} />
+          <MoneyInput value={cash} onChange={setCash} />
         </Field>
         <p className="mt-2 text-sm text-muted">{t("Expected from the books: {amount}", { amount: money(shift?.totals?.cash ?? 0) })}</p>
       </Modal>
 
-      {tickets.length ? (
+      {ticketsRead.error ? (
+        <div className="mt-8">
+          <SectionTitle text={t("Requests from the app")} className="font-display text-2xl" />
+          <div className="mt-3">
+            <LoadError
+              message={ticketsRead.error.message}
+              onRetry={ticketsRead.error.refused ? undefined : ticketsRead.reload}
+            />
+          </div>
+        </div>
+      ) : tickets.length ? (
         <div className="mt-8">
           <SectionTitle text={t("Requests from the app")} className="font-display text-2xl" />
           <Stagger className="mt-3 grid gap-2" gap={0.05}>

@@ -26,20 +26,27 @@ import { Route as AppClassesRouteImport } from './routes/app.classes'
 import { Route as AppNotificationsRouteImport } from './routes/app.notifications'
 import { Route as AppPassRouteImport } from './routes/app.pass'
 import { Route as AppPlansRouteImport } from './routes/app.plans'
+import { Route as AppPointsRouteImport } from './routes/app.points'
 import { Route as AppTrainRouteImport } from './routes/app.train'
 import { Route as CoachIndexRouteImport } from './routes/coach.index'
 import { Route as CoachAttendanceRouteImport } from './routes/coach.attendance'
+import { Route as CoachEarningsRouteImport } from './routes/coach.earnings'
 import { Route as DeskIndexRouteImport } from './routes/desk.index'
 import { Route as DeskAtRiskRouteImport } from './routes/desk.at-risk'
 import { Route as DeskClassesRouteImport } from './routes/desk.classes'
 import { Route as DeskCourtsRouteImport } from './routes/desk.courts'
+import { Route as DeskDayPassesRouteImport } from './routes/desk.day-passes'
 import { Route as DeskGateRouteImport } from './routes/desk.gate'
 import { Route as DeskGearRouteImport } from './routes/desk.gear'
+import { Route as DeskMaintenanceRouteImport } from './routes/desk.maintenance'
 import { Route as DeskPaymentsRouteImport } from './routes/desk.payments'
+import { Route as DeskSeriesRouteImport } from './routes/desk.series'
 import { Route as ManagerIndexRouteImport } from './routes/manager.index'
 import { Route as ManagerAttendanceRouteImport } from './routes/manager.attendance'
 import { Route as ManagerAuditRouteImport } from './routes/manager.audit'
 import { Route as ManagerClassesRouteImport } from './routes/manager.classes'
+import { Route as ManagerCommissionRouteImport } from './routes/manager.commission'
+import { Route as ManagerInvoicesRouteImport } from './routes/manager.invoices'
 import { Route as ManagerMembersRouteImport } from './routes/manager.members'
 import { Route as ManagerPlansRouteImport } from './routes/manager.plans'
 import { Route as ManagerPricesRouteImport } from './routes/manager.prices'
@@ -136,6 +143,11 @@ const AppPlansRoute = AppPlansRouteImport.update({
   path: '/plans',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPointsRoute = AppPointsRouteImport.update({
+  id: '/points',
+  path: '/points',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppTrainRoute = AppTrainRouteImport.update({
   id: '/train',
   path: '/train',
@@ -149,6 +161,11 @@ const CoachIndexRoute = CoachIndexRouteImport.update({
 const CoachAttendanceRoute = CoachAttendanceRouteImport.update({
   id: '/attendance',
   path: '/attendance',
+  getParentRoute: () => CoachRoute,
+} as any)
+const CoachEarningsRoute = CoachEarningsRouteImport.update({
+  id: '/earnings',
+  path: '/earnings',
   getParentRoute: () => CoachRoute,
 } as any)
 const DeskIndexRoute = DeskIndexRouteImport.update({
@@ -171,6 +188,11 @@ const DeskCourtsRoute = DeskCourtsRouteImport.update({
   path: '/courts',
   getParentRoute: () => DeskRoute,
 } as any)
+const DeskDayPassesRoute = DeskDayPassesRouteImport.update({
+  id: '/day-passes',
+  path: '/day-passes',
+  getParentRoute: () => DeskRoute,
+} as any)
 const DeskGateRoute = DeskGateRouteImport.update({
   id: '/gate',
   path: '/gate',
@@ -181,9 +203,19 @@ const DeskGearRoute = DeskGearRouteImport.update({
   path: '/gear',
   getParentRoute: () => DeskRoute,
 } as any)
+const DeskMaintenanceRoute = DeskMaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
+  getParentRoute: () => DeskRoute,
+} as any)
 const DeskPaymentsRoute = DeskPaymentsRouteImport.update({
   id: '/payments',
   path: '/payments',
+  getParentRoute: () => DeskRoute,
+} as any)
+const DeskSeriesRoute = DeskSeriesRouteImport.update({
+  id: '/series',
+  path: '/series',
   getParentRoute: () => DeskRoute,
 } as any)
 const ManagerIndexRoute = ManagerIndexRouteImport.update({
@@ -204,6 +236,16 @@ const ManagerAuditRoute = ManagerAuditRouteImport.update({
 const ManagerClassesRoute = ManagerClassesRouteImport.update({
   id: '/classes',
   path: '/classes',
+  getParentRoute: () => ManagerRoute,
+} as any)
+const ManagerCommissionRoute = ManagerCommissionRouteImport.update({
+  id: '/commission',
+  path: '/commission',
+  getParentRoute: () => ManagerRoute,
+} as any)
+const ManagerInvoicesRoute = ManagerInvoicesRouteImport.update({
+  id: '/invoices',
+  path: '/invoices',
   getParentRoute: () => ManagerRoute,
 } as any)
 const ManagerMembersRoute = ManagerMembersRouteImport.update({
@@ -274,17 +316,24 @@ export interface FileRoutesByFullPath {
   '/app/notifications': typeof AppNotificationsRoute
   '/app/pass': typeof AppPassRoute
   '/app/plans': typeof AppPlansRoute
+  '/app/points': typeof AppPointsRoute
   '/app/train': typeof AppTrainRoute
   '/coach/attendance': typeof CoachAttendanceRoute
+  '/coach/earnings': typeof CoachEarningsRoute
   '/desk/at-risk': typeof DeskAtRiskRoute
   '/desk/classes': typeof DeskClassesRoute
   '/desk/courts': typeof DeskCourtsRoute
+  '/desk/day-passes': typeof DeskDayPassesRoute
   '/desk/gate': typeof DeskGateRoute
   '/desk/gear': typeof DeskGearRoute
+  '/desk/maintenance': typeof DeskMaintenanceRoute
   '/desk/payments': typeof DeskPaymentsRoute
+  '/desk/series': typeof DeskSeriesRoute
   '/manager/attendance': typeof ManagerAttendanceRoute
   '/manager/audit': typeof ManagerAuditRoute
   '/manager/classes': typeof ManagerClassesRoute
+  '/manager/commission': typeof ManagerCommissionRoute
+  '/manager/invoices': typeof ManagerInvoicesRoute
   '/manager/members': typeof ManagerMembersRoute
   '/manager/plans': typeof ManagerPlansRoute
   '/manager/prices': typeof ManagerPricesRoute
@@ -313,17 +362,24 @@ export interface FileRoutesByTo {
   '/app/notifications': typeof AppNotificationsRoute
   '/app/pass': typeof AppPassRoute
   '/app/plans': typeof AppPlansRoute
+  '/app/points': typeof AppPointsRoute
   '/app/train': typeof AppTrainRoute
   '/coach/attendance': typeof CoachAttendanceRoute
+  '/coach/earnings': typeof CoachEarningsRoute
   '/desk/at-risk': typeof DeskAtRiskRoute
   '/desk/classes': typeof DeskClassesRoute
   '/desk/courts': typeof DeskCourtsRoute
+  '/desk/day-passes': typeof DeskDayPassesRoute
   '/desk/gate': typeof DeskGateRoute
   '/desk/gear': typeof DeskGearRoute
+  '/desk/maintenance': typeof DeskMaintenanceRoute
   '/desk/payments': typeof DeskPaymentsRoute
+  '/desk/series': typeof DeskSeriesRoute
   '/manager/attendance': typeof ManagerAttendanceRoute
   '/manager/audit': typeof ManagerAuditRoute
   '/manager/classes': typeof ManagerClassesRoute
+  '/manager/commission': typeof ManagerCommissionRoute
+  '/manager/invoices': typeof ManagerInvoicesRoute
   '/manager/members': typeof ManagerMembersRoute
   '/manager/plans': typeof ManagerPlansRoute
   '/manager/prices': typeof ManagerPricesRoute
@@ -357,17 +413,24 @@ export interface FileRoutesById {
   '/app/notifications': typeof AppNotificationsRoute
   '/app/pass': typeof AppPassRoute
   '/app/plans': typeof AppPlansRoute
+  '/app/points': typeof AppPointsRoute
   '/app/train': typeof AppTrainRoute
   '/coach/attendance': typeof CoachAttendanceRoute
+  '/coach/earnings': typeof CoachEarningsRoute
   '/desk/at-risk': typeof DeskAtRiskRoute
   '/desk/classes': typeof DeskClassesRoute
   '/desk/courts': typeof DeskCourtsRoute
+  '/desk/day-passes': typeof DeskDayPassesRoute
   '/desk/gate': typeof DeskGateRoute
   '/desk/gear': typeof DeskGearRoute
+  '/desk/maintenance': typeof DeskMaintenanceRoute
   '/desk/payments': typeof DeskPaymentsRoute
+  '/desk/series': typeof DeskSeriesRoute
   '/manager/attendance': typeof ManagerAttendanceRoute
   '/manager/audit': typeof ManagerAuditRoute
   '/manager/classes': typeof ManagerClassesRoute
+  '/manager/commission': typeof ManagerCommissionRoute
+  '/manager/invoices': typeof ManagerInvoicesRoute
   '/manager/members': typeof ManagerMembersRoute
   '/manager/plans': typeof ManagerPlansRoute
   '/manager/prices': typeof ManagerPricesRoute
@@ -402,17 +465,24 @@ export interface FileRouteTypes {
     | '/app/notifications'
     | '/app/pass'
     | '/app/plans'
+    | '/app/points'
     | '/app/train'
     | '/coach/attendance'
+    | '/coach/earnings'
     | '/desk/at-risk'
     | '/desk/classes'
     | '/desk/courts'
+    | '/desk/day-passes'
     | '/desk/gate'
     | '/desk/gear'
+    | '/desk/maintenance'
     | '/desk/payments'
+    | '/desk/series'
     | '/manager/attendance'
     | '/manager/audit'
     | '/manager/classes'
+    | '/manager/commission'
+    | '/manager/invoices'
     | '/manager/members'
     | '/manager/plans'
     | '/manager/prices'
@@ -441,17 +511,24 @@ export interface FileRouteTypes {
     | '/app/notifications'
     | '/app/pass'
     | '/app/plans'
+    | '/app/points'
     | '/app/train'
     | '/coach/attendance'
+    | '/coach/earnings'
     | '/desk/at-risk'
     | '/desk/classes'
     | '/desk/courts'
+    | '/desk/day-passes'
     | '/desk/gate'
     | '/desk/gear'
+    | '/desk/maintenance'
     | '/desk/payments'
+    | '/desk/series'
     | '/manager/attendance'
     | '/manager/audit'
     | '/manager/classes'
+    | '/manager/commission'
+    | '/manager/invoices'
     | '/manager/members'
     | '/manager/plans'
     | '/manager/prices'
@@ -484,17 +561,24 @@ export interface FileRouteTypes {
     | '/app/notifications'
     | '/app/pass'
     | '/app/plans'
+    | '/app/points'
     | '/app/train'
     | '/coach/attendance'
+    | '/coach/earnings'
     | '/desk/at-risk'
     | '/desk/classes'
     | '/desk/courts'
+    | '/desk/day-passes'
     | '/desk/gate'
     | '/desk/gear'
+    | '/desk/maintenance'
     | '/desk/payments'
+    | '/desk/series'
     | '/manager/attendance'
     | '/manager/audit'
     | '/manager/classes'
+    | '/manager/commission'
+    | '/manager/invoices'
     | '/manager/members'
     | '/manager/plans'
     | '/manager/prices'
@@ -647,6 +731,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPlansRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/points': {
+      id: '/app/points'
+      path: '/points'
+      fullPath: '/app/points'
+      preLoaderRoute: typeof AppPointsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/train': {
       id: '/app/train'
       path: '/train'
@@ -666,6 +757,13 @@ declare module '@tanstack/react-router' {
       path: '/attendance'
       fullPath: '/coach/attendance'
       preLoaderRoute: typeof CoachAttendanceRouteImport
+      parentRoute: typeof CoachRoute
+    }
+    '/coach/earnings': {
+      id: '/coach/earnings'
+      path: '/earnings'
+      fullPath: '/coach/earnings'
+      preLoaderRoute: typeof CoachEarningsRouteImport
       parentRoute: typeof CoachRoute
     }
     '/desk/': {
@@ -696,6 +794,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DeskCourtsRouteImport
       parentRoute: typeof DeskRoute
     }
+    '/desk/day-passes': {
+      id: '/desk/day-passes'
+      path: '/day-passes'
+      fullPath: '/desk/day-passes'
+      preLoaderRoute: typeof DeskDayPassesRouteImport
+      parentRoute: typeof DeskRoute
+    }
     '/desk/gate': {
       id: '/desk/gate'
       path: '/gate'
@@ -710,11 +815,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DeskGearRouteImport
       parentRoute: typeof DeskRoute
     }
+    '/desk/maintenance': {
+      id: '/desk/maintenance'
+      path: '/maintenance'
+      fullPath: '/desk/maintenance'
+      preLoaderRoute: typeof DeskMaintenanceRouteImport
+      parentRoute: typeof DeskRoute
+    }
     '/desk/payments': {
       id: '/desk/payments'
       path: '/payments'
       fullPath: '/desk/payments'
       preLoaderRoute: typeof DeskPaymentsRouteImport
+      parentRoute: typeof DeskRoute
+    }
+    '/desk/series': {
+      id: '/desk/series'
+      path: '/series'
+      fullPath: '/desk/series'
+      preLoaderRoute: typeof DeskSeriesRouteImport
       parentRoute: typeof DeskRoute
     }
     '/manager/': {
@@ -743,6 +862,20 @@ declare module '@tanstack/react-router' {
       path: '/classes'
       fullPath: '/manager/classes'
       preLoaderRoute: typeof ManagerClassesRouteImport
+      parentRoute: typeof ManagerRoute
+    }
+    '/manager/commission': {
+      id: '/manager/commission'
+      path: '/commission'
+      fullPath: '/manager/commission'
+      preLoaderRoute: typeof ManagerCommissionRouteImport
+      parentRoute: typeof ManagerRoute
+    }
+    '/manager/invoices': {
+      id: '/manager/invoices'
+      path: '/invoices'
+      fullPath: '/manager/invoices'
+      preLoaderRoute: typeof ManagerInvoicesRouteImport
       parentRoute: typeof ManagerRoute
     }
     '/manager/members': {
@@ -825,6 +958,7 @@ interface AppRouteChildren {
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppPassRoute: typeof AppPassRoute
   AppPlansRoute: typeof AppPlansRoute
+  AppPointsRoute: typeof AppPointsRoute
   AppTrainRoute: typeof AppTrainRoute
   AppIndexRoute: typeof AppIndexRoute
 }
@@ -836,6 +970,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppNotificationsRoute: AppNotificationsRoute,
   AppPassRoute: AppPassRoute,
   AppPlansRoute: AppPlansRoute,
+  AppPointsRoute: AppPointsRoute,
   AppTrainRoute: AppTrainRoute,
   AppIndexRoute: AppIndexRoute,
 }
@@ -844,12 +979,14 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 interface CoachRouteChildren {
   CoachAttendanceRoute: typeof CoachAttendanceRoute
+  CoachEarningsRoute: typeof CoachEarningsRoute
   CoachIndexRoute: typeof CoachIndexRoute
   CoachStudentIdRoute: typeof CoachStudentIdRoute
 }
 
 const CoachRouteChildren: CoachRouteChildren = {
   CoachAttendanceRoute: CoachAttendanceRoute,
+  CoachEarningsRoute: CoachEarningsRoute,
   CoachIndexRoute: CoachIndexRoute,
   CoachStudentIdRoute: CoachStudentIdRoute,
 }
@@ -860,9 +997,12 @@ interface DeskRouteChildren {
   DeskAtRiskRoute: typeof DeskAtRiskRoute
   DeskClassesRoute: typeof DeskClassesRoute
   DeskCourtsRoute: typeof DeskCourtsRoute
+  DeskDayPassesRoute: typeof DeskDayPassesRoute
   DeskGateRoute: typeof DeskGateRoute
   DeskGearRoute: typeof DeskGearRoute
+  DeskMaintenanceRoute: typeof DeskMaintenanceRoute
   DeskPaymentsRoute: typeof DeskPaymentsRoute
+  DeskSeriesRoute: typeof DeskSeriesRoute
   DeskIndexRoute: typeof DeskIndexRoute
   DeskMemberIdRoute: typeof DeskMemberIdRoute
 }
@@ -871,9 +1011,12 @@ const DeskRouteChildren: DeskRouteChildren = {
   DeskAtRiskRoute: DeskAtRiskRoute,
   DeskClassesRoute: DeskClassesRoute,
   DeskCourtsRoute: DeskCourtsRoute,
+  DeskDayPassesRoute: DeskDayPassesRoute,
   DeskGateRoute: DeskGateRoute,
   DeskGearRoute: DeskGearRoute,
+  DeskMaintenanceRoute: DeskMaintenanceRoute,
   DeskPaymentsRoute: DeskPaymentsRoute,
+  DeskSeriesRoute: DeskSeriesRoute,
   DeskIndexRoute: DeskIndexRoute,
   DeskMemberIdRoute: DeskMemberIdRoute,
 }
@@ -884,6 +1027,8 @@ interface ManagerRouteChildren {
   ManagerAttendanceRoute: typeof ManagerAttendanceRoute
   ManagerAuditRoute: typeof ManagerAuditRoute
   ManagerClassesRoute: typeof ManagerClassesRoute
+  ManagerCommissionRoute: typeof ManagerCommissionRoute
+  ManagerInvoicesRoute: typeof ManagerInvoicesRoute
   ManagerMembersRoute: typeof ManagerMembersRoute
   ManagerPlansRoute: typeof ManagerPlansRoute
   ManagerPricesRoute: typeof ManagerPricesRoute
@@ -897,6 +1042,8 @@ const ManagerRouteChildren: ManagerRouteChildren = {
   ManagerAttendanceRoute: ManagerAttendanceRoute,
   ManagerAuditRoute: ManagerAuditRoute,
   ManagerClassesRoute: ManagerClassesRoute,
+  ManagerCommissionRoute: ManagerCommissionRoute,
+  ManagerInvoicesRoute: ManagerInvoicesRoute,
   ManagerMembersRoute: ManagerMembersRoute,
   ManagerPlansRoute: ManagerPlansRoute,
   ManagerPricesRoute: ManagerPricesRoute,

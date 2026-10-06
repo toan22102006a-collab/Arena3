@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react";
 import { when } from "@/components/shell";
-import { Badge, Card, EmptyState, Skeleton } from "@/components/ui";
-import { apiGet } from "@/lib/arena3/client";
+import { Badge, Card, EmptyState, LoadError, Skeleton } from "@/components/ui";
 import { levelLabel, sportLabel } from "@/lib/arena3/labels";
 import { SectionTitle } from "@/components/section";
 import { ClipboardCheck } from "lucide-react";
 import { t, tk } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 type Row = {
   session_id: string;
@@ -30,19 +29,13 @@ const RESULTS = [
  * else. A session the coach has not marked yet says so rather than guessing.
  */
 export function MyAttendance() {
-  const [data, setData] = useState<Attendance | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    void apiGet<Attendance>("/me/attendance")
-      .then(setData)
-      .catch(() => setFailed(true));
-  }, []);
+  const { data, error, reload } = useRead<Attendance>("/me/attendance");
 
   return (
     <section aria-labelledby="my-attendance" className="mt-10">
       <SectionTitle id="my-attendance" icon={ClipboardCheck} text={t("My attendance")} className="mb-3" />
-      {failed ? (
-        <p className="text-sm text-muted">{t("Your attendance could not be loaded just now.")}</p>
+      {error ? (
+        <LoadError message={error.message} onRetry={error.refused ? undefined : reload} />
       ) : !data ? (
         <Skeleton className="h-24" />
       ) : !data.items.length ? (

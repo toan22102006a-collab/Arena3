@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button, Input } from "@/components/ui";
 import { apiPost } from "@/lib/arena3/client";
-import { t, tServer } from "@/lib/i18n";
+import { locale, t, tServer } from "@/lib/i18n";
 
 export type PromoQuote = {
   valid: boolean;
@@ -66,7 +66,7 @@ export function PromoInput({
           value={code}
           placeholder={t("Promo code")}
           aria-label={t("Promo code")}
-          className={compact ? "h-9" : undefined}
+          className={compact ? "h-11 sm:h-9" : undefined}
           disabled={quote !== null}
           autoCapitalize="characters"
           onChange={(e) => setCode(e.target.value.toUpperCase())}
@@ -91,8 +91,8 @@ export function PromoInput({
         <p className="text-xs text-accent">
           {t("{name}: −{discount} ₫ → pay {total} ₫", {
             name: quote.name,
-            discount: quote.discount_vnd.toLocaleString("vi-VN"),
-            total: quote.final_vnd.toLocaleString("vi-VN"),
+            discount: quote.discount_vnd.toLocaleString(locale()),
+            total: quote.final_vnd.toLocaleString(locale()),
           })}
         </p>
       ) : null}

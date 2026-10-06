@@ -218,6 +218,20 @@ export function sourceLabel(s: string) {
   return SOURCE_LABEL[s] ?? s;
 }
 
+/** What a payment or refund was raised against, in words the desk uses. */
+export function refTypeLabel(r: string) {
+  const label = (
+    {
+      subscription: tk("Plan"),
+      booking: tk("Booking"),
+      day_pass: tk("Day pass"),
+      walkin: tk("Walk-in"),
+      equipment: tk("Equipment hire"),
+    } as Record<string, string>
+  )[r];
+  return label ? t(label) : r;
+}
+
 const MONTH_SHORT = [
   tk("Jan"),
   tk("Feb"),
@@ -264,7 +278,20 @@ export function todayISO() {
   }).format(new Date());
 }
 
-/** FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=18 → T2, T4 · 18:00 */
+const DAY_ORDER = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
+/** Weekday codes in calendar order, unknown tokens dropped. Click order is not kept. */
+function orderedDays(raw: string): string[] {
+  const seen = new Set(
+    raw
+      .split(",")
+      .map((d) => d.trim())
+      .filter((d) => DAY_ORDER.includes(d)),
+  );
+  return DAY_ORDER.filter((d) => seen.has(d));
+}
+
+/** FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=18 → T2, T4 · 18:00. All seven days read as one phrase. */
 export function rruleLabel(rrule: string) {
   const parts = Object.fromEntries(
     rrule.split(";").map((p) => {
@@ -272,11 +299,14 @@ export function rruleLabel(rrule: string) {
       return [k ?? "", v ?? ""];
     }),
   );
-  const days = (parts.BYDAY ?? "")
-    .split(",")
-    .map((d) => (BYDAY[d.trim()] ? t(BYDAY[d.trim()]!) : d.trim()))
-    .filter(Boolean)
-    .join(", ");
+  const codes = orderedDays(parts.BYDAY ?? "");
+  const days =
+    codes.length === 7
+      ? t("Every day")
+      : codes
+          .map((d) => t(BYDAY[d]!))
+          .filter(Boolean)
+          .join(", ");
   const hour = parts.BYHOUR ? `${String(parts.BYHOUR).padStart(2, "0")}:00` : "";
   if (days && hour) return `${days} · ${hour}`;
   if (days) return days;
@@ -284,7 +314,7 @@ export function rruleLabel(rrule: string) {
 }
 
 export function composeWeeklyRrule(days: string[], hour: number) {
-  const byday = days.join(",") || "MO";
+  const byday = orderedDays(days.join(",")).join(",") || "MO";
   return `FREQ=WEEKLY;BYDAY=${byday};BYHOUR=${hour}`;
 }
 

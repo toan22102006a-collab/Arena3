@@ -2,8 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
+import { ScanLine } from "@/components/arena-icons";
 import { Shell } from "@/components/shell";
-import { Badge, Button, Card, Field, Input, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, LoadError, Skeleton } from "@/components/ui";
 import { apiGet, apiPost } from "@/lib/arena3/client";
 import { t } from "@/lib/i18n";
 
@@ -100,10 +101,17 @@ function Page() {
       <div className="grid max-w-md gap-4">
         <Card className="grid place-items-center gap-3 p-6">
           {error ? (
-            <p className="text-sm text-danger">{error}</p>
+            <LoadError message={error} onRetry={() => void refresh()} />
           ) : img ? (
             // The code must stay readable in sunlight: white tile, no theming.
-            <img src={img} alt={t("Your check-in code")} className="size-64 rounded-[var(--radius-md)] bg-white p-2" />
+            <div className="relative overflow-hidden rounded-[var(--radius-md)]">
+              <img
+                src={img}
+                alt={t("Your check-in code")}
+                className="size-64 bg-white p-2"
+              />
+              <ScanLine />
+            </div>
           ) : (
             <Skeleton className="size-64" />
           )}

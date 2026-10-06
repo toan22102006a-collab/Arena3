@@ -1,5 +1,6 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
+import { useRetryKey } from "@/lib/connection";
 import { LangProvider, t } from "@/lib/i18n";
 import { ClickSpark } from "@/components/fx";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
@@ -17,6 +18,12 @@ function SkipLink() {
   );
 }
 
+// "Reload page" on the connection banner bumps this key, which remounts whatever page is showing so
+// it asks for its data again. Without it a page whose first request failed keeps its grey blocks.
+function RetryOutlet() {
+  return <Outlet key={useRetryKey()} />;
+}
+
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -25,7 +32,7 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       // The same green the manifest and the palette use. It was a lighter one
       // here, so the phone chrome did not match the header it sat above.
-      { name: "theme-color", content: "#1f5c43" },
+      { name: "theme-color", content: "#1e4fd8" },
       {
         name: "description",
         content:
@@ -44,7 +51,7 @@ export const Route = createRootRoute({
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Anton&family=Be+Vietnam+Pro:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600;6..72,700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap",
       },
       { rel: "manifest", href: "/__grok/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
@@ -63,11 +70,15 @@ export const Route = createRootRoute({
           <LangProvider>
             <SkipLink />
             <ClickSpark />
-            <Outlet />
+            <RetryOutlet />
           </LangProvider>
+          {/* Below the 56px header on both sizes: sonner's phone default of 16px sat on top of it, and
+              six seconds rather than four, because a refused payment is a line to read twice. */}
           <Toaster
             position="top-center"
             offset={72}
+            mobileOffset={{ top: 68, left: 16, right: 16 }}
+            duration={6000}
             visibleToasts={3}
             toastOptions={{
               className: "font-sans",

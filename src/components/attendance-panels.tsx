@@ -1,10 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Badge, Button, Card, EmptyState, Field, FilterChip, Input, Modal, Pagination, Select, Skeleton, Stat } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  DateField,
+  EmptyState,
+  Field,
+  FilterChip,
+  Input,
+  LoadError,
+  Modal,
+  Pagination,
+  Select,
+  Skeleton,
+  Stat,
+} from "@/components/ui";
 import { ExportButtons } from "@/components/report-panels";
 import { ApiClientError, apiGet, apiPost } from "@/lib/arena3/client";
 import { addDaysISO, formatDate, sportLabel, todayISO } from "@/lib/arena3/labels";
+import { scrollBehavior } from "@/lib/calm";
 import { t, tk, tServer } from "@/lib/i18n";
+import { readError, useRead, type ReadError } from "@/lib/use-read";
 
 type Counts = { present: number; late: number; absent: number; excused: number; rate_pct: number | null };
 
@@ -26,30 +43,36 @@ const pct = (v: number | null) => (v === null ? "—" : `${v}%`);
 export function AttendancePanel({ canExport }: { canExport: boolean }) {
   const [from, setFrom] = useState(() => addDaysISO(todayISO(), -29));
   const [to, setTo] = useState(todayISO);
-  const [data, setData] = useState<Report | null>(null);
   const [view, setView] = useState<"class" | "coach" | "student">("class");
-
-  useEffect(() => {
-    let live = true;
-    setData(null);
-    apiGet<Report>(`/reports/attendance?from=${from}&to=${to}`)
-      .then((d) => live && setData(d))
-      .catch((e: Error) => {
-        if (live) toast.error(tServer(e.message));
-      });
-    return () => {
-      live = false;
-    };
-  }, [from, to]);
+  const { data, error, reload } = useRead<Report>(`/reports/attendance?from=${from}&to=${to}`);
+  // The server names the date it will not take; a refusal it does not name (a 422) blames both.
+  const faulty = (field: "from" | "to") => error?.refused === true && (error.field ? error.field === field : true);
+  const errorId = "attendance-error";
 
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-end gap-3">
         <Field label={t("From")}>
-          <Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
+          <DateField
+            required
+            value={from}
+            max={to}
+            onChange={setFrom}
+            invalid={faulty("from")}
+            aria-describedby={faulty("from") ? errorId : undefined}
+            aria-label={t("From")}
+          />
         </Field>
         <Field label={t("To")}>
-          <Input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} />
+          <DateField
+            required
+            value={to}
+            min={from}
+            onChange={setTo}
+            invalid={faulty("to")}
+            aria-describedby={faulty("to") ? errorId : undefined}
+            aria-label={t("To")}
+          />
         </Field>
         <Select value={view} onChange={(e) => setView(e.target.value as typeof view)} aria-label={t("Group by")}>
           <option value="class">{t("By class")}</option>
@@ -59,7 +82,9 @@ export function AttendancePanel({ canExport }: { canExport: boolean }) {
         {canExport ? <ExportButtons kind="attendance" from={from} to={to} /> : null}
       </div>
 
-      {!data ? (
+      {error ? (
+        <LoadError id={errorId} message={error.message} onRetry={error.refused ? undefined : reload} />
+      ) : !data ? (
         <Skeleton className="h-48" />
       ) : (
         <>
@@ -111,7 +136,7 @@ export function AttendancePanel({ canExport }: { canExport: boolean }) {
 function Table({ head, rows }: { head: string[]; rows: Array<Array<string | number>> }) {
   if (!rows.length) return <EmptyState title={t("No marked sessions in this window")} hint={t("Pick a longer range.")} />;
   return (
-    <Card className="overflow-x-auto p-0" role="region" aria-label={t("Table, scrolls sideways")} tabIndex={0}>
+    <Card className="overflow-x-auto p-0" role="region" aria-label={t("Attendance table, scrolls sideways")} tabIndex={0}>
       <table className="w-full min-w-[34rem] text-sm">
         <thead>
           <tr className="border-b border-line text-left text-xs text-muted">
@@ -202,14 +227,20 @@ export function AtRiskPanel({ canContact = true }: { canContact?: boolean }) {
   const [offset, setOffset] = useState(0);
   const top = useRef<HTMLDivElement>(null);
 
+  const [loadError, setLoadError] = useState<ReadError | null>(null);
+
   const load = useCallback(async () => {
     const r = await apiGet<{ items: RiskItem[]; idle_days: number }>("/at-risk");
     setItems(r.items);
     setIdleDays(r.idle_days);
   }, []);
-  useEffect(() => {
-    void load().catch((e) => toast.error(tServer(e.message)));
+  // The first read says why it failed on the panel itself, with a button to ask again; a refresh after
+  // saving a contact keeps the list that is already on screen and reports through `save`'s toast.
+  const firstLoad = useCallback(() => {
+    setLoadError(null);
+    void load().catch((e: unknown) => setLoadError(readError(e)));
   }, [load]);
+  useEffect(firstLoad, [firstLoad]);
 
   async function save() {
     if (!target) return;
@@ -269,11 +300,13 @@ export function AtRiskPanel({ canContact = true }: { canContact?: boolean }) {
   const page = shown.slice(offset, offset + RISK_PAGE);
   const goTo = (o: number) => {
     setOffset(o);
-    top.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    top.current?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
   };
 
   if (!items)
-    return (
+    return loadError ? (
+      <LoadError message={loadError.message} onRetry={firstLoad} />
+    ) : (
       <div className="grid gap-2">
         {Array.from({ length: 6 }, (_, i) => (
           <Skeleton key={i} className="h-16" />
@@ -293,7 +326,7 @@ export function AtRiskPanel({ canContact = true }: { canContact?: boolean }) {
   return (
     <div className="grid gap-3" ref={top}>
       <details className="group rounded-[var(--radius-lg)] bg-surface px-4 py-3 text-sm shadow-[var(--shadow-border)]">
-        <summary className="cursor-pointer font-medium marker:text-muted">{t("Who ends up on this list?")}</summary>
+        <summary className="cursor-pointer py-3 font-medium marker:text-muted sm:py-0.5">{t("Who ends up on this list?")}</summary>
         <p className="mt-2 text-muted">
           {t(
             "Three things put someone here: absent three sessions running, no visit for {n}+ days on a live plan, or a plan ending soon with low attendance. Contacting them is a courtesy call — never a penalty.",
@@ -346,10 +379,10 @@ export function AtRiskPanel({ canContact = true }: { canContact?: boolean }) {
               {page.map((m) => (
                 <li key={m.user_id} className="grid gap-x-4 gap-y-1.5 px-4 py-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.5fr)_8.5rem_auto] md:items-center">
                   <div className="min-w-0">
-                    <p className="truncate font-medium">
+                    <p className="break-words font-medium">
                       {m.full_name} <span className="text-xs font-normal tabular-nums text-muted">{m.member_code}</span>
                     </p>
-                    <p className="truncate text-xs text-muted">
+                    <p className="break-words text-xs text-muted">
                       {m.phone ? (
                         <a href={`tel:${m.phone}`} className="tabular-nums hover:underline">
                           {m.phone}

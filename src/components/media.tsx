@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { useCalm } from "@/lib/calm";
 import { media, sportPhoto } from "@/lib/arena3/media";
+import { t } from "@/lib/i18n";
 import { CourtBackdrop } from "./mark";
 
 export { media, sportPhoto };
@@ -11,6 +13,7 @@ export function Cover({
   className,
   imgClassName,
   scrim = "auto",
+  style,
   children,
 }: {
   src: string;
@@ -18,15 +21,23 @@ export function Cover({
   className?: string;
   imgClassName?: string;
   scrim?: "auto" | "media" | "hero" | "none";
+  style?: CSSProperties;
   children?: ReactNode;
 }) {
   const showScrim = scrim === "media" || scrim === "hero" || (scrim === "auto" && children != null);
   return (
-    <div className={cn("relative overflow-hidden bg-wood", className)}>
-      <img src={src} alt={alt} className={cn("absolute inset-0 z-0 size-full object-cover", imgClassName)} />
+    <div className={cn("relative overflow-hidden bg-wood", className)} style={style}>
+      <img
+        src={src}
+        alt={alt}
+        className={cn("absolute inset-0 z-0 size-full object-cover", imgClassName)}
+      />
       {showScrim ? (
         <div
-          className={cn("pointer-events-none absolute inset-0 z-[1]", scrim === "hero" ? "hero-scrim" : "media-scrim")}
+          className={cn(
+            "pointer-events-none absolute inset-0 z-[1]",
+            scrim === "hero" ? "hero-scrim" : "media-scrim",
+          )}
         />
       ) : null}
       {children ? <div className="relative z-[2] size-full">{children}</div> : null}
@@ -34,9 +45,36 @@ export function Cover({
   );
 }
 
+/** A wide photo strip at the top of a screen: it says whose screen this is before any word is read. */
+export function PhotoBanner({
+  src,
+  className,
+  focus = "50% 50%",
+}: {
+  src: string;
+  className?: string;
+  /** CSS object-position: where in the photo the strip should stay centred (faces, not feet). */
+  focus?: string;
+}) {
+  return (
+    <Cover
+      src={src}
+      alt=""
+      scrim="none"
+      className={cn("h-32 rounded-[var(--radius-lg)] sm:h-44", className)}
+      imgClassName="[object-position:var(--focus)]"
+      style={{ "--focus": focus } as CSSProperties}
+    />
+  );
+}
+
 /** Solid 82% ink bar — captions never sit on the photo itself (Stitch/WCAG). */
 export function MediaCaption({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("absolute inset-x-0 bottom-0 caption-bar px-4 py-3", className)}>{children}</div>;
+  return (
+    <div className={cn("absolute inset-x-0 bottom-0 caption-bar px-4 py-3", className)}>
+      {children}
+    </div>
+  );
 }
 
 export function PassCard({
@@ -60,31 +98,29 @@ export function PassCard({
           the card, so without it the drawing is cropped top and bottom and its
           two long vertical lines run the full height of the pass — reading as
           a pair of stray rules through the card rather than as a watermark. */}
-      <CourtBackdrop
-        className="pointer-events-none absolute -right-10 -bottom-8 h-56 w-56 text-pass-fg opacity-[0.16] [mask-image:radial-gradient(120%_115%_at_100%_100%,#000_18%,transparent_70%)]"
-      />
+      <CourtBackdrop className="pointer-events-none absolute -right-10 -bottom-8 h-56 w-56 text-pass-fg opacity-[0.16] [mask-image:radial-gradient(120%_115%_at_100%_100%,#000_18%,transparent_70%)]" />
       <div className="relative flex flex-col gap-6">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <span className="inline-block rounded-[var(--radius-sm)] border border-pass-fg/20 bg-accent px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest text-accent-fg">
-              Membership pass
+            <span className="inline-block rounded-[var(--radius-sm)] border border-pass-fg/20 bg-accent px-2.5 py-1 text-xs font-bold text-accent-fg">
+              {t("Membership pass")}
             </span>
             <p className="mt-3 font-display text-2xl tracking-tight">{plan}</p>
           </div>
           {code ? (
             <div className="text-right">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-pass-muted">Member code</p>
+              <p className="text-xs font-medium text-pass-muted">{t("Member code")}</p>
               <p className="font-mono text-sm font-semibold tracking-wider">{code}</p>
             </div>
           ) : null}
         </div>
         <div className="grid grid-cols-3 gap-3 border-t border-pass-fg/15 pt-4">
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-pass-muted">Sport</p>
+            <p className="text-xs text-pass-muted">{t("Sport")}</p>
             <p className="mt-0.5 text-sm font-semibold">{sport}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-pass-muted">Includes</p>
+            <p className="text-xs text-pass-muted">{t("Includes")}</p>
             {benefits.map((b) => (
               <p key={b} className="mt-0.5 text-sm font-semibold tabular-nums">
                 {b}
@@ -92,7 +128,7 @@ export function PassCard({
             ))}
           </div>
           <div className="text-right">
-            <p className="text-[11px] uppercase tracking-wider text-pass-muted">Valid through</p>
+            <p className="text-xs text-pass-muted">{t("Valid through")}</p>
             <p className="mt-0.5 text-sm font-semibold tabular-nums">{endOn}</p>
           </div>
         </div>
@@ -114,6 +150,11 @@ export function PassCard({
  *
  * `rootMargin` is generous so the hero — which is on screen from the start —
  * begins fetching immediately after hydration rather than after a scroll.
+ *
+ * It is the one thing on the page that moves for longer than five seconds from the first
+ * frame, so it stops when motion is calm (WCAG 2.2.2): a visitor whose device asks for
+ * reduced motion never downloads it, and one who presses "Pause animations" keeps the frame
+ * they were on.
  */
 export function HeroVideo({
   src,
@@ -126,6 +167,21 @@ export function HeroVideo({
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [near, setNear] = useState(false);
+  const calm = useCalm();
+  // Once the file has been asked for it stays attached, so pausing holds the current frame instead of
+  // dropping back to the poster; calm from the start never attaches it at all.
+  const [wanted, setWanted] = useState(false);
+
+  useEffect(() => {
+    if (near && !calm) setWanted(true);
+  }, [near, calm]);
+
+  useEffect(() => {
+    const v = ref.current;
+    if (!v || !wanted) return;
+    if (calm) v.pause();
+    else void v.play().catch(() => undefined);
+  }, [calm, wanted]);
 
   useEffect(() => {
     const el = ref.current;
@@ -171,9 +227,9 @@ export function HeroVideo({
       className={cn("absolute inset-0 size-full object-cover", className)}
       // Attaching `src` is what starts the download, so it stays off until the
       // observer fires. The poster is painted either way.
-      src={near ? src : undefined}
+      src={wanted ? src : undefined}
       poster={poster}
-      autoPlay
+      autoPlay={!calm}
       muted
       loop
       playsInline

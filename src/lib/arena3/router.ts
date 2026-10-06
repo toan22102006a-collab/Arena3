@@ -18,6 +18,7 @@ import * as trainH from "./handlers/training";
 import * as checkinH from "./handlers/checkin";
 import * as promoH from "./handlers/promos";
 import * as attH from "./handlers/attendance";
+import * as xH from "./handlers/extras";
 
 type Result = { status: number; body: unknown };
 
@@ -40,6 +41,12 @@ async function dispatch(request: Request): Promise<Response | Result> {
       const r = await withIdempotency(sql, request, userId, true, fn);
       return r;
     });
+
+  // "Is the server there?" — what the connection banner's retry button asks. No session and no
+  // database on purpose: it answers whenever the app itself is running, which is the whole question.
+  if (method === "GET" && p0 === "health" && !p1) {
+    return { status: 200, body: { ok: true } };
+  }
 
   // Public auth
   if (method === "POST" && p0 === "auth" && p1 === "register") {
@@ -214,7 +221,13 @@ async function dispatch(request: Request): Promise<Response | Result> {
     return authed((sql, user) => bookH.bookingsTransferReject(sql, p1, request, user));
   }
   if (method === "POST" && p0 === "bookings" && p1 && p2 === "cancel") {
-    return authed((sql, user) => bookH.bookingsCancel(sql, p1, user));
+    return authed((sql, user) => bookH.bookingsCancel(sql, p1, user, request));
+  }
+  if (method === "GET" && p0 === "bookings" && p1 && p2 === "cancel-quote") {
+    return authedRead((sql, user) => bookH.bookingsCancelQuote(sql, p1, request, user));
+  }
+  if (method === "POST" && p0 === "bookings" && p1 && p2 === "collect-balance") {
+    return authed((sql, user) => bookH.bookingsCollectBalance(sql, p1, request, user));
   }
   if (method === "POST" && p0 === "bookings" && p1 && p2 === "reschedule") {
     return authed((sql, user) => bookH.bookingsReschedule(sql, p1, request, user));
@@ -235,7 +248,7 @@ async function dispatch(request: Request): Promise<Response | Result> {
     return authed((sql, user) => deskH.shiftOpen(sql, user));
   }
   if (method === "GET" && p0 === "shifts" && p1 === "current") {
-    return authedRead((sql, user) => deskH.shiftCurrent(sql, user));
+    return authedRead((sql, user) => deskH.shiftCurrent(sql, user, request));
   }
   if (method === "POST" && p0 === "shifts" && p1 && p2 === "close") {
     return authed((sql, user) => deskH.shiftClose(sql, p1, request, user));
@@ -304,6 +317,86 @@ async function dispatch(request: Request): Promise<Response | Result> {
     return authed((sql, user) => deskH.paymentsRejectRefund(sql, p1, request, user));
   }
   // Ordered before the `.pdf` case only for readability — the two cannot collide.
+  // Fixed weekly bookings.
+  if (method === "POST" && p0 === "series" && p1 === "preview") {
+    return authed((sql, user) => xH.seriesPreview(sql, request, user));
+  }
+  if (method === "POST" && p0 === "series" && !p1) {
+    return authed((sql, user) =>
+      withIdempotency(sql, request, user.id, false, () => xH.seriesCreate(sql, request, user)),
+    );
+  }
+  if (method === "GET" && p0 === "series" && !p1) {
+    return authedRead((sql, user) => xH.seriesList(sql, user));
+  }
+  if (method === "POST" && p0 === "series" && p1 && p2 === "cancel") {
+    return authed((sql, user) => xH.seriesCancel(sql, p1, request, user));
+  }
+  // Day passes.
+  if (method === "GET" && p0 === "day-passes" && !p1) {
+    return authedRead((sql, user) => xH.dayPassList(sql, request, user));
+  }
+  if (method === "POST" && p0 === "day-passes" && !p1) {
+    return authed((sql, user) =>
+      withIdempotency(sql, request, user.id, false, () => xH.dayPassSell(sql, request, user)),
+    );
+  }
+  if (method === "POST" && p0 === "day-passes" && p1 && p2 === "use") {
+    return authed((sql, user) => xH.dayPassUse(sql, p1, user));
+  }
+  if (method === "POST" && p0 === "day-passes" && p1 && p2 === "void") {
+    return authed((sql, user) => xH.dayPassVoid(sql, p1, user));
+  }
+  // Loyalty points.
+  if (method === "GET" && p0 === "me" && p1 === "points") {
+    return authedRead((sql, user) => xH.meLoyalty(sql, user));
+  }
+  if (method === "POST" && p0 === "me" && p1 === "points" && p2 === "redeem") {
+    return authed((sql, user) => xH.loyaltyRedeem(sql, request, user));
+  }
+  if (method === "GET" && p0 === "members" && p1 && p2 === "points") {
+    return authedRead((sql, user) => xH.memberLoyalty(sql, p1, user));
+  }
+  if (method === "POST" && p0 === "members" && p1 && p2 === "points") {
+    return authed((sql, user) => xH.loyaltyAdjust(sql, p1, request, user));
+  }
+  // Coach commission.
+  if (method === "GET" && p0 === "commission" && !p1) {
+    return authedRead((sql, user) => xH.commissionReport(sql, request, user));
+  }
+  if (method === "POST" && p0 === "commission" && p1 === "close") {
+    return authed((sql, user) => xH.commissionClose(sql, request, user));
+  }
+  if (method === "PATCH" && p0 === "commission" && p1 === "rates" && p2) {
+    return authed((sql, user) => xH.commissionRate(sql, p2, request, user));
+  }
+  if (method === "POST" && p0 === "commission" && p1 === "pay" && p2) {
+    return authed((sql, user) => xH.commissionPay(sql, p2, request, user));
+  }
+  if (method === "GET" && p0 === "me" && p1 === "earnings") {
+    return authedRead((sql, user) => xH.coachEarnings(sql, request, user));
+  }
+  // Maintenance work orders.
+  if (method === "GET" && p0 === "work-orders" && !p1) {
+    return authedRead((sql, user) => xH.workOrdersList(sql, request, user));
+  }
+  if (method === "POST" && p0 === "work-orders" && !p1) {
+    return authed((sql, user) => xH.workOrdersCreate(sql, request, user));
+  }
+  if (method === "PATCH" && p0 === "work-orders" && p1) {
+    return authed((sql, user) => xH.workOrdersPatch(sql, p1, request, user));
+  }
+  // E-invoice export (before the `.pdf` case: "export" is not an id).
+  if (method === "GET" && p0 === "invoices" && p1 === "export-list") {
+    return authedRead((sql, user) => xH.invoiceExportList(sql, request, user));
+  }
+  if (method === "GET" && p0 === "invoices" && p1 === "export") {
+    return authed((sql, user) => xH.invoiceExport(sql, request, user));
+  }
+  if (method === "GET" && p0 === "invoices" && p1?.endsWith(".xml")) {
+    const id = p1.replace(/.xml$/, "");
+    return authedRead((sql, user) => xH.invoiceXmlOne(sql, id, user));
+  }
   if (method === "GET" && p0 === "invoices" && !p1) {
     return authedRead((sql, user) => deskH.invoicesMine(sql, request, user));
   }

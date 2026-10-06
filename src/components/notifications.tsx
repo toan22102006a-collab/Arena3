@@ -1,7 +1,6 @@
-import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Button, Card, Modal } from "@/components/ui";
+import { Button, ButtonLink, Card, Modal } from "@/components/ui";
 import { money, when } from "@/components/shell";
 import { apiPost, openInvoice } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
@@ -286,12 +285,13 @@ export function NotificationList({
           <span>{t("{n} unread", { n: unread.length })}</span>
           <button
             type="button"
-            className="underline"
+            className="hit underline"
             onClick={async () => {
               const ids = unread.map((n) => n.id);
-              onRead(ids);
               try {
                 await apiPost("/me/notifications/read", {});
+                // Only once the server has them as read, so the list never claims more than is true.
+                onRead(ids);
               } catch (e) {
                 toast.error(e instanceof Error ? tServer(e.message) : t("Could not mark them read"));
               }
@@ -348,13 +348,9 @@ export function NotificationList({
               </Button>
             ) : null}
             {c?.link ? (
-              <Link
-                to={c.link.to}
-                className="inline-flex h-10 items-center rounded-[var(--radius-md)] border border-line px-4 text-sm hover:bg-wood"
-                onClick={() => setOpen(null)}
-              >
+              <ButtonLink to={c.link.to} variant="outline" onClick={() => setOpen(null)}>
                 {c.link.label}
-              </Link>
+              </ButtonLink>
             ) : null}
             <Button variant="ghost" onClick={() => setOpen(null)}>
               {t("Close")}

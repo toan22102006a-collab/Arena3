@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Shell, money } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, Check, EmptyState, Field, Input, LoadError, Modal, MoneyInput, Select, Skeleton } from "@/components/ui";
 import { ApiClientError, apiGet, apiPatch, apiPost } from "@/lib/arena3/client";
 import { formatDate, sportLabel } from "@/lib/arena3/labels";
-import { t, tk, tServer } from "@/lib/i18n";
+import { t, tk, tServer, tData } from "@/lib/i18n";
+import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/manager/promos")({ component: Page });
 
@@ -90,24 +91,17 @@ function startOfDay(d: string) {
 }
 
 function Page() {
-  const [items, setItems] = useState<Promo[] | null>(null);
-  const [plans, setPlans] = useState<Plan[]>([]);
+  const read = useRead<{ items: Promo[] }>("/promotions");
+  const items = read.data?.items ?? null;
+  // The plan picker in the form; if it cannot load, the form says so instead of offering "Any plan" alone.
+  const planRead = useRead<{ items: Plan[] }>("/plans");
+  const plans = planRead.data?.items ?? [];
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const [busy, setBusy] = useState(false);
   const [fe, setFe] = useState<{ field: string; message: string } | null>(null);
   const [history, setHistory] = useState<{ promo: Promo; rows: Redemption[] } | null>(null);
   const bad = (f: string) => (fe?.field === f ? fe.message : undefined);
-
-  async function load() {
-    setItems((await apiGet<{ items: Promo[] }>("/promotions")).items);
-  }
-  useEffect(() => {
-    void load().catch((e) => toast.error(tServer(e.message)));
-    void apiGet<{ items: Plan[] }>("/plans")
-      .then((r) => setPlans(r.items))
-      .catch(() => undefined);
-  }, []);
 
   async function create() {
     setBusy(true);
@@ -132,7 +126,7 @@ function Page() {
       toast.success(t("Code {code} is live", { code: form.code.toUpperCase() }));
       setOpen(false);
       setForm(empty);
-      await load();
+      read.reload();
     } catch (e) {
       if (e instanceof ApiClientError && e.body.field) setFe({ field: e.body.field, message: tServer(e.message) });
       toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
@@ -145,7 +139,7 @@ function Page() {
     try {
       await apiPatch(`/promotions/${p.id}`, { status: p.status === "active" ? "paused" : "active" });
       toast.success(p.status === "active" ? t("Paused — new orders can't use it") : t("Back on"));
-      await load();
+      read.reload();
     } catch (e) {
       toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
     }
@@ -170,7 +164,9 @@ function Page() {
         <Button onClick={() => setOpen(true)}>{t("New code")}</Button>
       </div>
 
-      {!items ? (
+      {read.error ? (
+        <LoadError message={read.error.message} onRetry={read.error.refused ? undefined : read.reload} />
+      ) : !items ? (
         <Skeleton className="h-40" />
       ) : !items.length ? (
         <EmptyState title={t("No promo codes yet")} hint={t("Create one and give it to members at the desk or in a campaign.")} />
@@ -195,7 +191,7 @@ function Page() {
               <p className="text-xs text-muted">
                 {p.applies_to.map((a) => (a === "plan" ? t("plans") : t("courts"))).join(" + ")}
                 {p.sport ? ` · ${sportLabel(p.sport)}` : ""}
-                {p.plan_name ? ` · ${t("{name} only", { name: p.plan_name })}` : ""}
+                {p.plan_name ? ` · ${t("{name} only", { name: tData(p.plan_name) })}` : ""}
                 {p.starts_at ? ` · ${t("from {date}", { date: formatDate(p.starts_at) })}` : ""}
                 {p.ends_at ? ` · ${t("until {date}", { date: formatDate(p.ends_at) })}` : ""}
                 {` · ${t("{n} per member", { n: p.max_per_member })}`}
@@ -248,23 +244,19 @@ function Page() {
             </Select>
           </Field>
           <Field label={form.kind === "percent" ? t("Percent (1–100)") : t("Amount (đ, multiple of 1,000)")} hint={bad("value")}>
-            <Input inputMode="numeric" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
+            {form.kind === "percent" ? (
+              <Input inputMode="numeric" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
+            ) : (
+              <MoneyInput value={form.value} onChange={(v) => setForm({ ...form, value: v })} />
+            )}
           </Field>
           {form.kind === "percent" ? (
             <Field label={t("Cap (đ, optional)")} hint={bad("max_discount_vnd")}>
-              <Input
-                inputMode="numeric"
-                value={form.max_discount_vnd}
-                onChange={(e) => setForm({ ...form, max_discount_vnd: e.target.value })}
-              />
+              <MoneyInput value={form.max_discount_vnd} onChange={(v) => setForm({ ...form, max_discount_vnd: v })} />
             </Field>
           ) : null}
           <Field label={t("Minimum order (đ, optional)")} hint={bad("min_order_vnd")}>
-            <Input
-              inputMode="numeric"
-              value={form.min_order_vnd}
-              onChange={(e) => setForm({ ...form, min_order_vnd: e.target.value })}
-            />
+            <MoneyInput value={form.min_order_vnd} onChange={(v) => setForm({ ...form, min_order_vnd: v })} />
           </Field>
           <Field label={t("Starts (optional)")} hint={bad("starts_at")}>
             <Input type="date" value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} />
@@ -290,8 +282,8 @@ function Page() {
               <option value="volleyball">{t("Volleyball")}</option>
             </Select>
           </Field>
-          <Field label={t("Only this plan")}>
-            <Select value={form.plan_id} onChange={(e) => setForm({ ...form, plan_id: e.target.value })}>
+          <Field label={t("Only this plan")} hint={planRead.error?.message}>
+            <Select value={form.plan_id} disabled={!!planRead.error} onChange={(e) => setForm({ ...form, plan_id: e.target.value })}>
               <option value="">{t("Any plan")}</option>
               {plans.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -300,16 +292,10 @@ function Page() {
               ))}
             </Select>
           </Field>
-          <fieldset className="flex items-center gap-4 text-sm sm:col-span-2">
+          <fieldset className="flex flex-wrap items-center gap-x-6 text-sm sm:col-span-2">
             <legend className="mb-1 text-xs text-muted">{t("Applies to")} {bad("applies_to") ? `— ${bad("applies_to")}` : ""}</legend>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.checked })} />
-              {t("Membership plans")}
-            </label>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={form.court} onChange={(e) => setForm({ ...form, court: e.target.checked })} />
-              {t("Court bookings")}
-            </label>
+            <Check checked={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.checked })} label={t("Membership plans")} />
+            <Check checked={form.court} onChange={(e) => setForm({ ...form, court: e.target.checked })} label={t("Court bookings")} />
           </fieldset>
         </div>
         <p className="mt-3 text-xs text-muted">
