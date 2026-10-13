@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { useCalm } from "@/lib/calm";
 import { media, sportPhoto } from "@/lib/arena3/media";
 import { t } from "@/lib/i18n";
-import { CourtBackdrop } from "./mark";
+import { ArenaMark, CourtBackdrop } from "./mark";
 
 export { media, sportPhoto };
 
@@ -137,6 +137,53 @@ export function PassCard({
   );
 }
 
+const BootReady = createContext<(() => void) | null>(null);
+
+/**
+ * Covers the page until the hero video can play. The cover is a blank ground
+ * for the first moment; the mark only appears once the wait is actually slow,
+ * and a file that never arrives still lets the page open.
+ */
+export function BootGate({ children }: { children: ReactNode }) {
+  const calm = useCalm();
+  const [ready, setReady] = useState(false);
+  const [slow, setSlow] = useState(false);
+  const signal = useCallback(() => setReady(true), []);
+
+  useEffect(() => {
+    if (calm) {
+      setReady(true);
+      return;
+    }
+    const show = window.setTimeout(() => setSlow(true), 400);
+    const cap = window.setTimeout(() => setReady(true), 12_000);
+    return () => {
+      window.clearTimeout(show);
+      window.clearTimeout(cap);
+    };
+  }, [calm]);
+
+  return (
+    <BootReady.Provider value={signal}>
+      <div aria-hidden={ready ? undefined : true} inert={ready ? undefined : true}>
+        {children}
+      </div>
+      {ready ? null : (
+        <div className="fixed inset-0 z-[60] bg-bg" aria-busy="true">
+          {slow ? (
+            <div className="grid h-full place-items-center text-muted" role="status">
+              <div className="flex flex-col items-center gap-3">
+                <ArenaMark />
+                <p className="font-display text-lg">{t("Opening Arena3")}</p>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </BootReady.Provider>
+  );
+}
+
 /**
  * A muted, looping background video that only fetches once it is near the
  * viewport — and never before the page has painted.
@@ -148,33 +195,60 @@ export function PassCard({
  * `src` back until the element is observed costs nothing visually, because the
  * poster is the same frame the video opens on.
  *
- * `rootMargin` is generous so the hero — which is on screen from the start —
- * begins fetching immediately after hydration rather than after a scroll.
+ * `rootMargin` is generous so a hero near the fold begins fetching after
+ * hydration rather than after a scroll. `priority` attaches the file
+ * immediately: that is the one the first screen is waiting on.
  *
- * It is the one thing on the page that moves for longer than five seconds from the first
- * frame, so it stops when motion is calm (WCAG 2.2.2): a visitor whose device asks for
- * reduced motion never downloads it, and one who presses "Pause animations" keeps the frame
- * they were on.
+ * A device that asks for reduced motion never keeps the download.
  */
 export function HeroVideo({
   src,
   poster,
   className,
+  priority = false,
 }: {
   src: string;
   poster: string;
   className?: string;
+  priority?: boolean;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [near, setNear] = useState(false);
   const calm = useCalm();
+  const signal = useContext(BootReady);
   // Once the file has been asked for it stays attached, so pausing holds the current frame instead of
   // dropping back to the poster; calm from the start never attaches it at all.
-  const [wanted, setWanted] = useState(false);
+  const [wanted, setWanted] = useState(priority);
 
   useEffect(() => {
     if (near && !calm) setWanted(true);
   }, [near, calm]);
+
+  useEffect(() => {
+    if (!priority) return;
+    const v = ref.current;
+    if (calm) {
+      if (v) {
+        v.pause();
+        v.removeAttribute("src");
+        v.load();
+      }
+      signal?.();
+      return;
+    }
+    if (!v) return;
+    const done = () => signal?.();
+    if (v.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+      done();
+      return;
+    }
+    v.addEventListener("canplay", done);
+    v.addEventListener("error", done);
+    return () => {
+      v.removeEventListener("canplay", done);
+      v.removeEventListener("error", done);
+    };
+  }, [priority, calm, signal]);
 
   useEffect(() => {
     const v = ref.current;
@@ -185,7 +259,7 @@ export function HeroVideo({
 
   useEffect(() => {
     const el = ref.current;
-    if (!el || near) return;
+    if (!el || near || priority) return;
     if (typeof IntersectionObserver === "undefined") {
       setNear(true);
       return;
@@ -219,7 +293,7 @@ export function HeroVideo({
     );
     io.observe(target);
     return () => io.disconnect();
-  }, [near]);
+  }, [near, priority]);
 
   return (
     <video
@@ -233,7 +307,7 @@ export function HeroVideo({
       muted
       loop
       playsInline
-      preload="none"
+      preload={priority ? "auto" : "none"}
       aria-hidden
     />
   );

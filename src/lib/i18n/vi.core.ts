@@ -1,9 +1,8 @@
 export const core: Record<string, string> = {
-  // header, language, skip link, pause button
+  // header, language, skip link
   "Language": "Ngôn ngữ",
   "Skip to main content": "Chuyển đến nội dung chính",
-  "Pause animations": "Tạm dừng hiệu ứng",
-  "Play animations": "Bật lại hiệu ứng",
+  "Opening Arena3": "Đang mở Arena3",
 
   // shell.tsx
   "Schedule": "Lịch",

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { ArrowUpRight, Banknote, Clock3, CreditCard, Landmark, Ticket, Undo2 } from "lucide-react";
 import { HoldTimer } from "@/components/media";
 import { PayOnlineButton } from "@/components/pay-online";
+import { TransferQrModal } from "@/components/transfer-qr-modal";
 import { Shell, money, useSessionUser, when } from "@/components/shell";
 import {
   Badge,
@@ -224,13 +225,20 @@ function Page() {
   }
 
   // What the desk is charging for an order: list price, less any code the member
-  // already applied, less one the desk typed in. Partial payments are not taken (BR-12).
+  // already applied, less one the desk typed in. Partial payments are not taken (BR-19).
   const dueOf = useCallback(
     (o: Order) => o.price_vnd - (promo[o.id]?.discount_vnd ?? o.promo_discount_vnd),
     [promo],
   );
 
-  async function takePayment(o: Order) {
+  const [transferTarget, setTransferTarget] = useState<Order | null>(null);
+
+  async function takePayment(o: Order, forceMethod?: string) {
+    const activeMethod = forceMethod ?? (method[o.id] ?? "cash");
+    if (!forceMethod && activeMethod === "transfer") {
+      setTransferTarget(o);
+      return;
+    }
     const due = dueOf(o);
     setBusy(o.id);
     try {
@@ -239,17 +247,13 @@ function Page() {
         {
           ref_type: "subscription",
           ref_id: o.id,
-          method: method[o.id] ?? "cash",
+          method: activeMethod,
           amount_vnd: due,
           ...(promo[o.id]?.code ? { promo_code: promo[o.id]!.code } : {}),
         },
         true,
       );
       toast.success(t("Paid — {name} is on {plan}", { name: o.full_name, plan: o.plan_name }));
-      // The money is taken the moment that POST returns, so the queue is
-      // refreshed before anything else is attempted. Printing is the step most
-      // likely to fail — a blocked popup is enough — and a failed print must
-      // not leave a paid row sitting here inviting somebody to charge it twice.
       refresh();
       if (res.invoice?.id) {
         try {
@@ -544,26 +548,24 @@ function Page() {
                               ? t("Paid in full — ask a manager")
                               : noTill
                                 ? t("Open a shift first")
-                                : t("Take {amount} & print", { amount: money(due) })}
+                                : (method[o.id] === "transfer"
+                                    ? t("Show transfer QR · {amount}", { amount: money(due) })
+                                    : t("Take {amount} & print", { amount: money(due) }))}
                           </Button>
                         </StarBorder>
-                        {/*
-                          The counter case. The customer is standing here; this
-                          puts a QR on reception's screen for them to scan, and
-                          the payment posts when payOS confirms it — reception
-                          never asserts that the money arrived.
-                        */}
+                        <ButtonLink to="/desk/member/$id" params={{ id: o.user_id }} variant="outline">
+                          {t("Profile")} <ArrowUpRight className="ml-1 size-4" />
+                        </ButtonLink>
                         {onlineOn && !settled && due > 0 ? (
                           <PayOnlineButton
                             refType="subscription"
                             refId={o.id}
-                            label={t("Online {amount}", { amount: money(due) })}
+                            label={t("Online link")}
+                            size="sm"
+                            variant="ghost"
                             onPaid={refresh}
                           />
                         ) : null}
-                        <ButtonLink to="/desk/member/$id" params={{ id: o.user_id }} variant="outline">
-                          {t("Profile")} <ArrowUpRight className="ml-1 size-4" />
-                        </ButtonLink>
                         <Button
                           variant="ghost"
                           className="ml-auto"
@@ -709,6 +711,24 @@ function Page() {
           </p>
         ) : null}
       </div>
+
+      {transferTarget ? (
+        <TransferQrModal
+          open={!!transferTarget}
+          onClose={() => setTransferTarget(null)}
+          amountVnd={dueOf(transferTarget)}
+          code={transferTarget.member_code ?? transferTarget.id.slice(-6).toUpperCase()}
+          buyerName={transferTarget.full_name}
+          refType="subscription"
+          refId={transferTarget.id}
+          onConfirmManual={async () => {
+            const target = transferTarget;
+            setTransferTarget(null);
+            await takePayment(target, "transfer");
+          }}
+          onPaid={refresh}
+        />
+      ) : null}
     </Shell>
   );
 }

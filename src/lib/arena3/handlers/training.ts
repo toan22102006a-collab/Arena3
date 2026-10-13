@@ -1,13 +1,13 @@
 /**
  * Phase 4C — the F4 training module (SRS v1.4 §FR-TRN).
  *
- * Every route here sits behind the F4 flag (BR-62) and never touches money or a
- * membership's balance (BR-56): homework, results and reviews are the coach's
+ * Every route here sits behind the F4 flag (BR-52) and never touches money or a
+ * membership's balance (BR-47): homework, results and reviews are the coach's
  * record of how a student is doing, nothing the till reads.
  *
  * Who may see a student: a manager sees everyone; a coach sees only students
- * enrolled in a class they lead or assist (BR-59). A student's health notes
- * only leave this module inside that scope (BR-55).
+ * enrolled in a class they lead or assist (BR-45). A student's health notes
+ * only leave this module inside that scope (BR-46).
  */
 import type { Sql } from "@/lib/db";
 import { err } from "../errors";
@@ -69,7 +69,7 @@ export function assertClassStaff(cl: { coach_id: string; assistant_id: string | 
 }
 
 /**
- * Load a session and check the caller may work it (BR-59).
+ * Load a session and check the caller may work it (BR-45).
  * Used by the attendance routes as well, so it lives here.
  */
 export async function sessionScope(sql: Sql, sessionId: string, user: PublicUser) {
@@ -356,7 +356,7 @@ export async function sessionResultsPut(sql: Sql, sessionId: string, request: Re
  * ------------------------------------------------------------------ */
 
 /**
- * BR-58: three absences in a row put the student on the manager's and the
+ * BR-36: three absences in a row put the student on the manager's and the
  * coach's radar. Nothing is cancelled and nobody is un-enrolled — it is a nudge.
  *
  * The dedupe key carries the latest marked session, so saving the same register
@@ -645,7 +645,7 @@ function cleanPayload(raw: unknown): Record<string, unknown> {
       throw err.field("blocks", `Block ${i + 1}: minutes is a whole number from 1 to 180.`, { index: i });
     }
     const out: Block = { order: i + 1, title, minutes };
-    // Type, intensity and description are part of a block (BR-74); only the
+    // Type, intensity and description are part of a block (BR-49); only the
     // equipment and the measurable target are optional.
     if (b.phase === undefined || b.phase === null || b.phase === "") {
       throw err.field("blocks", `Block ${i + 1} needs a type (warm-up, technique…).`, { index: i });
@@ -698,7 +698,7 @@ async function durationWarnings(sql: Sql, sessionId: string | null, payload: Rec
   ];
 }
 
-/** Tell the students a plan reaches that it is out, or that it has changed (BR-75). */
+/** Tell the students a plan reaches that it is out, or that it has changed (BR-48). */
 async function notifyPlan(
   sql: Sql,
   plan: { id: string; class_id: string | null; user_id: string | null; session_id: string | null; title: string | null },
@@ -826,9 +826,9 @@ export async function trainingPatch(sql: Sql, id: string, request: Request, user
   let version = plan.version;
   if (b.payload !== undefined) {
     newPayload = cleanPayload(b.payload);
-    // A session that already has results keeps the plan it was run with (BR-75).
+    // A session that already has results keeps the plan it was run with (BR-48).
     if (plan.session_id && (await one(sql, `select 1 as ok from session_results where session_id = $1 limit 1`, [plan.session_id]))) {
-      throw err.br("BR-75", "That session already has results, so its plan can no longer change. Copy it to a new session instead.");
+      throw err.br("BR-48", "That session already has results, so its plan can no longer change. Copy it to a new session instead.");
     }
     // Editing something students can already see makes a new version; the old one is kept.
     if (plan.published && !plan.is_template) {
@@ -928,7 +928,7 @@ export async function plansFromTemplate(sql: Sql, request: Request, user: Public
     const s = await one<{ class_id: string }>(sql, `select class_id from sessions where id = $1`, [uuidField(sessionId, "session_id")]);
     if (!s || s.class_id !== classId) throw err.field("session_id", "That session is not in this class.");
     if (await one(sql, `select 1 as ok from session_results where session_id = $1 limit 1`, [sessionId])) {
-      throw err.br("BR-75", "That session already has results — a plan can no longer be added.");
+      throw err.br("BR-48", "That session already has results — a plan can no longer be added.");
     }
   }
   const row = await one<Record<string, unknown>>(

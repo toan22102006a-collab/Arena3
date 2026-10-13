@@ -118,7 +118,7 @@ function Page() {
         : `/classes/${open.class_id}/roster`
       : null;
   const register = useRead<RegisterData>(registerPath);
-  // After the lock only a manager may correct a register, and must say why (BR-53).
+  // After the lock only a manager may correct a register, and must say why (BR-35).
   const locked = !!register.data?.session?.locked;
 
   const steps = [

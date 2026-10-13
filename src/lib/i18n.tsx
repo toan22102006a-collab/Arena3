@@ -28,9 +28,13 @@ const subscribers = new Set<() => void>();
 const fill = (s: string, vars?: Vars) =>
   vars ? s.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : s;
 
+import { registerTranslator } from "./arena3/translator.ts";
+
 export function t(en: string, vars?: Vars): string {
   return fill(current === "vi" ? (VI[en] ?? en) : en, vars);
 }
+
+registerTranslator(t);
 
 /** Marks an English string for the checker without translating it yet. */
 export const tk = <S extends string>(en: S): S => en;

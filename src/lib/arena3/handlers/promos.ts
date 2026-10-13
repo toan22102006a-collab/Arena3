@@ -1,7 +1,7 @@
 /**
  * Promotions — manager CRUD and the "does this code work?" preview (FR-PAY-03, UC-25).
  *
- * Only a manager creates, edits or pauses a code (BR-70). A code that has been
+ * Only a manager creates, edits or pauses a code (BR-43). A code that has been
  * used is never deleted, and editing it only changes orders priced afterwards:
  * orders already quoted keep the discount written onto them.
  */
@@ -107,7 +107,7 @@ function parseBody(b: Record<string, unknown>, partial: boolean): Partial<Parsed
 function checkShape(p: Partial<Parsed>, kind: string, value: number) {
   if (kind === "percent" && value > 100) throw err.field("value", "A percentage is at most 100.");
   if (kind === "amount" && value % 1000 !== 0) {
-    throw err.field("value", "A fixed amount is a multiple of 1,000đ (BR-46).");
+    throw err.field("value", "A fixed amount is a multiple of 1,000đ (BR-42).");
   }
   if (p.starts_at && p.ends_at && new Date(p.ends_at) <= new Date(p.starts_at)) {
     throw err.field("ends_at", "The end must be after the start.");
@@ -190,7 +190,7 @@ export async function promosPatch(sql: Sql, id: string, request: Request, user: 
   if (status && status !== "active" && status !== "paused") throw err.field("status", "Status is active or paused.");
   const used = await one<{ n: number }>(sql, `select count(*)::int as n from promotion_redemptions where promo_id = $1`, [id]);
   if (p.code && p.code !== cur.code && (used?.n ?? 0) > 0) {
-    throw err.br("BR-70", "A code that has been used keeps its name — pause it and create a new one.");
+    throw err.br("BR-43", "A code that has been used keeps its name — pause it and create a new one.");
   }
   if (p.code && p.code !== cur.code && (await one(sql, `select 1 as ok from promotions where upper(code) = $1 and id <> $2`, [p.code, id]))) {
     throw err.field("code", "That code already exists.");

@@ -228,7 +228,7 @@ export async function membersReportBody(sql: Sql, from: string, to: string, spor
       enrolled: c.enrolled,
       waitlisted: c.waitlisted,
       fill_pct: pct1(c.enrolled, c.capacity),
-      // F4 off (or nothing marked yet) hides the column rather than printing 0% (BR-62).
+      // F4 off (or nothing marked yet) hides the column rather than printing 0% (BR-52).
       attendance_pct: attendanceOn && c.marked ? pct1(c.attended, c.marked) : null,
     })),
   };

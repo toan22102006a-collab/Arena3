@@ -23,12 +23,12 @@ export function slotPriceOk(price: unknown): price is number {
   return typeof price === "number" && Number.isInteger(price) && price > 0 && price <= MAX_SLOT_PRICE_VND;
 }
 
-/** BR-34A — a plan discount is a whole percentage in [0, 100]. */
+/** BR-17 — a plan discount is a whole percentage in [0, 100]. */
 export function discountPctOk(pct: unknown): pct is number {
   return typeof pct === "number" && Number.isInteger(pct) && pct >= 0 && pct <= 100;
 }
 
-/** BR-19A — a plan grants benefits only while start_on ≤ today ≤ end_on (all YYYY-MM-DD). */
+/** BR-12 — a plan grants benefits only while start_on ≤ today ≤ end_on (all YYYY-MM-DD). */
 export function planActiveOn(startOn: string, endOn: string, today: string): boolean {
   return startOn <= today && today <= endOn;
 }
@@ -153,7 +153,7 @@ export function isAttResult(v: unknown): v is AttResult {
   return typeof v === "string" && (ATT_RESULTS as readonly string[]).includes(v);
 }
 
-/** BR-53: a coach may correct a session's register for this long after it ends. */
+/** BR-35: a coach may correct a session's register for this long after it ends. */
 export const ATTENDANCE_LOCK_HOURS = 2;
 
 /**
@@ -169,7 +169,7 @@ export function attendanceLocked(endAtMs: number, nowMs: number, status: string)
   return nowMs > endAtMs + ATTENDANCE_LOCK_HOURS * 3_600_000;
 }
 
-/** BR-58: this many absences in a row raises an alert (it never drops the student). */
+/** BR-36: this many absences in a row raises an alert (it never drops the student). */
 export const ABSENT_STREAK_LIMIT = 3;
 
 /**
@@ -177,7 +177,7 @@ export const ABSENT_STREAK_LIMIT = 3;
  *
  * `results` is oldest to newest and holds only sessions that were actually
  * marked. Anything other than `absent` ends the run \u2014 an excused absence is one
- * the member told the centre about, so it is not the pattern BR-58 looks for.
+ * the member told the centre about, so it is not the pattern BR-36 looks for.
  */
 export function absentStreak(results: readonly string[]): number {
   let n = 0;
@@ -250,7 +250,7 @@ export function homeworkComplete(total: number, done: readonly number[], explici
   return total === 0 ? explicitDone : done.length >= total;
 }
 
-// ---- promotions (FR-PAY-03, BR-46) ---------------------------------------------
+// ---- promotions (FR-PAY-03, BR-42) ---------------------------------------------
 
 /** What a code takes off an order, never leaving less than this to pay. */
 export const MIN_PAYABLE_VND = 1000;
@@ -261,7 +261,7 @@ export function normalizeCode(raw: unknown): string {
 
 /**
  * The discount in whole đồng. A percentage is worked out once on the order total
- * and rounded once to the nearest 1,000đ (BR-46); a fixed amount is already a
+ * and rounded once to the nearest 1,000đ (BR-42); a fixed amount is already a
  * multiple of 1,000. Capped by `max_discount_vnd`, and never so large that the
  * order drops under {@link MIN_PAYABLE_VND}.
  */
@@ -274,6 +274,6 @@ export function computeDiscount(
     promo.kind === "percent" ? Math.round((orderVnd * promo.value) / 100 / round) * round : promo.value;
   if (promo.max_discount_vnd != null) d = Math.min(d, promo.max_discount_vnd);
   d = Math.min(d, Math.max(0, orderVnd - MIN_PAYABLE_VND));
-  // Stay on the 1,000đ grid whichever cap bit (BR-46: rounded once).
+  // Stay on the 1,000đ grid whichever cap bit (BR-42: rounded once).
   return Math.max(0, Math.floor(d / round) * round);
 }

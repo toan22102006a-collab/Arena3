@@ -141,9 +141,9 @@ function Page() {
                 <div className="flex flex-1 flex-col p-5">
                   <h2 className="font-display text-2xl">{levelLabel(c.level)}</h2>
                   <p className="mt-1 text-sm text-muted">
-                    {c.coach_name} · {c.court_code} · {c.duration_min}′
+                    {c.coach_name} · {c.court_code}
                   </p>
-                  <p className="text-sm">{rruleLabel(c.rrule)}</p>
+                  <p className="text-sm">{rruleLabel(c.rrule, c.duration_min)}</p>
                   {/* The bar on its own is a ratio nobody converts in their
                       head. What decides whether you enrol now or later is the
                       number of seats, so the bar gets a caption. */}

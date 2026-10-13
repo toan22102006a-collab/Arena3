@@ -4,7 +4,7 @@ import { audit, classSubscription, enqueue, getSettings, num, readJson, str } fr
 import { classCode } from "../labels";
 import { expandWeekly } from "../rrule";
 import { requireRole, type PublicUser } from "../session";
-import { addDays, ictDateString, slotSpan } from "../time";
+import { addDays, classMinutes, ictDateString, ictDateTime, slotSpan } from "../time";
 import { one } from "../tx";
 import { inviteWaitlist } from "./ops";
 
@@ -40,18 +40,21 @@ export async function classesCreate(sql: Sql, request: Request, user: PublicUser
   const start_on = str(b.start_on);
   const end_on = str(b.end_on);
   const capacity = num(b.capacity) ?? 12;
-  const duration_min = num(b.duration_min) ?? 90;
+  const duration_min = classMinutes(num(b.duration_min));
+  if (duration_min == null) {
+    throw err.validation("A class runs for whole court hours (60, 120 or 180).");
+  }
   if (!sport || !level || !coach_id || !court_id || !rrule || !start_on || !end_on) {
     throw err.validation("Class details are incomplete.");
   }
   const coach = await one<{ role: string }>(sql, `select role from users where id = $1`, [coach_id]);
-  if (!coach || coach.role !== "coach") throw err.br("BR-23", "That coach is not valid.");
+  if (!coach || coach.role !== "coach") throw err.br("BR-25", "That coach is not valid.");
   const sportOk = await one(
     sql,
     `select 1 from coach_sports where user_id = $1 and (sport = $2 or sport = 'all')`,
     [coach_id, sport],
   );
-  if (!sportOk) throw err.br("BR-23", "That coach is not assigned to this sport.");
+  if (!sportOk) throw err.br("BR-25", "That coach is not assigned to this sport.");
   const row = await one(
     sql,
     `insert into classes
@@ -95,8 +98,10 @@ export async function materializeClassSessions(
   if (cl.status === "cancelled") throw err.conflictState("That class is cancelled.");
   const from = new Date();
   const until = new Date(Date.now() + 14 * 86400000);
-  const windowStart = cl.start_on > ictDateString(from) ? new Date(cl.start_on + "T00:00:00+07:00") : from;
-  const windowEnd = cl.end_on < ictDateString(until) ? new Date(cl.end_on + "T23:59:00+07:00") : until;
+  const todayStr = ictDateString(from);
+  const todayStart = ictDateTime(todayStr, "00:00");
+  const windowStart = cl.start_on >= todayStr ? ictDateTime(cl.start_on, "00:00") : todayStart;
+  const windowEnd = cl.end_on < ictDateString(until) ? ictDateTime(cl.end_on, "23:59") : until;
   const occs = expandWeekly(cl.rrule, cl.duration_min, windowStart, windowEnd);
   const { slot_minutes } = await getSettings(sql);
   const created: unknown[] = [];
@@ -223,10 +228,10 @@ export async function classesEnroll(sql: Sql, id: string, request: Request, user
     enrolled_count: number;
   }>(sql, `select * from classes where id = $1`, [id]);
   if (!cl) throw err.notFound();
-  if (cl.status !== "open") throw err.br("BR-67", "That class is not open yet.");
+  if (cl.status !== "open") throw err.br("BR-18", "That class is not open yet.");
   const sub = await classSubscription(sql, userId, cl.sport);
-  if (!sub) throw err.br("BR-12", "You need an active plan covering this sport.");
-  if (sub.session_left != null && sub.session_left <= 0) throw err.br("BR-18", "You have no sessions left.");
+  if (!sub) throw err.br("BR-19", "You need an active plan covering this sport.");
+  if (sub.session_left != null && sub.session_left <= 0) throw err.br("BR-20", "You have no sessions left.");
   const overlap = await one(
     sql,
     `select 1
@@ -242,7 +247,7 @@ export async function classesEnroll(sql: Sql, id: string, request: Request, user
       limit 1`,
     [userId, id],
   );
-  if (overlap) throw err.br("BR-24", "This clashes with another class you are in.");
+  if (overlap) throw err.br("BR-22", "This clashes with another class you are in.");
   await sql.query("savepoint sp_enroll");
   try {
     const row = await one<{ enrollment_confirm: string }>(
@@ -276,7 +281,7 @@ export async function classesEnroll(sql: Sql, id: string, request: Request, user
       const enr = await one(sql, `select * from enrollments where id = $1`, [wl!.enrollment_waitlist]);
       return { status: 201, body: { enrollment: enr, waitlisted: true } };
     }
-    if (msg.includes("ALREADY_ENROLLED")) throw err.br("BR-24", "You are already enrolled.");
+    if (msg.includes("ALREADY_ENROLLED")) throw err.br("BR-22", "You are already enrolled.");
     throw e;
   }
 }
@@ -306,7 +311,7 @@ export async function enrollmentDelete(sql: Sql, id: string, user: PublicUser) {
   if (next) {
     const hours = (new Date(next.start_at).getTime() - Date.now()) / 3600000;
     if (hours < settings.cancel_class_hours) {
-      throw err.br("BR-20", "Cancel at least 4 hours before the next session.");
+      throw err.br("BR-24", "Cancel at least 4 hours before the next session.");
     }
   }
   await sql.query(`update enrollments set status = 'cancelled', waitlist_pos = null where id = $1`, [id]);
@@ -342,6 +347,29 @@ export async function coachSchedule(sql: Sql, user: PublicUser) {
   return {
     status: 200,
     body: { items: items.map((s) => ({ ...s, class_code: classCode(String(s.sport), String(s.level), String(s.class_id)) })) },
+  };
+}
+
+export async function coachClasses(sql: Sql, user: PublicUser) {
+  requireRole(user, ["coach", "manager"]);
+  const items = await sql.query(
+    `select cl.id, cl.sport, cl.level, cl.capacity, cl.enrolled_count, cl.rrule, cl.duration_min,
+            cl.start_on::text, cl.end_on::text, cl.status, cl.court_id, c.court_code,
+            cl.coach_id, u.full_name as coach_name,
+            (select count(*)::int from sessions s where s.class_id = cl.id and s.status = 'scheduled') as upcoming_sessions_count
+       from classes cl
+       join courts c on c.id = cl.court_id
+       join users u on u.id = cl.coach_id
+      where ($2::boolean or cl.coach_id = $1 or cl.assistant_id = $1)
+      order by cl.status = 'open' desc, cl.start_on desc`,
+    [user.id, user.role === "manager"],
+  );
+  return {
+    status: 200,
+    body: {
+      total: items.length,
+      items: items.map((c) => ({ ...c, code: classCode(String(c.sport), String(c.level), String(c.id)) })),
+    },
   };
 }
 
@@ -446,7 +474,7 @@ export async function classRoster(sql: Sql, classId: string, user: PublicUser) {
  * the coach, close or cancel a class).                                *
  * ------------------------------------------------------------------ */
 
-/** BR-28: a session may be moved freely only this long before its old time. */
+/** BR-27: a session may be moved freely only this long before its old time. */
 const MOVE_FREE_HOURS = 12;
 
 type SessionRow = {
@@ -499,7 +527,7 @@ async function notifyClass(
   }
 }
 
-/** BR-26: a per-session plan gets the session back; a time-based plan has nothing to give back. */
+/** BR-29: a per-session plan gets the session back; a time-based plan has nothing to give back. */
 async function giveSessionBack(sql: Sql, userId: string, sport: string): Promise<boolean> {
   const sub = await classSubscription(sql, userId, sport);
   if (sub?.session_left == null) return false;
@@ -512,7 +540,7 @@ function reasonOf(b: Record<string, unknown>): string | undefined {
   return r ? r.slice(0, 300) : undefined;
 }
 
-/** Cancel one session of a class (FR-CLS-04, BR-26). */
+/** Cancel one session of a class (FR-CLS-04, BR-29). */
 export async function sessionCancel(sql: Sql, sessionId: string, request: Request, user: PublicUser) {
   requireRole(user, ["manager"]);
   const b = await readJson(request);
@@ -541,7 +569,7 @@ export async function sessionCancel(sql: Sql, sessionId: string, request: Reques
   return { status: 200, body: { ok: true, notified: members.length, refunded } };
 }
 
-/** Move one session to another time (FR-CLS-05, BR-21, BR-28). Same court, same coach. */
+/** Move one session to another time (FR-CLS-05, BR-26, BR-27). Same court, same coach. */
 export async function sessionReschedule(sql: Sql, sessionId: string, request: Request, user: PublicUser) {
   requireRole(user, ["manager"]);
   const b = await readJson(request);
@@ -560,7 +588,7 @@ export async function sessionReschedule(sql: Sql, sessionId: string, request: Re
   const hoursAhead = (oldStart.getTime() - Date.now()) / 3600000;
   if (hoursAhead < MOVE_FREE_HOURS && !reason) {
     throw err.br(
-      "BR-28",
+      "BR-27",
       `This session starts in under ${MOVE_FREE_HOURS} hours — give a reason to move it.`,
       { field: "reason" },
     );
@@ -620,7 +648,7 @@ export async function sessionReschedule(sql: Sql, sessionId: string, request: Re
   return { status: 200, body: { ok: true, start_at: newStart.toISOString(), end_at: newEnd.toISOString() } };
 }
 
-/** Put another coach on a class from now on (FR-CLS-06, BR-23, BR-27). */
+/** Put another coach on a class from now on (FR-CLS-06, BR-25, BR-28). */
 export async function classesAssignCoach(sql: Sql, classId: string, request: Request, user: PublicUser) {
   requireRole(user, ["manager"]);
   const b = await readJson(request);
@@ -642,13 +670,13 @@ export async function classesAssignCoach(sql: Sql, classId: string, request: Req
     `select role::text as role, full_name from users where id = $1`,
     [coachId],
   );
-  if (!coach || coach.role !== "coach") throw err.br("BR-23", "That coach is not valid.");
+  if (!coach || coach.role !== "coach") throw err.br("BR-25", "That coach is not valid.");
   const sportOk = await one(
     sql,
     `select 1 from coach_sports where user_id = $1 and (sport::text = $2 or sport::text = 'all')`,
     [coachId, cl.sport],
   );
-  if (!sportOk) throw err.br("BR-23", "That coach is not assigned to this sport.");
+  if (!sportOk) throw err.br("BR-25", "That coach is not assigned to this sport.");
 
   const upcoming = await sql.query(
     `select s.id, s.start_at from sessions s
@@ -673,7 +701,7 @@ export async function classesAssignCoach(sql: Sql, classId: string, request: Req
     }
   }
   if (clashes.length) {
-    throw err.conflictSlot("That coach is already teaching at some of this class's times (BR-21).", {
+    throw err.conflictSlot("That coach is already teaching at some of this class's times (BR-26).", {
       sessions: clashes,
     });
   }
@@ -725,7 +753,7 @@ export async function classesPatch(sql: Sql, classId: string, request: Request, 
     throw err.field("capacity", "Capacity must be a whole number from 1 to 200.");
   }
   if (capacity < cl.enrolled_count) {
-    throw err.br("BR-22", `${cl.enrolled_count} members are already enrolled — capacity cannot go below that.`, {
+    throw err.br("BR-21", `${cl.enrolled_count} members are already enrolled — capacity cannot go below that.`, {
       field: "capacity",
     });
   }

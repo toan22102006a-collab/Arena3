@@ -25,7 +25,11 @@ async function neonPool(): Promise<Pool> {
     types.setTypeParser(20, Number);
     types.setTypeParser(1082, (v: string) => v);
     types.setTypeParser(1186, (v: string) => v);
-    globalRef.__arena3NeonPool__ = new PgPool({ connectionString: process.env.DATABASE_URL });
+    const pool = new PgPool({ connectionString: process.env.DATABASE_URL });
+    pool.on("error", (err) => {
+      console.error("[arena3 neon pool error]", err.message);
+    });
+    globalRef.__arena3NeonPool__ = pool;
   }
   return globalRef.__arena3NeonPool__;
 }
@@ -43,6 +47,11 @@ export async function withTx<T>(fn: (sql: Sql) => Promise<T>): Promise<T> {
   }
   const pool = await neonPool();
   const client: PoolClient = await pool.connect();
+  const clientErrHandler = (err: Error) => {
+    console.error("[arena3 client error]", err.message);
+  };
+  client.on("error", clientErrHandler);
+  let hasError = false;
   try {
     await client.query("BEGIN");
     const run: Run = async <R>(text: string, params: unknown[]) => {
@@ -53,6 +62,7 @@ export async function withTx<T>(fn: (sql: Sql) => Promise<T>): Promise<T> {
     await client.query("COMMIT");
     return out;
   } catch (e) {
+    hasError = true;
     try {
       await client.query("ROLLBACK");
     } catch {
@@ -60,7 +70,8 @@ export async function withTx<T>(fn: (sql: Sql) => Promise<T>): Promise<T> {
     }
     throw e;
   } finally {
-    client.release();
+    client.removeListener("error", clientErrHandler);
+    client.release(hasError);
   }
 }
 

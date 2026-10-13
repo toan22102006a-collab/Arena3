@@ -284,6 +284,9 @@ async function dispatch(request: Request): Promise<Response | Result> {
   if (method === "GET" && p0 === "coach" && p1 === "schedule") {
     return authedRead((sql, user) => classH.coachSchedule(sql, user));
   }
+  if (method === "GET" && p0 === "coach" && p1 === "classes") {
+    return authedRead((sql, user) => classH.coachClasses(sql, user));
+  }
   if (method === "DELETE" && p0 === "enrollments" && p1) {
     return authed((sql, user) => classH.enrollmentDelete(sql, p1, user));
   }
@@ -542,7 +545,7 @@ async function dispatch(request: Request): Promise<Response | Result> {
   if (method === "PUT" && p0 === "me" && p1 === "homework" && p2) {
     return authed((sql, user) => trainH.meHomeworkPut(sql, p2, request, user));
   }
-  // Door check-in (SRS v1.4.1 FR-TRN-02, BR-71/72): QR scan, manual with a reason, optional self check-in.
+  // Door check-in (SRS v1.4.1 FR-TRN-02, BR-30/72): QR scan, manual with a reason, optional self check-in.
   if (method === "POST" && p0 === "desk" && p1 === "gate-checkin") {
     return authed((sql, user) => checkinH.gateCheckin(sql, request, user));
   }
@@ -564,7 +567,7 @@ async function dispatch(request: Request): Promise<Response | Result> {
   if (method === "POST" && p0 === "me" && p1 === "self-checkin") {
     return authed((sql, user) => checkinH.meSelfCheckin(sql, request, user));
   }
-  // Promotions (FR-PAY-03, BR-44..46, BR-70). "validate" before the /:id routes.
+  // Promotions (FR-PAY-03, BR-40..43). "validate" before the /:id routes.
   if (method === "GET" && p0 === "promotions" && !p1) {
     return authedRead((sql, user) => promoH.promosList(sql, user));
   }

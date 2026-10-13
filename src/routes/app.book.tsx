@@ -217,8 +217,8 @@ function Page() {
         const aboutTheSlot =
           !(e instanceof ApiClientError) ||
           e.body.code === "CONFLICT_SLOT" ||
-          e.body.br === "BR-35" ||
-          e.body.br === "BR-66";
+          e.body.br === "BR-06" ||
+          e.body.br === "BR-07";
         // Re-read the day before suggesting anything: the grid on screen is
         // the one that just turned out to be wrong.
         const fresh = aboutTheSlot

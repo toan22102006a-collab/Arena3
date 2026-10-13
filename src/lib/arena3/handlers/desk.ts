@@ -100,6 +100,7 @@ export async function activateSubscription(sql: Sql, subId: string) {
     status: string;
     end_on: string;
     start_on: string;
+    sport_scope: string;
     plan_id: string;
     user_id: string;
     court_hours_left: string | number;
@@ -116,6 +117,7 @@ export async function activateSubscription(sql: Sql, subId: string) {
   if (!plan) throw err.notFound();
   const today = ictDateString();
   const duration = plan.duration_days ?? 365;
+
   if (sub.status === "active" && sub.end_on >= today) {
     const end = addDays(sub.end_on, duration);
     await sql.query(
@@ -127,17 +129,63 @@ export async function activateSubscription(sql: Sql, subId: string) {
         where id = $1`,
       [sub.id, end, plan.court_hours, plan.session_quota],
     );
-  } else {
-    const end = addDays(today, duration);
-    const hours = plan.carry_over_hours ? Number(sub.court_hours_left) + plan.court_hours : plan.court_hours;
-    await sql.query(
-      `update subscriptions
-          set status = 'active', start_on = $2, end_on = $3,
-              court_hours_left = $4, session_left = $5
-        where id = $1`,
-      [sub.id, today, end, hours, plan.session_quota],
-    );
+    return;
   }
+
+  // Check whether there is an existing live subscription for (user_id, sport_scope)
+  const live = await one<{
+    id: string;
+    status: string;
+    end_on: string;
+    plan_id: string;
+    court_hours_left: string | number;
+    session_left: number | null;
+  }>(
+    sql,
+    `select id, status, end_on::text, plan_id, court_hours_left, session_left from subscriptions
+      where user_id = $1 and sport_scope = $2 and status in ('active','frozen') and id <> $3
+      limit 1`,
+    [sub.user_id, sub.sport_scope, sub.id],
+  );
+
+  if (live) {
+    if (live.end_on < today) {
+      // The previous plan has expired; mark it expired so the new one can become active
+      await sql.query(`update subscriptions set status = 'expired' where id = $1`, [live.id]);
+    } else if (live.plan_id === sub.plan_id) {
+      // Same plan renewal: extend live subscription directly
+      const end = addDays(live.end_on, duration);
+      await sql.query(
+        `update subscriptions
+            set end_on = $2,
+                court_hours_left = court_hours_left + $3,
+                session_left = case when session_left is null and $4::int is null then null
+                                    else coalesce(session_left,0) + coalesce($4,0) end
+          where id = $1`,
+        [live.id, end, plan.court_hours, plan.session_quota],
+      );
+      // Repoint any payments on sub to live and clean up sub
+      await sql.query(`update payments set ref_id = $1 where ref_type = 'subscription' and ref_id = $2`, [live.id, sub.id]);
+      await sql.query(`delete from subscriptions where id = $1`, [sub.id]);
+      return;
+    } else {
+      // Different plan: mark old plan expired, carry over hours if configured
+      await sql.query(`update subscriptions set status = 'expired' where id = $1`, [live.id]);
+      if (plan.carry_over_hours) {
+        sub.court_hours_left = Number(live.court_hours_left) + Number(sub.court_hours_left);
+      }
+    }
+  }
+
+  const end = addDays(today, duration);
+  const hours = plan.carry_over_hours ? Number(sub.court_hours_left) + plan.court_hours : plan.court_hours;
+  await sql.query(
+    `update subscriptions
+        set status = 'active', start_on = $2, end_on = $3,
+            court_hours_left = $4, session_left = $5
+      where id = $1`,
+    [sub.id, today, end, hours, plan.session_quota],
+  );
 }
 
 /**
@@ -205,7 +253,7 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
       `select id from cashier_shifts where receptionist_id = $1 and closed_at is null`,
       [user.id],
     );
-    if (!sh) throw err.br("BR-49", "The front desk needs an open shift.");
+    if (!sh) throw err.br("BR-44", "The front desk needs an open shift.");
     shiftId = sh.id;
   }
   let buyer = user.full_name;
@@ -246,7 +294,7 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
     if (sub.status !== "pending" && sub.status !== "active") {
       throw err.conflictState("That plan is not waiting for payment.");
     }
-    // No debt and no deposit (BR-12): a plan is paid in one go for exactly what it
+    // No debt and no deposit (BR-19): a plan is paid in one go for exactly what it
     // costs after any code, or it stays pending and grants nothing.
     if (sub.status === "pending") {
       const paid = await one<{ n: number }>(
@@ -980,7 +1028,7 @@ export async function settingsPatch(sql: Sql, request: Request, user: PublicUser
   const minW = Number(patch.series_min_weeks ?? current!.series_min_weeks);
   const maxW = Number(patch.series_max_weeks ?? current!.series_max_weeks);
   if (minW > maxW) throw err.field("series_max_weeks", "The maximum cannot be below the minimum.");
-  const sets = keys.map((k, i) => `${k} = ${i + 1}${k === "cancel_tiers" ? "::jsonb" : ""}`);
+  const sets = keys.map((k, i) => `${k} = $${i + 1}${k === "cancel_tiers" ? "::jsonb" : ""}`);
   await sql.query(`update center_settings set ${sets.join(", ")} where id = 1`, keys.map((k) => patch[k]));
   await audit(
     sql,

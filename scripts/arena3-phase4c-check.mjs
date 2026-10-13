@@ -11,7 +11,7 @@
  *   DATABASE_URL= DATABASE_URL_UNPOOLED= PGLITE_DATA_DIR=memory npm run dev -- --port 8090
  *   BASE=http://127.0.0.1:8090 node scripts/arena3-phase4c-check.mjs
  *
- * The 2-hour attendance lock (BR-53) cannot be reached over HTTP — every session
+ * The 2-hour attendance lock (BR-35) cannot be reached over HTTP — every session
  * the seed and the generator create is in the future — so the lock rule is
  * covered by unit tests in src/lib/arena3/arena3.test.ts.
  */
@@ -161,11 +161,11 @@ ok(sessions.length >= 14, "the class has a fortnight of future sessions", sessio
 const [s0, s1, s2, s3] = sessions;
 const bySt = (iso, days) => sessions.find((s) => new Date(s.start_at).getTime() === new Date(iso).getTime() + days * 86400000);
 
-// ---- the F4 switch (BR-62) ---------------------------------------------------
+// ---- the F4 switch (BR-52) ---------------------------------------------------
 {
   await req("/flags", { method: "PATCH", token: mgr.token, body: { F4: false } });
   const off = await req(`/sessions/${s0.id}/attendance`, { token: coachA.token });
-  ok(off.status === 403 && off.data.br === "BR-62" && off.data.flag === "F4", "F4 off answers 403 with BR-62", off);
+  ok(off.status === 403 && off.data.br === "BR-52" && off.data.flag === "F4", "F4 off answers 403 with BR-52", off);
   const offMe = await req("/me/training", { token: m1.token });
   ok(offMe.status === 403, "F4 off also closes the member's progress page", offMe);
   const offGate = await req("/desk/gate-checkin", { method: "POST", token: desk.token, body: { code: m1.code } });
@@ -174,7 +174,7 @@ const bySt = (iso, days) => sessions.find((s) => new Date(s.start_at).getTime() 
   ok(on.status === 200 && on.data.flags.F4 === true, "F4 back on", on);
 }
 
-// ---- attendance (BR-53, BR-57, BR-58, BR-59) ----------------------------------
+// ---- attendance (BR-35, BR-34, BR-36, BR-45) ----------------------------------
 const att = (token, id, items, extra = {}) =>
   req(`/sessions/${id}/attendance`, { method: "POST", token, body: { items, ...extra } });
 const inboxOf = async (token) => (await req("/me/notifications", { token })).data.items ?? [];
@@ -182,9 +182,9 @@ const streakAlerts = async (token, uid) =>
   (await inboxOf(token)).filter((n) => n.template === "absent_streak" && n.payload?.user_id === uid).length;
 {
   const other = await req(`/sessions/${s0.id}/attendance`, { token: coachB.token });
-  ok(other.status === 403, "a coach cannot read another coach's register (BR-59)", other);
+  ok(other.status === 403, "a coach cannot read another coach's register (BR-45)", other);
   const otherPost = await att(coachB.token, s0.id, [{ user_id: m1.id, result: "present" }]);
-  ok(otherPost.status === 403, "…or write to it (BR-59)", otherPost);
+  ok(otherPost.status === 403, "…or write to it (BR-45)", otherPost);
   const asMember = await req(`/sessions/${s0.id}/attendance`, { token: m1.token });
   ok(asMember.status === 403, "a member cannot read a register", asMember);
   const bad = await att(coachA.token, s0.id, [{ user_id: m1.id, result: "sick" }]);
@@ -213,14 +213,14 @@ const streakAlerts = async (token, uid) =>
   ok(gone.status === 200, "saving the same mark again is harmless", gone);
 }
 
-// BR-58: three absences in a row alert the manager and the coach.
+// BR-36: three absences in a row alert the manager and the coach.
 {
   const before = await streakAlerts(mgr.token, m1.id);
   await att(coachA.token, s0.id, [{ user_id: m1.id, result: "absent" }, { user_id: m2.id, result: "absent" }]);
   await att(coachA.token, s1.id, [{ user_id: m1.id, result: "absent" }, { user_id: m2.id, result: "absent" }]);
   ok((await streakAlerts(mgr.token, m1.id)) === before, "two absences in a row raise nothing yet");
   await att(coachA.token, s2.id, [{ user_id: m1.id, result: "absent" }, { user_id: m2.id, result: "excused" }]);
-  ok((await streakAlerts(mgr.token, m1.id)) === before + 1, "the third absence in a row alerts the manager (BR-58)");
+  ok((await streakAlerts(mgr.token, m1.id)) === before + 1, "the third absence in a row alerts the manager (BR-36)");
   ok((await streakAlerts(coachA.token, m1.id)) === 1, "…and the class coach");
   ok((await streakAlerts(coachB.token, m1.id)) === 0, "…but not another coach");
   await att(coachA.token, s2.id, [{ user_id: m1.id, result: "absent" }]);
@@ -228,7 +228,7 @@ const streakAlerts = async (token, uid) =>
   await att(coachA.token, s3.id, [{ user_id: m2.id, result: "absent" }]);
   ok((await streakAlerts(mgr.token, m2.id)) === 0, "an excused absence breaks the streak");
   const enrol = await req(`/classes/${cid}/roster`, { token: coachA.token });
-  ok(enrol.data.items.some((i) => i.id === m1.id), "BR-58 does not un-enrol the student", enrol.data);
+  ok(enrol.data.items.some((i) => i.id === m1.id), "BR-36 does not un-enrol the student", enrol.data);
 }
 
 // ---- session results (FR-TRN-05) ----------------------------------------------
@@ -246,21 +246,21 @@ const results = (token, id, items) => req(`/sessions/${id}/results`, { method: "
   ok((await results(coachA.token, s0.id, [{ user_id: m1.id, metrics: { serve_pct: 120 } }])).status === 400, "a percentage metric above 100 is refused");
   ok((await results(coachA.token, s0.id, [{ user_id: m1.id, metrics: { speed: 3 } }])).status === 400, "an unknown metric is refused");
   ok((await results(coachA.token, s0.id, [{ user_id: m3.id, plan_pct: 50 }])).status === 400, "a student outside the class is refused");
-  ok((await results(coachB.token, s0.id, [{ user_id: m1.id, plan_pct: 50 }])).status === 403, "another coach cannot log results (BR-59)");
+  ok((await results(coachB.token, s0.id, [{ user_id: m1.id, plan_pct: 50 }])).status === 403, "another coach cannot log results (BR-45)");
   ok((await results(m1.token, s0.id, [{ user_id: m1.id, plan_pct: 50 }])).status === 403, "a member cannot log results");
   ok((await req(`/sessions/${s0.id}/results`, { token: desk.token })).status === 403, "reception cannot read results");
   const cleared = await results(coachA.token, s0.id, [{ user_id: m1.id }]);
   ok(cleared.data.items.find((i) => i.user_id === m1.id)?.plan_pct === null, "a blank row clears the result", cleared.data);
   await results(coachA.token, s0.id, [{ user_id: m1.id, plan_pct: 90, metrics: { freethrow_pct: 55 } }]);
-  ok((await quotaLeft(m1)) === base, "results never touch the membership balance (BR-56)", { base, now: await quotaLeft(m1) });
+  ok((await quotaLeft(m1)) === base, "results never touch the membership balance (BR-47)", { base, now: await quotaLeft(m1) });
 }
 
 // ---- profile, goal, level, notes, reviews (FR-TRN-03, -06) --------------------
 {
   await req("/me", { method: "PATCH", token: m1.token, body: { full_name: `Training One ${stamp}`, health_notes: "Mild asthma" } });
   const p = await req(`/students/${m1.id}/profile`, { token: coachA.token });
-  ok(p.status === 200 && p.data.student.health_notes === "Mild asthma", "the student's own coach sees their health notes (BR-55)", p.data?.student);
-  ok((await req(`/students/${m1.id}/profile`, { token: coachB.token })).status === 403, "another coach cannot open the profile (BR-55)");
+  ok(p.status === 200 && p.data.student.health_notes === "Mild asthma", "the student's own coach sees their health notes (BR-46)", p.data?.student);
+  ok((await req(`/students/${m1.id}/profile`, { token: coachB.token })).status === 403, "another coach cannot open the profile (BR-46)");
   ok((await req(`/students/${m1.id}/profile`, { token: desk.token })).status === 403, "reception cannot open the profile");
   ok((await req(`/students/${m1.id}/profile`, { token: m2.token })).status === 403, "a member cannot open somebody's profile");
   ok((await req(`/students/${m1.id}/profile`, { token: mgr.token })).status === 200, "a manager can");
@@ -301,14 +301,14 @@ const results = (token, id, items) => req(`/sessions/${id}/results`, { method: "
   ok((await req("/me/training", { token: coachA.token })).status === 403, "/me/training is for members");
 }
 
-// ---- homework (FR-TRN-07, BR-56) ----------------------------------------------
+// ---- homework (FR-TRN-07, BR-47) ----------------------------------------------
 {
   const base = await quotaLeft(m1);
   const due = ictDate(new Date(Date.now() + 5 * 86400000));
   const hw = { class_id: cid, title: "Wall passes", body: "3 sets of 20", checklist: ["Set 1", "Set 2", "Set 3"], due_on: due };
   const made = await req("/homework", { method: "POST", token: coachA.token, body: hw });
   ok(made.status === 201 && made.data.recipients === 2, "homework for a class reaches every enrolled student", made);
-  ok((await req("/homework", { method: "POST", token: coachB.token, body: hw })).status === 403, "another coach cannot set it (BR-59)");
+  ok((await req("/homework", { method: "POST", token: coachB.token, body: hw })).status === 403, "another coach cannot set it (BR-45)");
   ok((await req("/homework", { method: "POST", token: coachA.token, body: { ...hw, title: " " } })).status === 400, "a title is required");
   ok((await req("/homework", { method: "POST", token: coachA.token, body: { ...hw, user_id: m1.id } })).status === 400, "a class and a student together are refused");
   ok((await req("/homework", { method: "POST", token: coachA.token, body: { title: "x" } })).status === 400, "no target is refused");
@@ -342,7 +342,7 @@ const results = (token, id, items) => req(`/sessions/${id}/results`, { method: "
   const done = await req(`/me/homework/${solo.data.id}`, { method: "PUT", token: m2.token, body: { done: true } });
   ok(done.data.completed === true, "a checklist-free task is finished by an explicit done", done);
   ok((await req("/homework", { method: "POST", token: coachA.token, body: { user_id: m3.id, title: "x" } })).status === 403, "a coach cannot set homework for a stranger");
-  ok((await quotaLeft(m1)) === base, "homework never touches the membership balance (BR-56)");
+  ok((await quotaLeft(m1)) === base, "homework never touches the membership balance (BR-47)");
 }
 
 // ---- training plans (FR-TRN-04) -----------------------------------------------
@@ -354,7 +354,7 @@ const blocks = [
   const mk = (token, body) => req("/training-plans", { method: "POST", token, body });
   const made = await mk(coachA.token, { class_id: cid, session_id: s0.id, title: "Week 1", payload: { blocks } });
   ok(made.status === 201 && made.data.session_id === s0.id && made.data.payload.blocks[1].order === 2, "the coach publishes a plan for one session", made);
-  ok((await mk(coachB.token, { class_id: cid, payload: { blocks } })).status === 403, "another coach cannot add to the class (BR-59)");
+  ok((await mk(coachB.token, { class_id: cid, payload: { blocks } })).status === 403, "another coach cannot add to the class (BR-45)");
   ok((await mk(coachA.token, { class_id: cid, payload: { blocks: [] } })).status === 400, "a plan with no blocks is refused");
   ok((await mk(coachA.token, { class_id: cid, payload: { blocks: [{ title: "x", minutes: 10, phase: "nap" }] } })).status === 400, "an unknown phase is refused");
   ok((await mk(coachA.token, { class_id: cid, payload: { blocks: [{ title: "x", minutes: 0 }] } })).status === 400, "zero minutes is refused");
@@ -393,7 +393,7 @@ const blocks = [
   void p1;
 }
 
-// ---- gate check-in (FR-TRN-02, BR-54) -----------------------------------------
+// ---- gate check-in (FR-TRN-02, BR-33) -----------------------------------------
 {
   const a = await req("/desk/gate-checkin", { method: "POST", token: desk.token, body: { code: m1.code } });
   ok(a.status === 200 && a.data.member.id === m1.id && a.data.duplicate === false, "reception checks a member in by code", a);
@@ -409,7 +409,7 @@ const blocks = [
   const list = await req("/desk/gate-checkins", { token: desk.token });
   ok(list.data.items.filter((i) => i.user_id === m1.id).length === 1 && list.data.items.some((i) => i.user_id === m3.id), "today's list has one entry per visit", list.data);
   const prof = await req(`/students/${m3.id}/profile`, { token: mgr.token });
-  ok(prof.data.attendance.present === 0 && prof.data.attendance.late === 0, "a gate scan never marks a session present (BR-54)", prof.data.attendance);
+  ok(prof.data.attendance.present === 0 && prof.data.attendance.late === 0, "a gate scan never marks a session present (BR-33)", prof.data.attendance);
 }
 
 console.log(`\n${passed} checks passed`);

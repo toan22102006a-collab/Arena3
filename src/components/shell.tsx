@@ -44,7 +44,6 @@ import {
 } from "@/lib/arena3/client";
 import { roleLabel } from "@/lib/arena3/labels";
 import { locale, t, tk } from "@/lib/i18n";
-import { CalmToggle } from "./calm-toggle";
 import { ConnectionBanner } from "./connection-banner";
 import { LangSwitch } from "./lang-switch";
 import { useDialog } from "./ui";
@@ -97,6 +96,7 @@ const NAV: Record<string, NavItem[]> = {
   // all (B-10). Schedule, register and profile are three different jobs.
   coach: [
     { to: "/coach", label: tk("Schedule"), icon: CalendarDays },
+    { to: "/coach/classes", label: tk("Classes"), icon: Ticket },
     { to: "/coach/attendance", label: tk("Attendance"), icon: ClipboardList },
     { to: "/coach/earnings", label: tk("Earnings"), icon: HandCoins },
     { to: "/account", label: tk("Profile"), icon: UserCog },
@@ -279,9 +279,6 @@ function AccountMenu({
                   <UserCog aria-hidden="true" className="size-4 text-muted" strokeWidth={1.75} />
                   {t("Account settings")}
                 </Link>
-              </li>
-              <li>
-                <CalmToggle row />
               </li>
               <li>
                 <button

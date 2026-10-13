@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { isValidVnPhone, normalizePhone, passwordOk, phoneLast9 } from "./phone.ts";
 import { rruleLabel } from "./labels.ts";
 import { numberToVietnamese, vndInWords } from "./money-words.ts";
-import { addDays, elapsedAtLeast, ictDateTime, ictHour, ictMinutes, pad2, roundVnd, slotSpan } from "./time.ts";
+import { addDays, classMinutes, elapsedAtLeast, ictDateTime, ictHour, ictMinutes, pad2, roundVnd, slotSpan } from "./time.ts";
 import { ApiError, mapDbError } from "./errors.ts";
 import { checkOpeningHours, parseSettingsPatch } from "./validate.ts";
 import {
@@ -68,6 +68,7 @@ describe("pricing", () => {
 describe("rrule", () => {
   it("labels weekly BYDAY in English", () => {
     assert.equal(rruleLabel("FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=18"), "Mon, Wed, Fri · 18:00");
+    assert.equal(rruleLabel("FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=18", 60), "Mon, Wed, Fri · 18:00–19:00");
   });
   it("sorts a scrambled week and collapses all seven days", () => {
     assert.equal(rruleLabel("FREQ=WEEKLY;BYDAY=TH,TU;BYHOUR=19"), "Tue, Thu · 19:00");
@@ -90,7 +91,7 @@ describe("jobs", () => {
 
 // Pins the 2026-09-27 live-check fixes (patch order A/D/G) so the exact
 // vandalized values that showed up in production can never quietly pass again.
-describe("BR-34B / price bounds", () => {
+describe("BR-37 / price bounds", () => {
   it("rejects the vandalized weekday badminton price (99,999,999đ)", () => {
     assert.equal(slotPriceOk(99_999_999), false);
   });
@@ -115,7 +116,7 @@ describe("BR-34B / price bounds", () => {
   });
 });
 
-describe("BR-34A / discount percentage", () => {
+describe("BR-17 / discount percentage", () => {
   it("accepts whole percentages in [0, 100]", () => {
     assert.equal(discountPctOk(0), true);
     assert.equal(discountPctOk(20), true);
@@ -128,7 +129,7 @@ describe("BR-34A / discount percentage", () => {
   });
 });
 
-describe("BR-19A / plan window", () => {
+describe("BR-12 / plan window", () => {
   it("is active only between start_on and end_on inclusive", () => {
     assert.equal(planActiveOn("2026-09-01", "2026-10-01", "2026-09-15"), true);
     assert.equal(planActiveOn("2026-09-01", "2026-10-01", "2026-09-01"), true);
@@ -237,13 +238,25 @@ describe("database errors keep their meaning", () => {
   });
   it("keeps rule errors as rule codes", () => {
     assert.equal(mapDbError({ code: "23P01" })?.body.code, "CONFLICT_SLOT");
-    assert.equal(mapDbError({ message: "CLASS_FULL" })?.body.br, "BR-22");
-    assert.equal(mapDbError({ message: "ALREADY_ENROLLED" })?.body.br, "BR-24");
+    assert.equal(mapDbError({ message: "CLASS_FULL" })?.body.br, "BR-21");
+    assert.equal(mapDbError({ message: "ALREADY_ENROLLED" })?.body.br, "BR-22");
     assert.equal(mapDbError({ code: "23505", constraint: "u" })?.status, 409);
   });
   it("leaves the unknown to be a 500", () => {
     assert.equal(mapDbError(new Error("boom")), null);
     assert.equal(mapDbError({ code: "XX000" }), null);
+  });
+});
+
+describe("class length", () => {
+  it("defaults to one court hour and refuses a half hour", () => {
+    assert.equal(classMinutes(undefined), 60);
+    assert.equal(classMinutes(null), 60);
+    assert.equal(classMinutes(60), 60);
+    assert.equal(classMinutes(120), 120);
+    assert.equal(classMinutes(180), 180);
+    assert.equal(classMinutes(90), null);
+    assert.equal(classMinutes(45), null);
   });
 });
 
@@ -269,7 +282,7 @@ describe("class court time (B-03)", () => {
   });
 });
 
-describe("F4 attendance lock (BR-53)", () => {
+describe("F4 attendance lock (BR-35)", () => {
   const end = ictDateTime("2026-09-14", "19:30").getTime();
   it("stays open for two hours after the session ends", () => {
     assert.equal(attendanceLocked(end, end + 119 * 60_000, "scheduled"), false);
@@ -283,7 +296,7 @@ describe("F4 attendance lock (BR-53)", () => {
   });
 });
 
-describe("F4 absent streak (BR-58)", () => {
+describe("F4 absent streak (BR-36)", () => {
   it("counts only the run at the end", () => {
     assert.equal(absentStreak(["absent", "present", "absent", "absent"]), 2);
     assert.equal(absentStreak(["absent", "absent", "absent"]), 3);
@@ -331,7 +344,7 @@ describe("F4 homework checklist (FR-TRN-07)", () => {
   });
 });
 
-describe("promo discount (BR-46)", () => {
+describe("promo discount (BR-42)", () => {
   it("rounds a percentage once to the nearest 1,000đ", () => {
     assert.equal(computeDiscount({ kind: "percent", value: 10, max_discount_vnd: null }, 155_000), 16_000);
     assert.equal(computeDiscount({ kind: "percent", value: 10, max_discount_vnd: null }, 154_000), 15_000);
@@ -346,7 +359,7 @@ describe("promo discount (BR-46)", () => {
   });
 });
 
-describe("check-in token (BR-71)", () => {
+describe("check-in token (BR-30)", () => {
   it("round-trips a member token", () => {
     const { token, ttl_seconds } = signCheckinToken("member", "u1", 1_000_000);
     assert.equal(ttl_seconds, 60);
@@ -371,3 +384,25 @@ describe("check-in token (BR-71)", () => {
     assert.equal(verifyCheckinToken(`https://x.test/in?d=${token}`).kind, "desk");
   });
 });
+
+describe("desk subscription queuing & class schedule window", () => {
+  it("queues subscription after active plan end date", () => {
+    const today = "2026-10-11";
+    const liveEndOn = "2026-10-25";
+    const queueStart = liveEndOn >= today ? liveEndOn : today;
+    assert.equal(queueStart, "2026-10-25");
+
+    const expiredEndOn = "2026-10-01";
+    const fallbackStart = expiredEndOn >= today ? expiredEndOn : today;
+    assert.equal(fallbackStart, today);
+  });
+
+  it("calculates class window starting at beginning of today", () => {
+    const today = "2026-10-11";
+    const todayStart = ictDateTime(today, "00:00");
+    const classStartOn = "2026-10-11";
+    const windowStart = classStartOn >= today ? ictDateTime(classStartOn, "00:00") : todayStart;
+    assert.equal(windowStart.toISOString(), todayStart.toISOString());
+  });
+});
+

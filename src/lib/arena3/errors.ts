@@ -97,11 +97,11 @@ export function mapDbError(e: unknown): { status: number; body: Record<string, u
   if (msg.includes("ALREADY_ENROLLED")) {
     return {
       status: 422,
-      body: { code: "BR_VIOLATION", br: "BR-24", message: "You are already enrolled in that class." },
+      body: { code: "BR_VIOLATION", br: "BR-22", message: "You are already enrolled in that class." },
     };
   }
   if (msg.includes("CLASS_FULL")) {
-    return { status: 422, body: { code: "BR_VIOLATION", br: "BR-22", message: "That class is full." } };
+    return { status: 422, body: { code: "BR_VIOLATION", br: "BR-21", message: "That class is full." } };
   }
   const field = x.column ? { field: x.column } : {};
   if (x.code === "22001") {

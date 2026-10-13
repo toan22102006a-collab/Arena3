@@ -117,45 +117,45 @@ export async function expiryReminders() {
  */
 export async function notifyFlush() {
   const { deliver } = await import("./notify");
-  return withTx(async (sql) => {
-    const rows = await sql.query<{
-      id: string;
-      channel: string;
-      template: string;
-      payload: Record<string, unknown> | null;
-      email: string | null;
-      phone: string | null;
-    }>(
-      `select o.id, o.channel, o.template, o.payload, u.email, u.phone
-         from outbox o
-         left join users u on u.id = o.user_id
-        where o.sent_at is null and o.attempts < 5
-        order by o.created_at
-        limit 50`,
-    );
-    let sent = 0;
-    for (const r of rows) {
-      const to = r.channel === "email" ? r.email : null;
-      const result = await deliver({
-        channel: r.channel as "inapp" | "email",
-        template: r.template,
-        to,
-        payload: r.payload ?? {},
-      });
-      if (result.sent) {
-        await sql.query(`update outbox set sent_at = now(), attempts = attempts + 1 where id = $1`, [
-          r.id,
-        ]);
-        sent += 1;
-      } else {
-        // Leave sent_at null so it is retried, but count the try so a
-        // permanently failing message eventually stops.
-        await sql.query(`update outbox set attempts = attempts + 1 where id = $1`, [r.id]);
-        console.warn(`[notify] ${r.channel}/${r.template} not sent: ${result.detail ?? "unknown"}`);
-      }
+  const { getSql } = await import("@/lib/db");
+  const sql = await getSql();
+  const rows = await sql.query<{
+    id: string;
+    channel: string;
+    template: string;
+    payload: Record<string, unknown> | null;
+    email: string | null;
+    phone: string | null;
+  }>(
+    `select o.id, o.channel, o.template, o.payload, u.email, u.phone
+       from outbox o
+       left join users u on u.id = o.user_id
+      where o.sent_at is null and o.attempts < 5
+      order by o.created_at
+      limit 50`,
+  );
+  let sent = 0;
+  for (const r of rows) {
+    const to = r.channel === "email" ? r.email : null;
+    const result = await deliver({
+      channel: r.channel as "inapp" | "email",
+      template: r.template,
+      to,
+      payload: r.payload ?? {},
+    });
+    if (result.sent) {
+      await sql.query(`update outbox set sent_at = now(), attempts = attempts + 1 where id = $1`, [
+        r.id,
+      ]);
+      sent += 1;
+    } else {
+      // Leave sent_at null so it is retried, but count the try so a
+      // permanently failing message eventually stops.
+      await sql.query(`update outbox set attempts = attempts + 1 where id = $1`, [r.id]);
+      console.warn(`[notify] ${r.channel}/${r.template} not sent: ${result.detail ?? "unknown"}`);
     }
-    return sent;
-  });
+  }
+  return sent;
 }
 
 /**

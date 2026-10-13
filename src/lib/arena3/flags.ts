@@ -21,11 +21,11 @@ export async function flagOn(sql: Sql, key: FlagKey): Promise<boolean> {
 /**
  * Refuse a request for a module the manager has switched off.
  *
- * 403, not 422: SRS BR-62 says a module that is off answers "forbidden", and the
+ * 403, not 422: SRS BR-52 says a module that is off answers "forbidden", and the
  * code is stable so a screen can tell "switched off" from "not allowed for you".
  */
 export async function requireFlag(sql: Sql, key: FlagKey) {
   if (!(await flagOn(sql, key))) {
-    throw new ApiError(403, "FORBIDDEN", `Feature ${key} is switched off.`, { br: "BR-62", flag: key });
+    throw new ApiError(403, "FORBIDDEN", `Feature ${key} is switched off.`, { br: "BR-52", flag: key });
   }
 }

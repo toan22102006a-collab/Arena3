@@ -150,9 +150,9 @@ async function newMember(prefix, name) {
   const noStart = await req(`/bookings/${bid}/reschedule`, { method: "POST", token: m.token, body: {} });
   ok(noStart.status === 400 && noStart.data.field === "start_at", "M-04 missing time names the field", noStart);
   const past = await req(`/bookings/${bid}/reschedule`, { method: "POST", token: m.token, body: { start_at: at(ict(-1), 9) } });
-  ok(past.status === 422 && past.data.br === "BR-66", "M-04 the past is BR-66", past);
+  ok(past.status === 422 && past.data.br === "BR-07", "M-04 the past is BR-07", past);
   const closed = await req(`/bookings/${bid}/reschedule`, { method: "POST", token: m.token, body: { start_at: at(date, 3) } });
-  ok(closed.status === 422 && closed.data.br === "BR-35", "M-04 outside opening hours is BR-35", closed);
+  ok(closed.status === 422 && closed.data.br === "BR-06", "M-04 outside opening hours is BR-06", closed);
   const staff = await req(`/bookings/${bid}/reschedule`, { method: "POST", token: desk.token, body: { start_at: at(date, hour + 2) } });
   ok(staff.status === 403, "M-04 only the member moves their own booking", staff);
   const other = await req(`/bookings/${bid}/reschedule`, { method: "POST", token: rival.token, body: { start_at: at(date, hour + 2) } });

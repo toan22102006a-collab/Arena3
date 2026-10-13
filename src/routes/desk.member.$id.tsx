@@ -16,10 +16,12 @@ import {
   LoadError,
   Modal,
   MoneyInput,
+  Select,
   Skeleton,
   StatusBadge,
   Textarea,
 } from "@/components/ui";
+import { TransferQrModal } from "@/components/transfer-qr-modal";
 import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { SpotlightCard } from "@/components/fx";
 import { CancelBookingDialog } from "@/components/cancel-booking";
@@ -85,6 +87,8 @@ function Page() {
   const onlineOn = Boolean(flagsRead.data?.capabilities?.online_payment);
   const plansRead = useRead<{ items: Array<{ id: string; name: string; price_vnd: number }> }>("/plans");
   const [cancelId, setCancelId] = useState<string | null>(null);
+  const [transferSub, setTransferSub] = useState<Member["subscriptions"][number] | null>(null);
+  const [subMethod, setSubMethod] = useState<Record<string, "cash" | "transfer">>({});
   // The payment a refund is being raised against, plus what the desk typed.
   const [refunding, setRefunding] = useState<Payment | null>(null);
   const [refundAmount, setRefundAmount] = useState("");
@@ -279,41 +283,51 @@ function Page() {
             <p className="text-sm text-muted">
               {sportLabel(s.sport_scope)} · {t("through {date}", { date: formatDate(s.end_on) })} · {t("{n} court hours", { n: Number(s.court_hours_left) })}
             </p>
-            {s.status === "pending" || s.status === "active" ? (
-              <Button
-                className="mt-3"
-                disabled={working}
-                onClick={() =>
-                  void act(async () => {
-                    const res = await apiPost<{ invoice: { id: string } }>(
-                      "/payments",
-                      { ref_type: "subscription", ref_id: s.id, method: "cash", amount_vnd: s.due_vnd },
-                      true,
-                    );
-                    toast.success(t("Payment recorded"));
-                    reload();
-                    if (res.invoice?.id) await openInvoice(res.invoice.id);
-                  }, t("Something went wrong"))
-                }
-              >
-                {t("Take payment · {amount}", { amount: money(s.due_vnd) })}
-              </Button>
-            ) : null}
-            {/*
-              The counter case for a plan: the customer is at the desk, this
-              puts a QR on reception's screen and the payment posts when payOS
-              confirms it. Sits beside "Take payment" — which is cash, and is
-              reception's word — so the two are never confused.
-            */}
-            {onlineOn && (s.status === "pending" || s.status === "active") ? (
-              <PayOnlineButton
-                refType="subscription"
-                refId={s.id}
-                label={t("Pay online")}
-                size="md"
-                variant="outline"
-                onPaid={reload}
-              />
+            {(s.status === "pending" || s.status === "active") && s.due_vnd > 0 ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Select
+                  className="w-auto"
+                  value={subMethod[s.id] ?? "cash"}
+                  onChange={(e) => setSubMethod((m) => ({ ...m, [s.id]: e.target.value as "cash" | "transfer" }))}
+                  aria-label={t("Payment method")}
+                >
+                  <option value="cash">{t("Cash")}</option>
+                  <option value="transfer">{t("Bank transfer (VietQR)")}</option>
+                </Select>
+                <Button
+                  disabled={working}
+                  onClick={() => {
+                    if ((subMethod[s.id] ?? "cash") === "transfer") {
+                      setTransferSub(s);
+                      return;
+                    }
+                    void act(async () => {
+                      const res = await apiPost<{ invoice: { id: string } }>(
+                        "/payments",
+                        { ref_type: "subscription", ref_id: s.id, method: "cash", amount_vnd: s.due_vnd },
+                        true,
+                      );
+                      toast.success(t("Payment recorded"));
+                      reload();
+                      if (res.invoice?.id) await openInvoice(res.invoice.id);
+                    }, t("Something went wrong"));
+                  }}
+                >
+                  {(subMethod[s.id] ?? "cash") === "transfer"
+                    ? t("Show transfer QR · {amount}", { amount: money(s.due_vnd) })
+                    : t("Take payment · {amount}", { amount: money(s.due_vnd) })}
+                </Button>
+                {onlineOn ? (
+                  <PayOnlineButton
+                    refType="subscription"
+                    refId={s.id}
+                    label={t("Online link")}
+                    size="sm"
+                    variant="ghost"
+                    onPaid={reload}
+                  />
+                ) : null}
+              </div>
             ) : null}
             {s.status === "active" ? (
               <Button
@@ -661,6 +675,28 @@ function Page() {
           </div>
         )}
       </Modal>
+
+      {transferSub ? (
+        <TransferQrModal
+          open={!!transferSub}
+          onClose={() => setTransferSub(null)}
+          amountVnd={transferSub.due_vnd}
+          code={transferSub.id.slice(-6).toUpperCase()}
+          buyerName={data.user.full_name}
+          refType="subscription"
+          refId={transferSub.id}
+          onConfirmManual={async () => {
+            const res = await apiPost<{ invoice: { id: string } }>(
+              "/payments",
+              { ref_type: "subscription", ref_id: transferSub.id, method: "transfer", amount_vnd: transferSub.due_vnd },
+              true,
+            );
+            toast.success(t("Payment recorded"));
+            reload();
+            if (res.invoice?.id) await openInvoice(res.invoice.id);
+          }}
+        />
+      ) : null}
     </Shell>
   );
 }

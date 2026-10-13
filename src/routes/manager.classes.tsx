@@ -36,6 +36,7 @@ type ClassRow = {
   enrolled_count: number;
   capacity: number;
   rrule?: string;
+  duration_min?: number;
 };
 
 function Page() {
@@ -62,7 +63,7 @@ function Page() {
     coach_id: "",
     court_id: "",
     capacity: 12,
-    duration_min: 90,
+    duration_min: 60,
     start_on: todayISO(),
     end_on: addDaysISO(todayISO(), 60),
   });
@@ -255,7 +256,7 @@ function Page() {
             <p className="text-sm text-muted">
               {c.coach_name} · {c.court_code} · {c.enrolled_count}/{c.capacity}
             </p>
-            {c.rrule ? <p className="text-sm">{rruleLabel(c.rrule)}</p> : null}
+            {c.rrule ? <p className="text-sm">{rruleLabel(c.rrule, c.duration_min)}</p> : null}
             <Button className="mt-3" variant="outline" onClick={() => setDetail(c.id)}>
               {t("Sessions & students")}
             </Button>

@@ -55,7 +55,7 @@ async function login(phone, password = PASS) {
 const mgr = await login("0900000001");
 const desk = await login("0900000002");
 const stamp = String(Date.now()).slice(-7);
-// Taking cash at the desk needs a shift (BR-49); one already open is fine.
+// Taking cash at the desk needs a shift (BR-44); one already open is fine.
 const shift = await req("/shifts/current", { token: desk.token });
 if (!shift.data?.shift) {
   const opened = await req("/shifts/open", { method: "POST", token: desk.token });
@@ -161,7 +161,7 @@ const sessionsOf = async () => (await detail()).sessions;
 const upcoming = (await sessionsOf()).filter((s) => s.status === "scheduled" && new Date(s.start_at) > hoursFromNow(30));
 ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming.length);
 
-// ---- cancel one session (BR-26) ---------------------------------------------
+// ---- cancel one session (BR-29) ---------------------------------------------
 {
   const target = upcoming[0];
   const noReason = await req(`/sessions/${target.id}/cancel`, { method: "POST", token: mgr.token, body: {} });
@@ -172,7 +172,7 @@ ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming
   ok(asDesk.status === 403, "reception cannot cancel a session", asDesk);
 
   const done = await req(`/sessions/${target.id}/cancel`, { method: "POST", token: mgr.token, body: { reason: "Floor repairs" } });
-  ok(done.status === 200 && done.data.notified === 2 && done.data.refunded === 2, "cancelling notifies both members and gives each a session back (BR-26)", done);
+  ok(done.status === 200 && done.data.notified === 2 && done.data.refunded === 2, "cancelling notifies both members and gives each a session back (BR-29)", done);
   ok((await quotaLeft(m1)) === baseline + 1, "a per-session plan gets exactly +1", { baseline, now: await quotaLeft(m1) });
   const after = (await sessionsOf()).find((s) => s.id === target.id);
   ok(after.status === "cancelled", "the session shows as cancelled", after);
@@ -184,7 +184,7 @@ ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming
   ok(!!note && note.payload.reason === "Floor repairs", "the member's inbox says why", inbox.data);
 }
 
-// ---- move one session (BR-21, BR-28) ----------------------------------------
+// ---- move one session (BR-26, BR-27) ----------------------------------------
 {
   const target = upcoming[1];
   const old = new Date(target.start_at);
@@ -197,14 +197,14 @@ ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming
   });
   ok(past.status === 400, "cannot move a session into the past", past);
 
-  // Onto the next session of the same class — the same court, so BR-21 must refuse.
+  // Onto the next session of the same class — the same court, so BR-26 must refuse.
   const sibling = upcoming[2];
   const clash = await req(`/sessions/${target.id}/reschedule`, {
     method: "POST",
     token: mgr.token,
     body: { start_at: sibling.start_at },
   });
-  ok(clash.status === 409 && clash.data.code === "CONFLICT_SLOT", "moving onto another session of the court is CONFLICT_SLOT (BR-21)", clash);
+  ok(clash.status === 409 && clash.data.code === "CONFLICT_SLOT", "moving onto another session of the court is CONFLICT_SLOT (BR-26)", clash);
   const still = (await sessionsOf()).find((s) => s.id === target.id);
   ok(new Date(still.start_at).getTime() === old.getTime(), "a refused move leaves the session where it was", still);
 
@@ -243,7 +243,7 @@ ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming
   const afterGen = (await sessionsOf()).filter((s) => new Date(s.start_at).getTime() === old.getTime());
   ok(afterGen.length === 0, "the generator does not recreate the moved-from slot (original_start_at)", afterGen);
 
-  // BR-28: a session starting within 12 hours needs a reason. A one-off class
+  // BR-27: a session starting within 12 hours needs a reason. A one-off class
   // starting a couple of hours from now makes that deterministic; it only
   // exists when there is still room in the (centre-time) day for it.
   const ictHour = new Date(Date.now() + 7 * 3600000).getUTCHours();
@@ -278,7 +278,7 @@ ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming
         token: mgr.token,
         body: { start_at: new Date(new Date(soon.start_at).getTime() + 3600000).toISOString() },
       });
-      ok(bare.status === 422 && bare.data.br === "BR-28" && bare.data.field === "reason", "a late move without a reason is BR-28", bare);
+      ok(bare.status === 422 && bare.data.br === "BR-27" && bare.data.field === "reason", "a late move without a reason is BR-27", bare);
       // A server that has run this script before may hold the next hour already;
       // a busy slot is not what this check is about, so try the following ones.
       let reasoned;
@@ -292,14 +292,14 @@ ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming
       }
       ok(reasoned.status === 200, "…and with a reason it goes through", reasoned);
     } else {
-      console.log("skip  BR-28 late move (no court free in the next two hours)");
+      console.log("skip  BR-27 late move (no court free in the next two hours)");
     }
   } else {
-    console.log("skip  BR-28 late move (too late in the day to schedule a class two hours out)");
+    console.log("skip  BR-27 late move (too late in the day to schedule a class two hours out)");
   }
 }
 
-// ---- change the coach (BR-23, BR-27) ----------------------------------------
+// ---- change the coach (BR-25, BR-28) ----------------------------------------
 {
   const noCoach = await req(`/classes/${cid}/coach`, { method: "POST", token: mgr.token, body: {} });
   ok(noCoach.status === 400 && noCoach.data.field === "coach_id", "changing the coach needs one, naming the field", noCoach);
@@ -310,9 +310,9 @@ ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming
     token: mgr.token,
     body: { coach_id: coachBadSport.data.staff.id },
   });
-  ok(wrongSport.status === 422 && wrongSport.data.br === "BR-23", "a coach who does not teach the sport is BR-23", wrongSport);
+  ok(wrongSport.status === 422 && wrongSport.data.br === "BR-25", "a coach who does not teach the sport is BR-25", wrongSport);
   const notCoach = await req(`/classes/${cid}/coach`, { method: "POST", token: mgr.token, body: { coach_id: desk.user.id } });
-  ok(notCoach.status === 422 && notCoach.data.br === "BR-23", "a non-coach is refused", notCoach);
+  ok(notCoach.status === 422 && notCoach.data.br === "BR-25", "a non-coach is refused", notCoach);
   const asCoach = await req(`/classes/${cid}/coach`, {
     method: "POST",
     token: (await login(coachA.phone, coachA.temp)).token,
@@ -326,14 +326,14 @@ ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming
   ok(detailNow.class.coach_id === coachB.id, "the class shows the new coach", detailNow.class);
   const aSched = await req("/coach/schedule", { token: (await login(coachA.phone, coachA.temp)).token });
   const bSched = await req("/coach/schedule", { token: (await login(coachB.phone, coachB.temp)).token });
-  ok(!aSched.data.items.some((s) => s.class_id === cid), "the old coach loses the sessions from their schedule (BR-27)", aSched.data.items.length);
+  ok(!aSched.data.items.some((s) => s.class_id === cid), "the old coach loses the sessions from their schedule (BR-28)", aSched.data.items.length);
   ok(bSched.data.items.some((s) => s.class_id === cid), "the new coach has them", bSched.data.items.length);
 }
 
 // ---- edit capacity, close, reopen -------------------------------------------
 {
   const low = await req(`/classes/${cid}`, { method: "PATCH", token: mgr.token, body: { capacity: 1 } });
-  ok(low.status === 422 && low.data.br === "BR-22", "capacity cannot drop under the enrolled count", low);
+  ok(low.status === 422 && low.data.br === "BR-21", "capacity cannot drop under the enrolled count", low);
   const bad = await req(`/classes/${cid}`, { method: "PATCH", token: mgr.token, body: { capacity: 0 } });
   ok(bad.status === 400 && bad.data.field === "capacity", "a nonsense capacity names the field", bad);
   const up = await req(`/classes/${cid}`, { method: "PATCH", token: mgr.token, body: { capacity: 3 } });
@@ -342,7 +342,7 @@ ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming
   ok(closed.status === 200 && closed.data.class.status === "closed", "enrolment can be closed", closed);
   const late = await memberWithPlan("086", "Lifecycle Late", quotaPlan);
   const refused = await req(`/classes/${cid}/enroll`, { method: "POST", token: late.token });
-  ok(refused.status === 422 && refused.data.br === "BR-67", "a closed class takes no new members", refused);
+  ok(refused.status === 422 && refused.data.br === "BR-18", "a closed class takes no new members", refused);
   const reopen = await req(`/classes/${cid}`, { method: "PATCH", token: mgr.token, body: { status: "open" } });
   ok(reopen.status === 200 && reopen.data.class.status === "open", "…and can be reopened", reopen);
   const asMember = await req(`/classes/${cid}`, { method: "PATCH", token: m1.token, body: { capacity: 99 } });
@@ -368,7 +368,7 @@ ok(upcoming.length >= 4, "a published class has sessions to work with", upcoming
   ok(patchAgain.status === 409, "a cancelled class cannot be edited", patchAgain);
   for (const action of ["cancel_session", "reschedule_session", "change_coach", "edit_class", "cancel_class"]) {
     const rows = await req(`/audit?action=${action}&limit=5`, { token: mgr.token });
-    ok((rows.data.items ?? []).length > 0, `${action} left an audit row (BR-61)`, rows);
+    ok((rows.data.items ?? []).length > 0, `${action} left an audit row (BR-53)`, rows);
   }
   // The freed court is bookable again.
   const mem = await req("/me", { token: m1.token });

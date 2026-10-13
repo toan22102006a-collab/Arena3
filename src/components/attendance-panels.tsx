@@ -38,7 +38,7 @@ const pct = (v: number | null) => (v === null ? "—" : `${v}%`);
 
 /**
  * Attendance rate = (present + late) ÷ (sessions marked − excused). Excused
- * absences are not held against anyone, and nothing here is a penalty (BR-73).
+ * absences are not held against anyone, and nothing here is a penalty (BR-32).
  */
 export function AttendancePanel({ canExport }: { canExport: boolean }) {
   const [from, setFrom] = useState(() => addDaysISO(todayISO(), -29));

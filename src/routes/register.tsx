@@ -9,7 +9,6 @@ import { AnimatePresence, motion } from "motion/react";
 import { Reveal } from "@/components/motion";
 import { GLBackground, Magnet, SplitText, SpotlightCard } from "@/components/fx";
 import { ApiClientError, apiPost, homeFor, setSession, type SessionUser } from "@/lib/arena3/client";
-import { CalmToggle } from "@/components/calm-toggle";
 import { LangSwitch } from "@/components/lang-switch";
 import { t, tServer } from "@/lib/i18n";
 
@@ -148,7 +147,6 @@ function Register() {
       </div>
       <div className="relative grid min-h-dvh place-items-center px-4 py-10">
         <div className="absolute right-4 top-3 z-10 flex items-center gap-2">
-          <CalmToggle />
           <LangSwitch />
         </div>
         <Reveal className="w-full max-w-md" from="up">

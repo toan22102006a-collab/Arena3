@@ -78,7 +78,7 @@ async function newMember(prefix, name) {
 {
   const s = await req("/settings", { token: mgr.token });
   const body = JSON.stringify(s.data);
-  ok(s.status === 200 && !body.includes("debt_limit") && !body.includes("deposit_pct"), "settings carry no debt or deposit", s.data);
+  ok(s.status === 200 && !body.includes("debt_limit") && !body.includes("deposit_pct_activates"), "settings carry no debt or deposit", s.data);
   ok(
     s.data.self_checkin_enabled === false && s.data.gate_dedup_minutes === 120 && s.data.at_risk_idle_days === 14,
     "new settings have their defaults",
@@ -93,7 +93,7 @@ const CODE = `T${stamp}`;
 let promoId;
 {
   const noAuth = await req("/promotions", { method: "POST", token: desk.token, body: { code: CODE, name: "x", kind: "percent", value: 10 } });
-  ok(noAuth.status === 403, "reception cannot create a promo (BR-70)", noAuth);
+  ok(noAuth.status === 403, "reception cannot create a promo (BR-43)", noAuth);
   const badPct = await req("/promotions", { method: "POST", token: mgr.token, body: { code: CODE, name: "x", kind: "percent", value: 101 } });
   ok(refused(badPct) && badPct.data.field === "value", "a percentage over 100 is refused", badPct);
   const badAmt = await req("/promotions", { method: "POST", token: mgr.token, body: { code: CODE, name: "x", kind: "amount", value: 1500 } });
@@ -120,7 +120,7 @@ let payA;
   });
   ok(prev.status === 200 && prev.data.discount_vnd > 0, "validate previews the discount without spending it", prev);
   const expectDiscount = Math.round((termPlan.price_vnd * 0.1) / 1000) * 1000;
-  ok(prev.data.discount_vnd === expectDiscount, "10% is rounded once to 1,000đ (BR-46)", { got: prev.data.discount_vnd, expectDiscount });
+  ok(prev.data.discount_vnd === expectDiscount, "10% is rounded once to 1,000đ (BR-42)", { got: prev.data.discount_vnd, expectDiscount });
 
   const bad = await req("/promotions/validate", { method: "POST", token: desk.token, body: { code: "NOPE", scope: "plan", plan_id: termPlan.id } });
   ok(refused(bad) && bad.data.field === "promo_code", "an unknown code says so on promo_code", bad);
@@ -140,7 +140,7 @@ let payA;
   });
   ok(refused(part), "a plan is paid in full — a part payment is refused (no debt)", part);
   const list0 = await req(`/promotions`, { token: mgr.token });
-  ok(list0.data.items.find((p) => p.id === promoId).used === 0, "nothing is spent until the money posts (BR-45)", list0.data);
+  ok(list0.data.items.find((p) => p.id === promoId).used === 0, "nothing is spent until the money posts (BR-41)", list0.data);
 
   payA = await req("/payments", {
     method: "POST",
@@ -157,7 +157,7 @@ let payA;
   ok(refused(second), "a fully used code is refused for the next member", second);
 
   const rename = await req(`/promotions/${promoId}`, { method: "PATCH", token: mgr.token, body: { code: `${CODE}X` } });
-  ok(refused(rename) || rename.status === 409, "a used code cannot be renamed (BR-70)", rename);
+  ok(refused(rename) || rename.status === 409, "a used code cannot be renamed (BR-43)", rename);
 
   const refund = await req(`/payments/${payA.data.payment?.id ?? payA.data.id}/refund`, {
     method: "POST",
@@ -167,7 +167,7 @@ let payA;
   });
   ok(refund.status === 200 || refund.status === 201, "a full refund goes through", refund);
   const list2 = await req(`/promotions`, { token: mgr.token });
-  ok(list2.data.items.find((p) => p.id === promoId).used === 0, "a full refund gives the use back (BR-45)", list2.data.items.find((p) => p.id === promoId));
+  ok(list2.data.items.find((p) => p.id === promoId).used === 0, "a full refund gives the use back (BR-41)", list2.data.items.find((p) => p.id === promoId));
   const reds = await req(`/promotions/${promoId}/redemptions`, { token: mgr.token });
   ok(reds.status === 200 && reds.data.items.some((r) => r.status === "restored"), "the redemption history shows it as restored", reds);
 }
@@ -190,25 +190,25 @@ const memberC = await newMember("093", "Gate Plan");
   ok(asStaff.status === 403, "staff have no member code", asStaff);
 
   const junk = await req("/desk/scan", { method: "POST", token: desk.token, body: { token: "abc.def" } });
-  ok(refused(junk) && junk.data.br === "BR-71", "a bad code is refused (BR-71)", junk);
+  ok(refused(junk) && junk.data.br === "BR-30", "a bad code is refused (BR-30)", junk);
 
   const scan = await req("/desk/scan", { method: "POST", token: desk.token, body: { token: tok.data.token } });
   ok(scan.status === 200 && scan.data.allowed === true && scan.data.duplicate === false, "scanning a good code lets the member in", scan);
   ok(scan.data.member.id === memberC.userId, "the scan shows who it is", scan.data.member);
 
   const again = await req("/desk/scan", { method: "POST", token: desk.token, body: { token: tok.data.token } });
-  ok(refused(again) && again.data.br === "BR-71", "the same code cannot be used twice (single use)", again);
+  ok(refused(again) && again.data.br === "BR-30", "the same code cannot be used twice (single use)", again);
 
   const tok2 = await req("/me/checkin-token", { token: memberC.token });
   const rescan = await req("/desk/scan", { method: "POST", token: desk.token, body: { token: tok2.data.token } });
-  ok(rescan.status === 200 && rescan.data.duplicate === true, "a fresh code inside the repeat window returns the first visit (BR-72)", rescan);
+  ok(rescan.status === 200 && rescan.data.duplicate === true, "a fresh code inside the repeat window returns the first visit (BR-31)", rescan);
 
   const noReason = await req("/desk/gate-checkin", { method: "POST", token: desk.token, body: { phone: memberC.phone } });
   ok(refused(noReason) && noReason.data.field === "reason", "manual check-in needs a reason", noReason);
   const manual = await req("/desk/gate-checkin", { method: "POST", token: desk.token, body: { phone: memberC.phone, reason: "no_phone" } });
   ok(manual.status === 200 && manual.data.allowed === true && manual.data.duplicate === true, "manual check-in works and deduplicates", manual);
 
-  // A member with nothing to come in on: reception must say why (BR-72).
+  // A member with nothing to come in on: reception must say why (BR-31).
   const bare = await newMember("094", "Gate Bare");
   const ask = await req("/desk/gate-checkin", { method: "POST", token: desk.token, body: { phone: bare.phone, reason: "forgot" } });
   ok(ask.status === 200 && ask.data.needs_override === true && ask.data.allowed === false, "no plan and no booking asks for an override", ask);
@@ -314,13 +314,13 @@ const memberC = await newMember("093", "Gate Plan");
     token: mgr.token,
     body: { is_template: true, title: "Too long", payload: { sport: "badminton", level: "beginner", blocks: thirteen } },
   });
-  ok(refused(tooMany) && tooMany.data.field === "blocks", "a 13th block is refused (BR-74)", tooMany);
+  ok(refused(tooMany) && tooMany.data.field === "blocks", "a 13th block is refused (BR-49)", tooMany);
   const badMin = await req("/training-plans", {
     method: "POST",
     token: mgr.token,
     body: { is_template: true, payload: { sport: "badminton", level: "beginner", blocks: [block(1, { minutes: 181 })] } },
   });
-  ok(refused(badMin), "181 minutes is refused (BR-74)", badMin);
+  ok(refused(badMin), "181 minutes is refused (BR-49)", badMin);
   const badInt = await req("/training-plans", {
     method: "POST",
     token: mgr.token,
@@ -385,7 +385,7 @@ const memberC = await newMember("093", "Gate Plan");
     token: mgr.token,
     body: { payload: { sport: "basketball", level: "beginner", blocks: [block(1), block(2, { minutes: 50 })] } },
   });
-  ok(edited.status === 200 && edited.data.version === 2, "editing after publishing makes version 2 (BR-75)", edited);
+  ok(edited.status === 200 && edited.data.version === 2, "editing after publishing makes version 2 (BR-48)", edited);
   const vers = await req(`/training-plans/${fromTpl.data.id}/versions`, { token: mgr.token });
   ok(vers.status === 200 && vers.data.items.length === 1 && vers.data.items[0].version === 1, "the old version is kept", vers);
   const saved = await req(`/training-plans/${fromTpl.data.id}/save-template`, { method: "POST", token: mgr.token, body: { sport: "basketball", level: "beginner" } });

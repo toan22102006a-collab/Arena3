@@ -970,8 +970,7 @@ export function ClickSpark({
     };
 
     const onClick = (e: MouseEvent) => {
-      // "Pause animations" also silences this: it is a reply to a click, but a person who asked for
-      // stillness did not mean "except sparks".
+      // Reduced motion silences this too: a click still happened, but sparks are motion.
       if (isCalm()) return;
       const now = performance.now();
       const jitter = Math.random() * Math.PI;

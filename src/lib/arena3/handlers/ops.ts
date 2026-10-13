@@ -1,7 +1,7 @@
 import type { Sql } from "@/lib/db";
 import { err, isConflictSlot } from "../errors";
 import { flagOn, flagsMap, requireFlag, type FlagKey } from "../flags";
-import { audit, enqueue, getSettings, num, readJson, str } from "../helpers";
+import { audit, enqueue, enqueueReceipt, getSettings, issueInvoice, nextCode, num, readJson, str } from "../helpers";
 import { limit, RULES } from "../ratelimit";
 import { requireRole, type PublicUser } from "../session";
 import { isValidVnPhone, normalizePhone } from "../phone";
@@ -9,6 +9,7 @@ import { generateAssistantReply, type ChatTurn } from "../gemini";
 import { COACHES } from "../coaches";
 import { ATTENDANCE_LOCK_HOURS, attendanceLocked, isAttResult, ticketBody } from "../rules";
 import { checkAbsentStreaks, sessionScope } from "./training";
+import { openShift, pickMethod } from "./extras";
 import { addDays, ictDateString } from "../time";
 import { one } from "../tx";
 import { payosConfigured } from "../payos";
@@ -91,7 +92,7 @@ export async function waitlistAccept(sql: Sql, offerId: string, user: PublicUser
   }>(sql, `select * from waitlist_offers where id = $1 for update`, [offerId]);
   if (!offer) throw err.notFound();
   if (offer.status !== "pending") throw err.conflictState();
-  if (new Date(offer.expires_at) < new Date()) throw err.br("BR-25", "That offer has expired.");
+  if (new Date(offer.expires_at) < new Date()) throw err.br("BR-23", "That offer has expired.");
   const enr = await one<{ id: string; class_id: string; user_id: string; status: string }>(
     sql,
     `select * from enrollments where id = $1 for update`,
@@ -104,7 +105,7 @@ export async function waitlistAccept(sql: Sql, offerId: string, user: PublicUser
     [enr.class_id],
   );
   if (!cl) throw err.notFound();
-  if (cl.enrolled_count >= cl.capacity) throw err.br("BR-22", "The class just filled up.");
+  if (cl.enrolled_count >= cl.capacity) throw err.br("BR-21", "The class just filled up.");
   await sql.query(
     `update enrollments set status = 'confirmed', waitlist_pos = null where id = $1`,
     [enr.id],
@@ -159,20 +160,23 @@ export async function equipmentLoan(sql: Sql, request: Request, user: PublicUser
   const item_id = str(b.item_id);
   if (!item_id) throw err.field("item_id", "Choose the gear to rent out.");
   const qty = parseInteger("qty", "Quantity", b.qty ?? 1, 1, 99);
+  const method = pickMethod(b.method);
 
   // A member rents against their account — the phone on the loan is theirs, so
   // the loan list can name them. A guest has only the number they give.
   const memberId = str(b.user_id);
   let phone: string;
+  let buyer = "Khách lẻ";
   if (memberId) {
-    const m = await one<{ phone: string; status: string }>(
+    const m = await one<{ phone: string; status: string; full_name: string }>(
       sql,
-      `select phone, status from users where id = $1 and role = 'member'`,
+      `select phone, status, full_name from users where id = $1 and role = 'member'`,
       [memberId],
     );
     if (!m) throw err.field("user_id", "That member account was not found.");
     if (m.status !== "active") throw err.field("user_id", "That member account is not active.");
     phone = m.phone;
+    buyer = m.full_name;
   } else {
     phone = normalizePhone(str(b.phone) ?? "");
     if (!phone) throw err.field("phone", "Enter the guest's phone number, or pick a member.");
@@ -186,8 +190,10 @@ export async function equipmentLoan(sql: Sql, request: Request, user: PublicUser
   );
   if (!item) throw err.notFound();
   if (item.stock < qty) {
-    throw err.br("BR-38", `Only ${item.stock} ${item.name} left — you asked for ${qty}.`, { available: item.stock });
+    throw err.br("BR-50", `Only ${item.stock} ${item.name} left — you asked for ${qty}.`, { available: item.stock });
   }
+  // Gear is charged at the counter like any other sale, so the till must be open first.
+  const shiftId = await openShift(sql, user);
   await sql.query(`update equipment_items set stock = stock - $2 where id = $1`, [item_id, qty]);
   const loan = await one(
     sql,
@@ -196,8 +202,31 @@ export async function equipmentLoan(sql: Sql, request: Request, user: PublicUser
      returning *`,
     [item_id, str(b.booking_id) ?? null, phone, qty],
   );
+  const rentVnd = item.rent_vnd * qty;
+  let invoiceId: string | null = null;
+  if (rentVnd > 0) {
+    const settings = await getSettings(sql);
+    const userId = memberId ?? null;
+    const pay = await one<{ id: string }>(
+      sql,
+      `insert into payments (code, user_id, shift_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by)
+       values ($1,$2,$3,$4,$5,$6,'posted','equipment',$7,$8) returning id`,
+      [await nextCode(sql, "PAY"), userId, shiftId, method, rentVnd, Number(settings.vat_rate), (loan as { id: string }).id, user.id],
+    );
+    invoiceId = await issueInvoice(sql, {
+      paymentId: pay!.id,
+      buyerName: buyer,
+      buyerPhone: userId ? null : phone,
+      amountVnd: rentVnd,
+      vatRate: Number(settings.vat_rate ?? 0),
+      description: `Thuê thiết bị — ${item.name} × ${qty}`,
+      unit: "lượt",
+      settings,
+    });
+    await enqueueReceipt(sql, userId, { payment_id: pay!.id, invoice_id: invoiceId, amount_vnd: rentVnd, method });
+  }
   await audit(sql, user.id, "loan_out", "equipment", item_id, null, loan);
-  return { status: 201, body: { loan, rent_vnd: item.rent_vnd * qty } };
+  return { status: 201, body: { loan, rent_vnd: rentVnd, invoice_id: invoiceId } };
 }
 
 export async function equipmentReturn(sql: Sql, id: string, user: PublicUser) {
@@ -237,7 +266,7 @@ export async function loansOpen(sql: Sql, user: PublicUser) {
 export async function sessionAttendanceGet(sql: Sql, sessionId: string, user: PublicUser) {
   requireRole(user, ["coach", "manager"]);
   await requireFlag(sql, "F4");
-  // BR-59: a coach reads the register of their own classes only.
+  // BR-45: a coach reads the register of their own classes only.
   const scope = await sessionScope(sql, sessionId, user);
   const session = {
     id: scope.id,
@@ -308,12 +337,12 @@ export async function sessionAttendancePost(sql: Sql, sessionId: string, request
   const raw = Array.isArray(b.items) ? (b.items as Record<string, unknown>[]) : [];
   if (raw.length === 0) throw err.field("items", "Nothing to save.");
 
-  // BR-53: the register closes two hours after the session. Past that only a
+  // BR-35: the register closes two hours after the session. Past that only a
   // manager may correct it, and must say why — the reason is kept in the audit.
   let reason: string | null = null;
   if (attendanceLocked(new Date(session.end_at).getTime(), Date.now(), session.status)) {
     if (user.role !== "manager") {
-      throw err.br("BR-53", "This register closed 2 hours after the session. Ask a manager to correct it.");
+      throw err.br("BR-35", "This register closed 2 hours after the session. Ask a manager to correct it.");
     }
     reason = (str(b.reason) ?? "").trim();
     if (reason.length < 3) throw err.field("reason", "Say why this closed register is being changed.");
@@ -359,7 +388,7 @@ export async function sessionAttendancePost(sql: Sql, sessionId: string, request
     before,
     { marks: Object.fromEntries(marks), ...(reason ? { reason } : {}) },
   );
-  // BR-58: only a fresh absence can start or extend a streak.
+  // BR-36: only a fresh absence can start or extend a streak.
   const absent = [...marks].filter(([, r]) => r === "absent").map(([uid]) => uid);
   await checkAbsentStreaks(sql, session.class_id, absent);
   return sessionAttendanceGet(sql, session.id, user);

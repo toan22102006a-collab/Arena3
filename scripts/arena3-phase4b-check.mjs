@@ -147,7 +147,7 @@ const from = day(-29);
     "class fill is enrolled over capacity",
     after.classes[0],
   );
-  ok(after.attendance_on || after.classes.every((c) => c.attendance_pct === null), "no attendance column without attendance (BR-62)", after.classes[0]);
+  ok(after.attendance_on || after.classes.every((c) => c.attendance_pct === null), "no attendance column without attendance (BR-52)", after.classes[0]);
   const quiet = await req(`/reports/members?from=2001-01-01&to=2001-01-02`, { token: mgr.token });
   ok(quiet.status === 200 && quiet.data.members.new === 0 && quiet.data.members.renewal_rate === null, "an empty period is zeros, not an error", quiet.data.members);
 }

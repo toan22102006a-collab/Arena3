@@ -30,6 +30,7 @@ import { Route as AppPointsRouteImport } from './routes/app.points'
 import { Route as AppTrainRouteImport } from './routes/app.train'
 import { Route as CoachIndexRouteImport } from './routes/coach.index'
 import { Route as CoachAttendanceRouteImport } from './routes/coach.attendance'
+import { Route as CoachClassesRouteImport } from './routes/coach.classes'
 import { Route as CoachEarningsRouteImport } from './routes/coach.earnings'
 import { Route as DeskIndexRouteImport } from './routes/desk.index'
 import { Route as DeskAtRiskRouteImport } from './routes/desk.at-risk'
@@ -161,6 +162,11 @@ const CoachIndexRoute = CoachIndexRouteImport.update({
 const CoachAttendanceRoute = CoachAttendanceRouteImport.update({
   id: '/attendance',
   path: '/attendance',
+  getParentRoute: () => CoachRoute,
+} as any)
+const CoachClassesRoute = CoachClassesRouteImport.update({
+  id: '/classes',
+  path: '/classes',
   getParentRoute: () => CoachRoute,
 } as any)
 const CoachEarningsRoute = CoachEarningsRouteImport.update({
@@ -319,6 +325,7 @@ export interface FileRoutesByFullPath {
   '/app/points': typeof AppPointsRoute
   '/app/train': typeof AppTrainRoute
   '/coach/attendance': typeof CoachAttendanceRoute
+  '/coach/classes': typeof CoachClassesRoute
   '/coach/earnings': typeof CoachEarningsRoute
   '/desk/at-risk': typeof DeskAtRiskRoute
   '/desk/classes': typeof DeskClassesRoute
@@ -365,6 +372,7 @@ export interface FileRoutesByTo {
   '/app/points': typeof AppPointsRoute
   '/app/train': typeof AppTrainRoute
   '/coach/attendance': typeof CoachAttendanceRoute
+  '/coach/classes': typeof CoachClassesRoute
   '/coach/earnings': typeof CoachEarningsRoute
   '/desk/at-risk': typeof DeskAtRiskRoute
   '/desk/classes': typeof DeskClassesRoute
@@ -416,6 +424,7 @@ export interface FileRoutesById {
   '/app/points': typeof AppPointsRoute
   '/app/train': typeof AppTrainRoute
   '/coach/attendance': typeof CoachAttendanceRoute
+  '/coach/classes': typeof CoachClassesRoute
   '/coach/earnings': typeof CoachEarningsRoute
   '/desk/at-risk': typeof DeskAtRiskRoute
   '/desk/classes': typeof DeskClassesRoute
@@ -468,6 +477,7 @@ export interface FileRouteTypes {
     | '/app/points'
     | '/app/train'
     | '/coach/attendance'
+    | '/coach/classes'
     | '/coach/earnings'
     | '/desk/at-risk'
     | '/desk/classes'
@@ -514,6 +524,7 @@ export interface FileRouteTypes {
     | '/app/points'
     | '/app/train'
     | '/coach/attendance'
+    | '/coach/classes'
     | '/coach/earnings'
     | '/desk/at-risk'
     | '/desk/classes'
@@ -564,6 +575,7 @@ export interface FileRouteTypes {
     | '/app/points'
     | '/app/train'
     | '/coach/attendance'
+    | '/coach/classes'
     | '/coach/earnings'
     | '/desk/at-risk'
     | '/desk/classes'
@@ -757,6 +769,13 @@ declare module '@tanstack/react-router' {
       path: '/attendance'
       fullPath: '/coach/attendance'
       preLoaderRoute: typeof CoachAttendanceRouteImport
+      parentRoute: typeof CoachRoute
+    }
+    '/coach/classes': {
+      id: '/coach/classes'
+      path: '/classes'
+      fullPath: '/coach/classes'
+      preLoaderRoute: typeof CoachClassesRouteImport
       parentRoute: typeof CoachRoute
     }
     '/coach/earnings': {
@@ -979,6 +998,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 interface CoachRouteChildren {
   CoachAttendanceRoute: typeof CoachAttendanceRoute
+  CoachClassesRoute: typeof CoachClassesRoute
   CoachEarningsRoute: typeof CoachEarningsRoute
   CoachIndexRoute: typeof CoachIndexRoute
   CoachStudentIdRoute: typeof CoachStudentIdRoute
@@ -986,6 +1006,7 @@ interface CoachRouteChildren {
 
 const CoachRouteChildren: CoachRouteChildren = {
   CoachAttendanceRoute: CoachAttendanceRoute,
+  CoachClassesRoute: CoachClassesRoute,
   CoachEarningsRoute: CoachEarningsRoute,
   CoachIndexRoute: CoachIndexRoute,
   CoachStudentIdRoute: CoachStudentIdRoute,

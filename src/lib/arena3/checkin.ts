@@ -1,5 +1,5 @@
 /**
- * Check-in tokens (SRS v1.4.1 FR-TRN-02, FR-CRT-07, BR-71).
+ * Check-in tokens (SRS v1.4.1 FR-TRN-02, FR-CRT-07, BR-30).
  *
  * A token is `base64url(payload).base64url(hmac)`: signed with a server secret,
  * short-lived, and never stored in a readable form. Three kinds:
@@ -58,7 +58,7 @@ export function signCheckinToken(kind: CheckinKind, sub: string, now = Date.now(
 }
 
 export function verifyCheckinToken(raw: unknown, now = Date.now()): VerifiedToken {
-  const bad = (m: string) => err.br("BR-71", m, { field: "token" });
+  const bad = (m: string) => err.br("BR-30", m, { field: "token" });
   if (typeof raw !== "string") throw bad("That code is not valid.");
   // The scanner may hand back a URL that carries the token (the desk code does).
   const text = raw.trim();

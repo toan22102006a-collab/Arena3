@@ -80,14 +80,14 @@ export async function register(sql: Sql, request: Request) {
   if (!password || !passwordOk(password)) {
     throw err.br("BR-02", "Password needs at least 8 characters, with letters and numbers.", { field: "password" });
   }
-  if (!pii) throw err.br("BR-08", "You must accept the terms and the data-privacy notice.");
+  if (!pii) throw err.br("BR-04", "You must accept the terms and the data-privacy notice.");
   const settings = await getSettings(sql);
   if (dob) {
     const age = ageYears(dob);
     if (age < settings.minor_age) {
       const gn = str(body.guardian_name);
       const gp = str(body.guardian_phone);
-      if (!gn || !gp) throw err.br("BR-07", "A minor needs guardian details.", { field: "guardian_name" });
+      if (!gn || !gp) throw err.br("BR-03", "A minor needs guardian details.", { field: "guardian_name" });
     }
   }
   const exists = await one(sql, `select id from users where phone = $1 or email = $2`, [

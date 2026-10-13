@@ -162,7 +162,7 @@ export const desk: Record<string, string> = {
 
   // ── desk.gear ──
   "Rented out · {amount}": "Đã cho thuê · {amount}",
-  "Rent to a member's account or to a guest by phone — stock comes down on the way out, back up on return.": "Cho thuê vào tài khoản hội viên hoặc cho khách theo số điện thoại — kho giảm khi cho thuê, tăng lại khi trả.",
+  "Rent to a member's account or to a guest by phone — the hire is charged to the till, stock comes down on the way out, back up on return.": "Cho thuê vào tài khoản hội viên hoặc cho khách theo số điện thoại — tiền thuê thu vào ca thu ngân, kho giảm khi cho thuê, tăng lại khi trả.",
   "Item": "Dụng cụ",
   "{n} left": "còn {n}",
   "none left": "hết hàng",

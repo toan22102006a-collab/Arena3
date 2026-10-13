@@ -3,19 +3,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
 import { ScanLine } from "@/components/arena-icons";
-import { Shell } from "@/components/shell";
+import { Shell, useSessionUser } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, LoadError, Skeleton } from "@/components/ui";
 import { apiGet, apiPost } from "@/lib/arena3/client";
 import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/app/pass")({ component: Page });
 
-type Token = { token: string; expires_at: string; ttl_seconds: number };
+type Token = {
+  token: string;
+  expires_at: string;
+  ttl_seconds: number;
+  member_code?: string | null;
+  full_name?: string;
+};
 
 /** Redraw a little early so a code is never shown in its last seconds (UI-22). */
 const REFRESH_MARGIN_MS = 5000;
 
 function Page() {
+  const user = useSessionUser();
   const [tok, setTok] = useState<Token | null>(null);
   const [img, setImg] = useState<string | null>(null);
   const [left, setLeft] = useState(0);
@@ -115,6 +122,14 @@ function Page() {
           ) : (
             <Skeleton className="size-64" />
           )}
+          <div className="my-1 text-center">
+            <p className="text-2xs font-semibold uppercase tracking-wider text-muted">
+              {t("Member Code")}
+            </p>
+            <p className="font-mono text-2xl font-bold tracking-widest text-primary">
+              {tok?.member_code || user?.member_code || "—"}
+            </p>
+          </div>
           <div className="flex items-center gap-2">
             <Badge tone={left > 10 ? "accent" : "hold"}>{tok ? t("Valid for {n}s", { n: left }) : t("Making a code…")}</Badge>
             <Button size="sm" variant="ghost" onClick={() => void refresh()}>

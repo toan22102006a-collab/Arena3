@@ -136,7 +136,7 @@ async function settleOnline(
       });
     }
     // The same activation the front desk uses: the plan starts the day it is paid,
-    // and its hours and sessions are credited (BR-12, BR-18).
+    // and its hours and sessions are credited (BR-19, BR-20).
     await activateSubscription(sql, pay.ref_id);
     const buyer = await one<{ full_name: string }>(sql, `select full_name from users where id = $1`, [
       sub.user_id,

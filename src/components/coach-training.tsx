@@ -183,8 +183,8 @@ export function ResultsPanel({ sessionId, cancelled }: { sessionId: string; canc
 /* ------------------------------------------------------------------ *
  * Plans — build, publish, copy last week (FR-TRN-04)                   *
  * Blocks carry intensity, a description, equipment and a target so a   *
- * plan can be run by someone other than its author (BR-74). A published *
- * plan that changes keeps its earlier versions (BR-75).                *
+ * plan can be run by someone other than its author (BR-49). A published *
+ * plan that changes keeps its earlier versions (BR-48).                *
  * ------------------------------------------------------------------ */
 
 type Block = {

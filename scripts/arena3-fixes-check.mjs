@@ -159,7 +159,7 @@ const member = await login("0901230101");
     token: desk.token,
     body: { item_id: item.id, phone: "0987654321", qty: item.stock + 1 },
   });
-  ok(tooMany.status === 422 && tooMany.data.br === "BR-38", "B-12 server refuses more than the stock", tooMany);
+  ok(tooMany.status === 422 && tooMany.data.br === "BR-50", "B-12 server refuses more than the stock", tooMany);
   const found = await req("/members?q=0901230101", { token: desk.token });
   const m = found.data.items[0];
   ok(!!m, "B-17 member is found by phone", found.data);

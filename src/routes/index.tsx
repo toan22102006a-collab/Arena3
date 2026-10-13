@@ -14,8 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { ArenaMark } from "@/components/mark";
-import { CalmToggle } from "@/components/calm-toggle";
-import { Cover, HeroVideo, MediaCaption, media, sportPhoto } from "@/components/media";
+import { BootGate, Cover, HeroVideo, MediaCaption, media, sportPhoto } from "@/components/media";
 import { Button, ButtonAnchor, ButtonLink, Card, Modal, Seg, Skeleton } from "@/components/ui";
 import {
   CourtGrid,
@@ -235,7 +234,6 @@ function SiteHeader({ reduced }: { reduced: boolean }) {
             {t("Join")}
           </ButtonLink>
           <LangSwitch />
-          <CalmToggle />
         </div>
         <button
           type="button"
@@ -284,7 +282,6 @@ function SiteHeader({ reduced }: { reduced: boolean }) {
               </div>
               <div className="flex items-center justify-center gap-2 pt-1 md:hidden">
                 <LangSwitch />
-                <CalmToggle />
               </div>
             </nav>
           </motion.div>
@@ -457,6 +454,7 @@ function Landing() {
   ];
 
   return (
+    <BootGate>
     <main id="main-content" tabIndex={-1} className="min-h-dvh overflow-x-clip text-fg">
       <ScrollProgress />
 
@@ -470,7 +468,7 @@ function Landing() {
           animate={{ scale: 1 }}
           transition={{ duration: 2.4, ease: [0.16, 1, 0.3, 1] }}
         >
-          <HeroVideo src={media.hallVideo} poster={media.hallCourts} />
+          <HeroVideo src={media.hallVideo} poster={media.hallCourts} priority />
         </motion.div>
         <div className="hero-scrim pointer-events-none absolute inset-0" />
         {/* Filaments drift across the top of the footage — enough movement to
@@ -893,7 +891,7 @@ function Landing() {
               >
                 <span className="athletic text-xl sm:text-2xl">{sportLabel(c.sport)}</span>
                 <span className="kicker text-2xs text-muted">{levelLabel(c.level)}</span>
-                <span className="tabular-nums text-accent-2">{rruleLabel(c.rrule)}</span>
+                <span className="tabular-nums text-accent-2">{rruleLabel(c.rrule, c.duration_min)}</span>
                 <span className="text-subtle">{c.court_code}</span>
                 <span className="text-muted">{c.coach_name}</span>
                 <span aria-hidden className="size-1.5 rounded-full bg-accent/45" />
@@ -1313,9 +1311,9 @@ function Landing() {
                     </p>
                     <p className="font-display text-xl">{levelLabel(c.level)}</p>
                     <p className="text-sm text-muted">
-                      {c.coach_name} · {c.court_code} · {c.duration_min}′
+                      {c.coach_name} · {c.court_code}
                     </p>
-                    <p className="text-sm">{rruleLabel(c.rrule)}</p>
+                    <p className="text-sm">{rruleLabel(c.rrule, c.duration_min)}</p>
                     {/* Seat meter fills as it scrolls in. */}
                     <div className="mt-2.5 flex items-center gap-2">
                       <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-wood">
@@ -1460,6 +1458,7 @@ function Landing() {
         </div>
       </footer>
     </main>
+    </BootGate>
   );
 }
 

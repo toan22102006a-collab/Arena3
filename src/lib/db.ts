@@ -94,6 +94,9 @@ function createNeonSql(): Promise<Sql> {
     types.setTypeParser(OID_DATE, identity);
     types.setTypeParser(OID_INTERVAL, identity);
     const pool = new Pool({ connectionString: databaseUrl });
+    pool.on("error", (err) => {
+      console.error("[db pool error]", err.message);
+    });
     return toSql(async <T>(text: string, params: unknown[]) => {
       const res = await pool.query(text, params);
       return res.rows as T[];

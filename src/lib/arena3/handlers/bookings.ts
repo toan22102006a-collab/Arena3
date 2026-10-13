@@ -41,19 +41,19 @@ async function assertBookWindow(
   opts: { walkIn: boolean; settings: Awaited<ReturnType<typeof getSettings>> },
 ) {
   const now = new Date();
-  if (!opts.walkIn && start < now) throw err.br("BR-66", "You cannot book a slot in the past.");
+  if (!opts.walkIn && start < now) throw err.br("BR-07", "You cannot book a slot in the past.");
   if (opts.walkIn && start < now) {
     const remain = (start.getTime() + opts.settings.slot_minutes * 60_000 - now.getTime()) / 60_000;
-    if (remain < 20) throw err.br("BR-66", "Walk-ins need at least 20 minutes left in the slot.");
+    if (remain < 20) throw err.br("BR-07", "Walk-ins need at least 20 minutes left in the slot.");
   }
   const date = ictDateString(start);
   const open = ictDateTime(date, opts.settings.open_time.slice(0, 5));
   const close = ictDateTime(date, opts.settings.close_time.slice(0, 5));
-  if (start < open || start >= close) throw err.br("BR-35", "That is outside opening hours.");
+  if (start < open || start >= close) throw err.br("BR-06", "That is outside opening hours.");
   if (!opts.walkIn) {
     const ahead = opts.settings.book_ahead_days;
     const max = new Date(now.getTime() + ahead * 86400000);
-    if (start > max) throw err.br("BR-32", `You can book at most ${ahead} days ahead.`);
+    if (start > max) throw err.br("BR-05", `You can book at most ${ahead} days ahead.`);
   }
 }
 
@@ -409,12 +409,12 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
   const { end } = slotBounds(start, settings.slot_minutes);
   await assertBookWindow(sql, start, { walkIn: false, settings });
   const court = await courtById(sql, courtId);
-  if (court.status !== "ready") throw err.br("BR-35", "That court is not available.");
+  if (court.status !== "ready") throw err.br("BR-06", "That court is not available.");
   const n = await countSlotsToday(sql, user.id, start);
-  if (n >= settings.max_slots_per_day) throw err.br("BR-32", `You can hold at most ${settings.max_slots_per_day} slots a day.`);
+  if (n >= settings.max_slots_per_day) throw err.br("BR-05", `You can hold at most ${settings.max_slots_per_day} slots a day.`);
   const overlap = await overlapClass(sql, user.id, start, end);
   if (overlap && b.confirm_overlap !== true) {
-    throw err.br("BR-39C", "This slot clashes with a class you are in. Confirm to hold it anyway.", {
+    throw err.br("BR-09", "This slot clashes with a class you are in. Confirm to hold it anyway.", {
       requires_confirm: true,
     });
   }
@@ -422,7 +422,7 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
   const list = await lookupPrice(sql, { sport: court.sport, courtId, start });
   const planPrice = applyDiscount(list.price_vnd, disc.pct, settings.round_vnd);
   // A code is priced into the hold so the member sees what they will pay; the use
-  // is only counted when the money posts (BR-45).
+  // is only counted when the money posts (BR-41).
   const promoCode = str(b.promo_code);
   const promo = promoCode
     ? await quotePromo(sql, {
@@ -703,7 +703,7 @@ export async function bookingsConfirm(sql: Sql, id: string, request: Request, us
   let quotaHours = 0;
   if (method === "quota") {
     const disc = await memberDiscount(sql, user.id, court.sport);
-    if (disc.court_hours_left < 1) throw err.br("BR-17", "You have no court hours left on your plan.");
+    if (disc.court_hours_left < 1) throw err.br("BR-13", "You have no court hours left on your plan.");
     payAmount = 0;
     quotaHours = 1;
     await sql.query(
@@ -887,7 +887,7 @@ export async function bookingsCancel(sql: Sql, id: string, user: PublicUser, req
        values ($1,$2,'cash',$3,0,$4,'booking',$5,$6) returning *`,
       [payCode, booking.user_id, amount, st, id, user.id],
     );
-    // A full refund gives the member their use of the code back (BR-45).
+    // A full refund gives the member their use of the code back (BR-41).
     if (quote.fee_vnd === 0) await restoreIfFullyRefunded(sql, "booking", id);
   }
   await enqueue(
@@ -935,7 +935,7 @@ export async function bookingsCollectBalance(sql: Sql, id: string, request: Requ
       `select id from cashier_shifts where receptionist_id = $1 and closed_at is null`,
       [user.id],
     );
-    if (!shift) throw err.br("BR-49", "Open a till shift before taking payment.");
+    if (!shift) throw err.br("BR-44", "Open a till shift before taking payment.");
     shiftId = shift.id;
   }
   const pay = await one<{ id: string }>(
@@ -1019,7 +1019,7 @@ export async function bookingsReschedule(sql: Sql, id: string, request: Request,
   if (court.sport !== oldCourt.sport) {
     throw err.field("court_id", "A booking can only move to a court of the same sport.");
   }
-  if (court.status !== "ready") throw err.br("BR-35", "That court is not available.");
+  if (court.status !== "ready") throw err.br("BR-06", "That court is not available.");
   if (courtId === booking.court_id && start.getTime() === new Date(booking.start_at).getTime()) {
     throw err.field("start_at", "That is the slot you already have.");
   }
@@ -1030,12 +1030,12 @@ export async function bookingsReschedule(sql: Sql, id: string, request: Request,
   if (!sameDay) {
     const n = await countSlotsToday(sql, user.id, start);
     if (n >= settings.max_slots_per_day) {
-      throw err.br("BR-32", `You can hold at most ${settings.max_slots_per_day} slots a day.`);
+      throw err.br("BR-05", `You can hold at most ${settings.max_slots_per_day} slots a day.`);
     }
   }
   const overlap = await overlapClass(sql, user.id, start, end);
   if (overlap && b.confirm_overlap !== true) {
-    throw err.br("BR-39C", "This slot clashes with a class you are in. Confirm to move it anyway.", {
+    throw err.br("BR-09", "This slot clashes with a class you are in. Confirm to move it anyway.", {
       requires_confirm: true,
     });
   }
@@ -1096,7 +1096,7 @@ export async function bookingsCheckIn(sql: Sql, id: string, user: PublicUser) {
   const min = start - settings.checkin_before_minutes * 60_000;
   const max = start + settings.noshow_grace_minutes * 60_000;
   if (now < min || now > max) {
-    throw err.br("BR-39B", "Outside the check-in window of −15/+10 minutes.");
+    throw err.br("BR-11", "Outside the check-in window of −15/+10 minutes.");
   }
   await sql.query(`update court_bookings set status = 'in_use' where id = $1`, [id]);
   return { status: 200, body: { status: "in_use" } };
@@ -1120,14 +1120,14 @@ export async function walkIn(sql: Sql, request: Request, user: PublicUser) {
   const { end } = slotBounds(start, settings.slot_minutes);
   await assertBookWindow(sql, start, { walkIn: true, settings });
   const court = await courtById(sql, courtId);
-  if (court.status !== "ready") throw err.br("BR-35", "That court is not available.");
+  if (court.status !== "ready") throw err.br("BR-06", "That court is not available.");
   if (user.role === "receptionist") {
     const shift = await one<{ id: string }>(
       sql,
       `select id from cashier_shifts where receptionist_id = $1 and closed_at is null`,
       [user.id],
     );
-    if (!shift) throw err.br("BR-49", "Open a till shift before taking payment.");
+    if (!shift) throw err.br("BR-44", "Open a till shift before taking payment.");
     (b as { _shift?: string })._shift = shift.id;
   }
   const member = await one<{ id: string; full_name: string }>(

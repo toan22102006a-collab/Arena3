@@ -1,0 +1,360 @@
+{
+ "S01-d": [
+  1,
+  null,
+  2,
+  null
+ ],
+ "S02-d": [
+  null,
+  1,
+  2
+ ],
+ "S03-d": [
+  null,
+  1,
+  null
+ ],
+ "S04-d": [
+  1,
+  null
+ ],
+ "S05-d": [
+  null,
+  null,
+  null
+ ],
+ "S06-d": [
+  null,
+  null,
+  null,
+  1
+ ],
+ "S07-d": [
+  null,
+  1
+ ],
+ "S08-d": [
+  null,
+  null,
+  1,
+  null
+ ],
+ "S09-d": [
+  null,
+  null,
+  null
+ ],
+ "S10-d": [
+  null,
+  1,
+  null
+ ],
+ "S11-d": [
+  null,
+  null
+ ],
+ "S12-d": [
+  null,
+  null
+ ],
+ "S13-d": [
+  null,
+  null,
+  null,
+  null
+ ],
+ "S14-d": [
+  1,
+  null,
+  null
+ ],
+ "S15-d": [
+  null,
+  null,
+  null
+ ],
+ "S16-d": [
+  null,
+  null,
+  null
+ ],
+ "S17-d": [
+  1,
+  null,
+  null,
+  null
+ ],
+ "S18-d": [
+  null,
+  null,
+  1
+ ],
+ "S19-d": [
+  null,
+  1
+ ],
+ "S20-d": [
+  null,
+  null,
+  1,
+  null
+ ],
+ "S21-d": [
+  1,
+  2,
+  3,
+  4,
+  null
+ ],
+ "S22-d": [
+  null,
+  null
+ ],
+ "S23-d": [
+  null,
+  1,
+  null
+ ],
+ "S24-d": [
+  null,
+  null,
+  1,
+  null,
+  null
+ ],
+ "S25-d": [
+  null,
+  null,
+  null
+ ],
+ "S26-d": [
+  null,
+  null,
+  null
+ ],
+ "S27-d": [
+  null,
+  1,
+  null
+ ],
+ "S28-d": [
+  null,
+  null,
+  null
+ ],
+ "S29-d": [
+  null,
+  null,
+  null
+ ],
+ "S30-d": [
+  1,
+  2,
+  null
+ ],
+ "S31-d": [
+  1,
+  null,
+  null
+ ],
+ "S32-d": [
+  null,
+  null,
+  null
+ ],
+ "S33-d": [
+  null,
+  null,
+  null,
+  null
+ ],
+ "S34-d": [
+  null,
+  null
+ ],
+ "S35-d": [
+  null,
+  null,
+  null
+ ],
+ "S01-m": [
+  1,
+  null,
+  null,
+  null
+ ],
+ "S02-m": [
+  null,
+  1,
+  2
+ ],
+ "S03-m": [
+  null,
+  1,
+  null
+ ],
+ "S04-m": [
+  1,
+  null
+ ],
+ "S05-m": [
+  null,
+  null,
+  null
+ ],
+ "S06-m": [
+  null,
+  null,
+  null,
+  1
+ ],
+ "S07-m": [
+  null,
+  1
+ ],
+ "S08-m": [
+  null,
+  null,
+  null,
+  null
+ ],
+ "S09-m": [
+  null,
+  null,
+  null
+ ],
+ "S10-m": [
+  null,
+  1,
+  null
+ ],
+ "S11-m": [
+  null,
+  null
+ ],
+ "S12-m": [
+  null,
+  null
+ ],
+ "S13-m": [
+  null,
+  null,
+  null,
+  null
+ ],
+ "S14-m": [
+  1,
+  null,
+  null
+ ],
+ "S15-m": [
+  null,
+  null,
+  null
+ ],
+ "S16-m": [
+  null,
+  null,
+  null
+ ],
+ "S17-m": [
+  1,
+  null,
+  null,
+  null
+ ],
+ "S18-m": [
+  null,
+  null,
+  1
+ ],
+ "S19-m": [
+  null,
+  1
+ ],
+ "S20-m": [
+  null,
+  null,
+  1,
+  null
+ ],
+ "S21-m": [
+  1,
+  2,
+  3,
+  4,
+  null
+ ],
+ "S22-m": [
+  null,
+  null
+ ],
+ "S23-m": [
+  null,
+  1,
+  null
+ ],
+ "S24-m": [
+  null,
+  null,
+  1,
+  null,
+  null
+ ],
+ "S25-m": [
+  null,
+  null,
+  null
+ ],
+ "S26-m": [
+  null,
+  null,
+  null
+ ],
+ "S27-m": [
+  null,
+  null,
+  null
+ ],
+ "S28-m": [
+  null,
+  null,
+  null
+ ],
+ "S29-m": [
+  null,
+  null,
+  null
+ ],
+ "S30-m": [
+  1,
+  2,
+  null
+ ],
+ "S31-m": [
+  1,
+  null,
+  null
+ ],
+ "S32-m": [
+  null,
+  null,
+  null
+ ],
+ "S33-m": [
+  null,
+  null,
+  null,
+  null
+ ],
+ "S34-m": [
+  null,
+  null
+ ],
+ "S35-m": [
+  null,
+  null,
+  null
+ ]
+}

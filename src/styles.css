@@ -303,9 +303,8 @@ select[aria-invalid="true"] {
   }
 }
 
-/* Calm: the device asks for reduced motion, or the person pressed "Pause animations" (see
-   src/lib/calm.ts). The pseudo-elements are named on purpose: the orbiting light on a StarBorder
-   is a ::before, and a bare `*` does not reach it. */
+/* The device asks for reduced motion. The pseudo-elements are named on purpose:
+   the orbiting light on a StarBorder is a ::before, and a bare `*` does not reach it. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -313,12 +312,6 @@ select[aria-invalid="true"] {
     animation: none !important;
     transition: none !important;
   }
-}
-:root[data-calm="1"] *,
-:root[data-calm="1"] *::before,
-:root[data-calm="1"] *::after {
-  animation: none !important;
-  transition: none !important;
 }
 
 .court-lines {
@@ -637,10 +630,6 @@ select[aria-invalid="true"] {
     transform: none;
     opacity: 1;
   }
-}
-:root[data-calm="1"] .split-unit {
-  transform: none;
-  opacity: 1;
 }
 
 /* Expanding halo behind a live/now indicator. */

@@ -28,6 +28,7 @@ type ClassDetail = {
     capacity: number;
     enrolled_count: number;
     rrule: string;
+    duration_min: number;
     start_on: string;
     end_on: string;
     court_code: string;
@@ -124,7 +125,7 @@ export function ClassDetailModal({
               {c.assistant_name ? ` · ${t("assisted by {name}", { name: c.assistant_name })}` : ""} · {c.court_code}
             </p>
             <p className="text-muted">
-              {rruleLabel(c.rrule)} · {formatDate(c.start_on)} – {formatDate(c.end_on)}
+              {rruleLabel(c.rrule, c.duration_min)} · {formatDate(c.start_on)} – {formatDate(c.end_on)}
             </p>
           </div>
 

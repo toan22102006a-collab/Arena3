@@ -9,7 +9,6 @@ import { Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { GLBackground, Magnet, ShinyText, SplitText, SpotlightCard } from "@/components/fx";
 import { ApiClientError, apiPost, homeFor, setSession, takeSessionNotice, type SessionUser } from "@/lib/arena3/client";
 import { roleLabel } from "@/lib/arena3/labels";
-import { CalmToggle } from "@/components/calm-toggle";
 import { LangSwitch } from "@/components/lang-switch";
 import { t, tServer, tk } from "@/lib/i18n";
 
@@ -71,8 +70,10 @@ function Login() {
       toast.success(t("Welcome, {name}", { name: res.user.full_name }), { id: "login-hello" });
       navigate({ to: homeFor(res.user.role) });
     } catch (err) {
+      const msg = err instanceof Error ? tServer(err.message) : t("Could not sign you in");
+      toast.error(msg, { id: "login-error-toast" });
       setError({
-        message: err instanceof Error ? tServer(err.message) : t("Could not sign you in"),
+        message: msg,
         // Only a refused sign-in says anything about the two boxes; no signal or a busy server does not.
         credentials: err instanceof ApiClientError && (err.status === 400 || err.status === 401),
       });
@@ -116,7 +117,6 @@ function Login() {
       </div>
       <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
         <div className="absolute right-4 top-2 z-10 flex items-center gap-2 lg:top-4">
-          <CalmToggle />
           <LangSwitch />
         </div>
         <Cover src={media.hallCourts} alt="" scrim="none" className="mb-6 h-36 rounded-[var(--radius-xl)] lg:hidden">

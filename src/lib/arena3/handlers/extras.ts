@@ -30,18 +30,18 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PERIOD_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 const METHODS = ["cash", "card", "transfer"];
 
-async function openShift(sql: Sql, user: PublicUser): Promise<string | null> {
+export async function openShift(sql: Sql, user: PublicUser): Promise<string | null> {
   if (user.role !== "receptionist") return null;
   const sh = await one<{ id: string }>(
     sql,
     `select id from cashier_shifts where receptionist_id = $1 and closed_at is null`,
     [user.id],
   );
-  if (!sh) throw err.br("BR-49", "Open a till shift before taking payment.");
+  if (!sh) throw err.br("BR-44", "Open a till shift before taking payment.");
   return sh.id;
 }
 
-function pickMethod(v: unknown): string {
+export function pickMethod(v: unknown): string {
   const m = str(v) ?? "cash";
   if (!METHODS.includes(m)) throw err.validation("Pick cash, card or transfer.");
   return m;
@@ -95,7 +95,7 @@ async function readSeriesInput(sql: Sql, b: Record<string, unknown>): Promise<Se
     [courtId],
   );
   if (!court) throw err.notFound("No such court.");
-  if (court.status !== "ready") throw err.br("BR-35", "That court is not available.");
+  if (court.status !== "ready") throw err.br("BR-06", "That court is not available.");
   return { courtId, firstDate, startLocal: startLocal.padStart(5, "0"), weeks, court };
 }
 
@@ -128,7 +128,7 @@ async function planSeries(
   const first = ictDateTime(input.firstDate, input.startLocal);
   if (first < open || first.getTime() + settings.slot_minutes * 60_000 > close.getTime() + 1) {
     // Compare the wall clock, not the day: opening hours repeat every day.
-    throw err.br("BR-35", "That is outside opening hours.");
+    throw err.br("BR-06", "That is outside opening hours.");
   }
   const lines: SeriesLine[] = [];
   const attached: { line: SeriesLine; bookingId: string; occId: string }[] = [];

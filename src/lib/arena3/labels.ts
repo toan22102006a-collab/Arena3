@@ -1,4 +1,4 @@
-import { t, tk } from "@/lib/i18n";
+import { t, tk } from "./translator.ts";
 
 /**
  * Label tables are module-scope, so they hold English (marked with `tk`) and translate when a
@@ -291,8 +291,13 @@ function orderedDays(raw: string): string[] {
   return DAY_ORDER.filter((d) => seen.has(d));
 }
 
-/** FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=18 → T2, T4 · 18:00. All seven days read as one phrase. */
-export function rruleLabel(rrule: string) {
+function clock(mins: number): string {
+  const m = ((mins % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
+/** FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=18 → Mon, Wed · 18:00. With a duration, the end is on the label too. */
+export function rruleLabel(rrule: string, durationMin?: number) {
   const parts = Object.fromEntries(
     rrule.split(";").map((p) => {
       const [k, v] = p.split("=");
@@ -307,8 +312,10 @@ export function rruleLabel(rrule: string) {
           .map((d) => t(BYDAY[d]!))
           .filter(Boolean)
           .join(", ");
-  const hour = parts.BYHOUR ? `${String(parts.BYHOUR).padStart(2, "0")}:00` : "";
-  if (days && hour) return `${days} · ${hour}`;
+  const hour = parts.BYHOUR != null && parts.BYHOUR !== "" ? Number(parts.BYHOUR) : NaN;
+  const start = Number.isFinite(hour) ? clock(hour * 60) : "";
+  const range = start && durationMin && durationMin > 0 ? `${start}–${clock(hour * 60 + durationMin)}` : start;
+  if (days && range) return `${days} · ${range}`;
   if (days) return days;
   return rrule;
 }

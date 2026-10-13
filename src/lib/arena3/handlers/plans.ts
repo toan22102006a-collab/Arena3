@@ -74,7 +74,7 @@ export async function plansCreate(sql: Sql, request: Request, user: PublicUser) 
 /**
  * One plan opened up (G-05): everything the table holds about it, and how many
  * people hold it today — which is what decides whether withdrawing it from sale
- * matters to anyone (it never takes it away from them; BR-65 only stops new
+ * matters to anyone (it never takes it away from them; BR-16 only stops new
  * orders).
  */
 export async function plansGet(sql: Sql, id: string, user: PublicUser) {
@@ -168,7 +168,7 @@ export async function subscriptionsCreate(sql: Sql, request: Request, user: Publ
     is_on_sale: boolean;
   }>(sql, `select * from membership_plans where id = $1`, [planId]);
   if (!plan) throw err.notFound("No such plan.");
-  if (!plan.is_on_sale && user.role === "member") throw err.br("BR-65", "That plan is no longer on sale.");
+  if (!plan.is_on_sale && user.role === "member") throw err.br("BR-16", "That plan is no longer on sale.");
 
   const today = ictDateString();
   const duration = plan.duration_days ?? 365;
@@ -185,27 +185,14 @@ export async function subscriptionsCreate(sql: Sql, request: Request, user: Publ
     [userId, plan.sport_scope],
   );
   if (live?.status === "frozen") throw err.br("BR-14", "Your plan is frozen — unfreeze it before buying more.");
-  if (live?.status === "active") {
-    const preview =
-      live.end_on >= today ? addDays(live.end_on, duration) : addDays(today, duration);
-    return {
-      status: 201,
-      body: {
-        subscription: live,
-        preview_end: preview,
-        renewal: true,
-        message: "Pay to renew on your current contract.",
-      },
-    };
-  }
   const pending = await one<{ id: string }>(
     sql,
     `select id from subscriptions where user_id = $1 and sport_scope = $2 and status = 'pending'`,
     [userId, plan.sport_scope],
   );
-  const start = today;
-  const end = addDays(today, duration);
-  // The code is priced into the order now; the use is counted when it is paid (BR-45).
+  const start = live && live.end_on >= today ? live.end_on : today;
+  const end = addDays(start, duration);
+  // The code is priced into the order now; the use is counted when it is paid (BR-41).
   const promoCode = str(b.promo_code);
   const promo = promoCode
     ? await quotePromo(sql, {

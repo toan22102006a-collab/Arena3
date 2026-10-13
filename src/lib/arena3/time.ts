@@ -106,14 +106,22 @@ export function elapsedAtLeast(lastAt: number | undefined, now: number, everyMs:
 const ICT_OFFSET_MS = 7 * 3_600_000;
 
 /**
+ * Whole court hours a class is allowed to run. Anything else ends off the hour
+ * and the hold swallows the next slot (a 90-minute 18:00 class kept the court
+ * until 20:00, so the 19:00 class on that coach was never created).
+ * `null` means the caller should refuse the value. A missing value is one hour.
+ */
+export function classMinutes(raw: number | null | undefined): number | null {
+  const n = raw == null ? 60 : raw;
+  return n === 60 || n === 120 || n === 180 ? n : null;
+}
+
+/**
  * The court time a class really uses: whole booking slots, never part of one.
  *
- * A 90-minute class at 17:00 ends at 18:30. Left as it was, that took the 17:00
- * slot, half of the 18:00 slot, and left 18:30–19:00 too short for anyone to
- * book — a "bite" out of the next slot that looked on the grid like a clash
- * with whatever came after. The session keeps its declared start and end (that
- * is what the coach teaches and the member reads); the court is held for the
- * slots it touches. Slots are counted from midnight in the centre's time zone.
+ * The session keeps its declared start and end. The court is held for every
+ * slot that window touches, counted from midnight in the centre's time zone,
+ * so a stray partial hour cannot leave a gap too short to book.
  */
 export function slotSpan(start: Date, end: Date, slotMinutes: number): { start: Date; end: Date } {
   const slotMs = Math.max(1, Math.floor(slotMinutes)) * 60_000;

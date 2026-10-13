@@ -1,7 +1,7 @@
 /**
- * Attendance rate and the at-risk list (SRS v1.4.1 FR-TRN-09, BR-58, BR-73).
+ * Attendance rate and the at-risk list (SRS v1.4.1 FR-TRN-09, BR-36, BR-32).
  *
- * Attendance carries no penalty and moves no balance (BR-73). Its use is here:
+ * Attendance carries no penalty and moves no balance (BR-32). Its use is here:
  * telling the centre who is drifting away while there is still time to call,
  * and which classes and coaches keep people coming.
  *
@@ -201,7 +201,7 @@ export type AtRiskItem = {
 /**
  * Members worth a call before they leave (FR-TRN-09). Three signals, each given as
  * a reason the caller can read out:
- *  (a) absent three sessions running with no excuse (BR-58),
+ *  (a) absent three sessions running with no excuse (BR-36),
  *  (b) a live plan but no visit and no class for `at_risk_idle_days`,
  *  (c) a plan ending within a week while attending under half their sessions.
  * A row is "contacted" once someone logged a call for that reason in the last two

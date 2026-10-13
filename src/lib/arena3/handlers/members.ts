@@ -40,7 +40,7 @@ export async function membersCreate(sql: Sql, request: Request, user: PublicUser
   const pii = body.pii_consent === true;
   if (!full_name) throw err.validation("Full name is required.");
   if (!isValidVnPhone(phone)) throw err.validation("That phone number is not valid.");
-  if (!pii) throw err.br("BR-08", "You must accept the terms and the data-privacy notice.");
+  if (!pii) throw err.br("BR-04", "You must accept the terms and the data-privacy notice.");
   const existing = await one<Record<string, unknown>>(
     sql,
     `select id, member_code, full_name, phone, email, role, status, date_of_birth, health_notes, must_change_password
@@ -53,7 +53,7 @@ export async function membersCreate(sql: Sql, request: Request, user: PublicUser
   const settings = await getSettings(sql);
   if (dob && ageYears(dob) < settings.minor_age) {
     if (!str(body.guardian_name) || !str(body.guardian_phone)) {
-      throw err.br("BR-07", "A minor needs guardian details.");
+      throw err.br("BR-03", "A minor needs guardian details.");
     }
   }
   const tmp = `A3tmp${Math.floor(1000 + Math.random() * 9000)}a`;
@@ -194,7 +194,7 @@ export async function memberGet(sql: Sql, id: string, user: PublicUser) {
  * - A phone that already belongs to another account is refused with BR-01, the
  *   same rule registration enforces — never silently merged.
  * - A date of birth that makes the member a minor needs guardian details
- *   (BR-07), checked against the values the row will hold after the edit.
+ *   (BR-03), checked against the values the row will hold after the edit.
  * - The audit entry keeps the before and after of only what changed.
  */
 export async function membersUpdate(sql: Sql, id: string, request: Request, user: PublicUser) {
@@ -267,7 +267,7 @@ export async function membersUpdate(sql: Sql, id: string, request: Request, user
   const settings = await getSettings(sql);
   if (next.date_of_birth && ageYears(next.date_of_birth) < settings.minor_age) {
     if (!next.guardian_name || !next.guardian_phone) {
-      throw err.br("BR-07", "A minor needs guardian details.", { field: "guardian_name" });
+      throw err.br("BR-03", "A minor needs guardian details.", { field: "guardian_name" });
     }
   }
 

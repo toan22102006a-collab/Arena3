@@ -80,16 +80,16 @@ Deliberately, and recorded so nobody plans around them:
 
 | Actor | Who they are | Where they work |
 | --- | --- | --- |
-| **Member** | A customer of the centre, with or without a membership. | `/app/*`, `/account` |
-| **Receptionist** | Front-desk staff. Takes money, opens tills, reconciles transfers, answers requests. | `/desk/*` |
-| **Coach** | Teaches classes. Sees their own timetable and marks attendance. | `/coach` |
-| **Manager** | Runs the centre. Everything a receptionist can do, plus pricing, plans, settings, reports, and refund sign-off. | `/manager/*`, `/desk/*` |
+| **Member** | A customer of the centre, with or without a membership. | `/app/*`, `/account`, `/alerts`, `/pay/return` |
+| **Receptionist** | Front-desk staff. Takes money, opens tills, reconciles transfers, checks members in at the gate, answers requests. | `/desk/*`, `/account`, `/alerts` |
+| **Coach** | Teaches classes. Sees their own timetable, marks attendance, records results, writes training plans and homework, reviews students. | `/coach/*`, `/account`, `/alerts` |
+| **Manager** | Runs the centre. Everything a receptionist can do, plus pricing, plans, settings, staff accounts, the member list, class lifecycle, reports and exports, and refund sign-off. Also reaches the coach screens. | `/manager/*`, `/desk/*`, `/coach/*` |
 | **Guest / walk-in** | Not signed in, or has no account. Served entirely by a receptionist. | — |
-| **Automatic System** | Not a person: the job loop that expires holds, marks no-shows, generates sessions and sends reminders. | — |
+| **Scheduler** | Not a person: the job loop that expires holds, marks no-shows, generates sessions and sends reminders. | — |
 
 Roles are exclusive — a user has exactly one — and are enforced server-side on
 every request (`requireRole`). The UI hides what a role cannot do; that is a
-convenience, not the control. Note that staff members (Coach, Receptionist, Manager) can also purchase plans or book courts acting as a Member.
+convenience, not the control.
 
 ---
 

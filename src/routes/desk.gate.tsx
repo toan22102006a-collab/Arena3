@@ -40,7 +40,7 @@ type Entry = {
   reason: string | null;
 };
 
-/** What reception picks from when the code could not be used (BR-72). */
+/** What reception picks from when the code could not be used (BR-31). */
 const MANUAL_REASONS = [
   { value: "no_phone", label: tk("Member has no phone with them") },
   { value: "dead_battery", label: tk("Phone battery is dead") },
@@ -96,10 +96,16 @@ function Page() {
       setResult(res);
       if (res.needs_override) {
         setPending(p);
+        toast.warning(t("Needs override approval"));
       } else {
         setPending(null);
         setScan("");
         setQ("");
+        toast.success(
+          res.duplicate
+            ? t("Already checked in: {name}", { name: res.member.full_name })
+            : t("Checked in: {name}", { name: res.member.full_name }),
+        );
         todayRead.reload();
       }
     } catch (err) {

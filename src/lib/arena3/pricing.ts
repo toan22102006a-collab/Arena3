@@ -35,12 +35,12 @@ export async function lookupPrice(
   const courtRule = rules.find((r) => r.court_id === opts.courtId);
   const sportRule = rules.find((r) => r.court_id == null);
   const hit = courtRule ?? sportRule;
-  // BR-34B. No rule is not a free court, and a rule outside the bounds a
+  // BR-37. No rule is not a free court, and a rule outside the bounds a
   // price can have is not a price — 0đ or 99,999,999đ both came from a table
   // somebody edited by hand. Refuse to quote either; callers look the price up
   // before `booking_replace_hold`, so the member's current hold survives.
   if (!hit || !slotPriceOk(hit.price_vnd)) {
-    throw err.br("BR-34B", "There is no price for that slot yet — ask the desk.", {
+    throw err.br("BR-37", "There is no price for that slot yet — ask the desk.", {
       sport: opts.sport,
       day_kind: dayKind,
     });
@@ -65,7 +65,7 @@ export async function memberDiscount(
        from subscriptions s
        join membership_plans p on p.id = s.plan_id
       where s.user_id = $1 and s.status = 'active'
-        -- BR-19A: a plan bought today for next month gives nothing until then.
+        -- BR-12: a plan bought today for next month gives nothing until then.
         and s.start_on <= (now() at time zone 'Asia/Ho_Chi_Minh')::date
         and s.end_on >= (now() at time zone 'Asia/Ho_Chi_Minh')::date
         and (s.sport_scope = $2 or s.sport_scope = 'all')

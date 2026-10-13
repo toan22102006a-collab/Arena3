@@ -1,9 +1,9 @@
 /**
- * Check-in at the door (SRS v1.4.1 FR-TRN-02, FR-CRT-07, UC-12, UC-17; BR-71, BR-72, BR-73).
+ * Check-in at the door (SRS v1.4.1 FR-TRN-02, FR-CRT-07, UC-12, UC-17; BR-30, BR-31, BR-32).
  *
  * Three ways in, all of which write the same `gate` visit and nothing else —
- * a class register is the coach's call (BR-54), so walking through the gate
- * never marks anyone present at a session and never touches a balance (BR-73):
+ * a class register is the coach's call (BR-33), so walking through the gate
+ * never marks anyone present at a session and never touches a balance (BR-32):
  *
  *  1. QR (default): the member opens their code, reception scans it.   method = qr
  *  2. Manual: no phone → look the member up, pick a reason.            method = manual
@@ -11,7 +11,7 @@
  *
  * A plan that has lapsed, is frozen or does not exist is not a hard stop —
  * a member may be there for a court they booked — but if there is nothing at all
- * to let them in on, reception must say why, and the visit is flagged (BR-72).
+ * to let them in on, reception must say why, and the visit is flagged (BR-31).
  */
 import type { Sql } from "@/lib/db";
 import { ApiError, err } from "../errors";
@@ -101,12 +101,12 @@ async function memberToday(sql: Sql, memberId: string) {
     if (p.status === "frozen") warnings.push({ kind: "frozen", message: `${p.name} is frozen.` });
     else if (left < 0) warnings.push({ kind: "expired", message: `${p.name} ended ${-left} day${left === -1 ? "" : "s"} ago.` });
     else if (p.start_on && p.start_on > today) {
-      // Bought ahead: it grants nothing until its first day (BR-19A).
+      // Bought ahead: it grants nothing until its first day (BR-12).
       warnings.push({ kind: "scheduled", message: `${p.name} starts on ${p.start_on}.` });
     } else {
       usable = true;
       if (left <= 7) warnings.push({ kind: "expiring", message: `${p.name} ends in ${left} day${left === 1 ? "" : "s"}.` });
-      // Walking through the gate spends no session (BR-73), so this is a heads-up only.
+      // Walking through the gate spends no session (BR-32), so this is a heads-up only.
       if (p.session_left !== null && p.session_left <= 0) {
         warnings.push({ kind: "no_sessions", message: `${p.name} has no sessions left.` });
       }
@@ -143,7 +143,7 @@ type VisitInput = {
   flagged?: boolean;
 };
 
-/** Write the visit, or return the one already written inside the dedup window (BR-72). */
+/** Write the visit, or return the one already written inside the dedup window (BR-31). */
 async function recordVisit(sql: Sql, v: VisitInput) {
   const settings = await getSettings(sql);
   const since = new Date(Date.now() - settings.gate_dedup_minutes * 60_000).toISOString();
@@ -176,44 +176,64 @@ export async function deskScan(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["receptionist", "manager"]);
   await requireFlag(sql, "F4");
   const b = await readJson(request);
-  const t = verifyCheckinToken(b.token);
-  if (t.kind === "desk") throw err.br("BR-71", "That is the desk code — a member scans it, reception does not.");
-  const memberId =
-    t.kind === "member"
-      ? t.sub
-      : (await one<{ user_id: string | null }>(sql, `select user_id from court_bookings where id = $1`, [t.sub]))
-          ?.user_id;
-  if (!memberId) throw err.notFound("That booking has no member to check in.");
-  const member = await findMember(sql, { member_id: memberId });
-  const today = await memberToday(sql, member.id);
-  // Asking reception to decide writes nothing, so it must not spend the code:
-  // the retry with an override reason carries the same one.
-  if (!today.entitled && b.override !== true) return await overrideOrAsk(sql, b, member, today, "qr", user);
-  // Single use: the second scan of the same code is refused, not silently accepted.
-  const first = await sql.query<{ jti: string }>(
-    `insert into checkin_tokens (jti, user_id) values ($1, $2) on conflict (jti) do nothing returning jti`,
-    [t.jti, memberId],
-  );
-  if (first.length === 0) throw err.br("BR-71", "That code was already used — ask the member to refresh it.");
-  if (!today.entitled) return await overrideOrAsk(sql, b, member, today, "qr", user);
-  const visit = await recordVisit(sql, { member, method: "qr", actorId: user.id });
-  let booking: unknown = null;
-  let bookingNote: string | null = null;
-  if (t.kind === "booking") {
-    // Walking in early (or late) is still a gate visit; only the court itself waits
-    // for its own window (BR-39B). The handler refuses before it writes anything.
-    try {
-      booking = (await bookingsCheckIn(sql, t.sub, user)).body;
-    } catch (e) {
-      if (!(e instanceof ApiError)) throw e;
-      bookingNote = e.message;
-    }
+  const raw = str(b.token) || str(b.code) || str(b.q) || "";
+  if (!raw.trim()) throw err.field("token", "Please enter or scan a code.");
+
+  let t: ReturnType<typeof verifyCheckinToken> | null = null;
+  try {
+    t = verifyCheckinToken(raw);
+  } catch (e) {
+    if (b.token !== undefined || raw.includes(".")) throw e;
+    // If raw is not a valid HMAC token and wasn't sent as `token`, see if it matches a member code or phone number directly
   }
-  if (!visit.duplicate) await audit(sql, user.id, "gate_checkin", "user", member.id, null, { method: "qr" });
-  return result(member, today, visit, {
-    booking,
-    ...(bookingNote ? { warnings: [...today.warnings, { kind: "booking", message: `Court not checked in: ${bookingNote}` }] } : {}),
-  });
+
+  if (t) {
+    if (t.kind === "desk") throw err.br("BR-30", "That is the desk code — a member scans it, reception does not.");
+    const memberId =
+      t.kind === "member"
+        ? t.sub
+        : (await one<{ user_id: string | null }>(sql, `select user_id from court_bookings where id = $1`, [t.sub]))
+            ?.user_id;
+    if (!memberId) throw err.notFound("That booking has no member to check in.");
+    const member = await findMember(sql, { member_id: memberId });
+    const today = await memberToday(sql, member.id);
+    // Asking reception to decide writes nothing, so it must not spend the code:
+    // the retry with an override reason carries the same one.
+    if (!today.entitled && b.override !== true) return await overrideOrAsk(sql, b, member, today, "qr", user);
+    // Single use: the second scan of the same code is refused, not silently accepted.
+    const first = await sql.query<{ jti: string }>(
+      `insert into checkin_tokens (jti, user_id) values ($1, $2) on conflict (jti) do nothing returning jti`,
+      [t.jti, memberId],
+    );
+    if (first.length === 0) throw err.br("BR-30", "That code was already used — ask the member to refresh it.");
+    if (!today.entitled) return await overrideOrAsk(sql, b, member, today, "qr", user);
+    const visit = await recordVisit(sql, { member, method: "qr", actorId: user.id });
+    let booking: unknown = null;
+    let bookingNote: string | null = null;
+    if (t.kind === "booking") {
+      // Walking in early (or late) is still a gate visit; only the court itself waits
+      // for its own window (BR-11). The handler refuses before it writes anything.
+      try {
+        booking = (await bookingsCheckIn(sql, t.sub, user)).body;
+      } catch (e) {
+        if (!(e instanceof ApiError)) throw e;
+        bookingNote = e.message;
+      }
+    }
+    if (!visit.duplicate) await audit(sql, user.id, "gate_checkin", "user", member.id, null, { method: "qr" });
+    return result(member, today, visit, {
+      booking,
+      ...(bookingNote ? { warnings: [...today.warnings, { kind: "booking", message: `Court not checked in: ${bookingNote}` }] } : {}),
+    });
+  }
+
+  // Fallback: scanned or typed member code, barcode, or phone number
+  const member = await findMember(sql, { q: raw });
+  const today = await memberToday(sql, member.id);
+  if (!today.entitled && b.override !== true) return await overrideOrAsk(sql, b, member, today, "manual", user, "qr_failed");
+  const visit = await recordVisit(sql, { member, method: "manual", actorId: user.id, reason: "qr_failed" });
+  if (!visit.duplicate) await audit(sql, user.id, "gate_checkin", "user", member.id, null, { method: "manual", code: raw });
+  return result(member, today, visit);
 }
 
 /** Look a member up and let them in without a phone. A reason is mandatory. */
@@ -305,9 +325,21 @@ export async function gateCheckins(sql: Sql, user: PublicUser) {
 }
 
 /** The member's own door code (UI-22). Short-lived and single use. */
-export async function meCheckinToken(_sql: Sql, user: PublicUser) {
+export async function meCheckinToken(sql: Sql, user: PublicUser) {
   requireRole(user, ["member"]);
-  return { status: 200, body: signCheckinToken("member", user.id) };
+  const m = await one<{ member_code: string | null; full_name: string }>(
+    sql,
+    `select member_code, full_name from users where id = $1`,
+    [user.id],
+  );
+  return {
+    status: 200,
+    body: {
+      ...signCheckinToken("member", user.id),
+      member_code: m?.member_code ?? null,
+      full_name: m?.full_name ?? user.full_name,
+    },
+  };
 }
 
 /** The same, for one of the member's own court bookings. */
@@ -340,10 +372,10 @@ export async function meSelfCheckin(sql: Sql, request: Request, user: PublicUser
   await requireFlag(sql, "F4");
   const settings = await getSettings(sql);
   if (!settings.self_checkin_enabled) {
-    throw err.br("BR-71", "Self check-in is not switched on — show your code to the front desk.");
+    throw err.br("BR-30", "Self check-in is not switched on — show your code to the front desk.");
   }
   const t = verifyCheckinToken((await readJson(request)).token);
-  if (t.kind !== "desk") throw err.br("BR-71", "That is not the desk code.");
+  if (t.kind !== "desk") throw err.br("BR-30", "That is not the desk code.");
   const member = await findMember(sql, { member_id: user.id });
   const today = await memberToday(sql, member.id);
   if (!today.entitled) {

@@ -35,6 +35,7 @@ function Page() {
   const loans = loansRead.data?.items ?? null;
   const [itemId, setItemId] = useState("");
   const [qty, setQty] = useState(1);
+  const [method, setMethod] = useState("cash");
   const [who, setWho] = useState<"member" | "guest">("member");
   const [phone, setPhone] = useState("");
   const [q, setQ] = useState("");
@@ -99,6 +100,7 @@ function Page() {
       const r = await apiPost<{ rent_vnd: number }>("/equipment/loans", {
         item_id: itemId,
         qty: shown,
+        method,
         ...(who === "member" ? { user_id: member?.id } : { phone }),
       });
       toast.success(t("Rented out · {amount}", { amount: money(r.rent_vnd) }));
@@ -133,7 +135,7 @@ function Page() {
     <Shell
       role="receptionist"
       title={t("Gear")}
-      subtitle={t("Rent to a member's account or to a guest by phone — stock comes down on the way out, back up on return.")}
+      subtitle={t("Rent to a member's account or to a guest by phone — the hire is charged to the till, stock comes down on the way out, back up on return.")}
     >
       {equipmentRead.error ? (
         <div className="mb-4">
@@ -150,7 +152,7 @@ function Page() {
         </div>
       ) : (
         <Reveal from="down">
-          <Card className="mb-4 grid gap-3 md:grid-cols-[1.2fr_1.6fr_auto_auto]">
+          <Card className="mb-4 grid gap-3 md:grid-cols-[1.2fr_1.6fr_auto_auto_auto]">
             <Field label={t("Item")}>
               <Select
                 value={itemId}
@@ -290,6 +292,13 @@ function Page() {
                   +
                 </Button>
               </div>
+            </Field>
+            <Field label={t("Paid by")}>
+              <Select value={method} onChange={(e) => setMethod(e.target.value)}>
+                <option value="cash">{t("Cash")}</option>
+                <option value="card">{t("Card")}</option>
+                <option value="transfer">{t("Bank transfer")}</option>
+              </Select>
             </Field>
             <div className="flex items-end">
               <Button className="w-full" disabled={!canRent} onClick={() => void rent()}>
