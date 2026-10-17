@@ -25,7 +25,6 @@ import {
   normalizeDone,
   validateMetrics,
 } from "../rules";
-import { normalizePhone } from "../phone";
 import { requireRole, type PublicUser } from "../session";
 import { addDays, ictDateString, ictDateTime } from "../time";
 import { one } from "../tx";
@@ -754,6 +753,9 @@ export async function trainingCreate(sql: Sql, request: Request, user: PublicUse
     );
     if (!s || s.class_id !== classId) throw err.field("session_id", "That session is not in this class.");
     if (s.status === "cancelled") throw err.conflictState("That session was cancelled.");
+    if (await one(sql, `select 1 as ok from session_results where session_id = $1 limit 1`, [uuidField(sessionId, "session_id")])) {
+      throw err.br("BR-48", "That session already has results - a plan can no longer be added.");
+    }
   }
   const title = (str(b.title) ?? "").trim();
   if (title.length > 120) throw err.field("title", "Keep the title under 120 characters.");

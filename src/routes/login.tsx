@@ -3,7 +3,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { ArenaMark } from "@/components/mark";
-import { Cover, HeroVideo, MediaCaption, media } from "@/components/media";
+import { Cover, HeroVideo, MediaCaption } from "@/components/media";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { GLBackground, Magnet, ShinyText, SplitText, SpotlightCard } from "@/components/fx";
@@ -36,7 +36,7 @@ const DEMOS: { role: SessionUser["role"]; phone: string; name: string; note: str
   { role: "coach", phone: "0901110011", name: "Coach Khoa", note: tk("Badminton classes") },
   { role: "member", phone: "0901230101", name: "Nam", note: tk("All-access plan · court booked today") },
   { role: "member", phone: "0901230102", name: "Linh", note: tk("Plan expires in ~4 days") },
-  { role: "member", phone: "0901230106", name: "Ha", note: tk("Expired — needs a renewal") },
+  { role: "member", phone: "0901230106", name: "Ha", note: tk("Expired: needs a renewal") },
 ];
 
 function Login() {
@@ -85,12 +85,12 @@ function Login() {
   return (
     <main id="main-content" tabIndex={-1} className="min-h-dvh lg:grid lg:grid-cols-2">
       <div className="grain relative hidden min-h-dvh overflow-hidden lg:block">
-        <HeroVideo src={media.receptionVideo} poster={media.reception} />
+        <HeroVideo slot="auth.login.video" posterSlot="auth.login.image" />
         <div className="hero-scrim absolute inset-0" />
         <GLBackground
           variant="threads"
           className="opacity-55 mix-blend-screen"
-          color="#dbe5ff"
+          color="#e6eed9"
           amplitude={1.1}
           speed={0.5}
           opacity={0.3}
@@ -119,7 +119,7 @@ function Login() {
         <div className="absolute right-4 top-2 z-10 flex items-center gap-2 lg:top-4">
           <LangSwitch />
         </div>
-        <Cover src={media.hallCourts} alt="" scrim="none" className="mb-6 h-36 rounded-[var(--radius-xl)] lg:hidden">
+        <Cover slot="auth.login.image" alt="" scrim="none" className="mb-6 h-36 rounded-[var(--radius-xl)] lg:hidden">
           <MediaCaption>
             <span className="font-display text-2xl">Arena3</span>
           </MediaCaption>
@@ -131,7 +131,7 @@ function Login() {
         <h1 className="font-display text-4xl">{t("Sign in")}</h1>
         <p className="mt-1 text-sm text-muted">
           {DEMO_LOGINS_ON
-            ? t("Sign in with your phone or email — or tap a demo account below.")
+            ? t("Sign in with your phone or email, or tap a demo account below.")
             : t("Sign in with your phone number or email.")}
         </p>
         {/* The live region is always there, so the line is read out when it appears. */}
@@ -218,7 +218,7 @@ function Login() {
               }}
               className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-3 py-2 text-left transition-[border-color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_10px_24px_-18px_rgba(27,31,29,0.6)] active:scale-95"
             >
-              <span className="text-2xs font-semibold text-accent">{roleLabel(d.role)}</span>
+              <span className="text-2xs font-semibold text-accent-text">{roleLabel(d.role)}</span>
               <span className="ml-2 text-sm font-medium">{d.name}</span>
             </button>
             </StaggerItem>

@@ -143,7 +143,7 @@ convenience, not the control.
 | FR-B05 | A slot outside `open_time`–`close_time` cannot be booked. | **BR-35** |
 | FR-B06 | A member may book at most `book_ahead_days` (default 7) days ahead. | **BR-32** |
 | FR-B07 | A member may hold at most `max_slots_per_day` (default 2) slots for any one day. | **BR-32** |
-| FR-B08 | A member owing more than `debt_limit_vnd` cannot book until they settle. | **BR-44** |
+| FR-B08 | *(Removed in v2.4 — no debt in the system; see BR-19.)* | — |
 | FR-B09 | A court not in `ready` status cannot be booked. | **BR-35** |
 | FR-B10 | An unpaid hold is released automatically when its clock runs out, and the slot returns to sale. | `expireHolds` job |
 | FR-B11 | Paying converts the hold to a confirmed booking, posts a payment and issues a receipt — atomically. Either all of it happens or none of it does. | `POST /v1/bookings/:id/confirm` |
@@ -313,14 +313,56 @@ The rule behind this section: *a bank transfer is a promise, not a payment.*
 | --- | --- | --- |
 | FR-G01 | A manager creates and edits membership plans and can withdraw one from sale. | `POST/PATCH /v1/plans` |
 | FR-G02 | A manager sets price rules per sport, court class, day type and hour band. | `PUT /v1/price-rules` |
-| FR-G03 | A manager edits centre settings: opening hours, slot and hold length, cancellation windows, debt and refund limits, VAT and rounding. | `PATCH /v1/settings` |
+| FR-G03 | A manager edits centre settings: opening hours, slot and hold length, cancellation windows, refund limits, VAT and rounding. | `PATCH /v1/settings` |
 | FR-G04 | A manager changes a court's status — ready, maintenance, closed. A court out of service cannot be booked. | `PATCH /v1/courts/:id` |
 | FR-G05 | A manager reads revenue for any period, broken down by source (court, plan, refunds) and by till shift, filterable by payment method (cash, transfer, card, gateway, quota; `from` ≤ `to`), **with the change against the preceding period of equal length shown in green when it is good news and red when it is not.** The response carries `prev`. | `GET /v1/reports/revenue` |
 | FR-G06 | The direction of a change is not assumed to be good: revenue up is green, refunds up is red. | `delta(cur, prev, upIsGood)` |
 | FR-G07 | A manager reads court occupancy for a period. | `GET /v1/reports/occupancy` |
+<<<<<<< HEAD
 | FR-G08 | A manager reads the audit log. | `GET /v1/audit` |
 | FR-G09 | A manager creates classes, assigns coaches and publishes timetables. | `POST /v1/classes`, `:id/publish` |
 | FR-G10 | A manager toggles feature flags (F4, F5, F6, SMS) without a deploy. | `PATCH /v1/flags` |
+=======
+| FR-G08 | A manager reads the audit log, filtered by actor, action, entity and date range. The default view is short with "Show more"; hiding a row is a UI choice and nothing deletes audit rows. | `GET /v1/audit` |
+| FR-G09 | A manager creates classes (coach and court chosen from real data), assigns coaches and publishes timetables. | `POST /v1/classes`, `:id/publish` |
+| FR-G10 | A manager toggles feature flags F4 (training), F5 and F6 without a deploy. | `PATCH /v1/flags` |
+| FR-G11 | A manager opens a class: sessions, court, coach, enrolment, roster and waitlist. | `GET /v1/classes/:id`, `GET /v1/classes/:id/roster` |
+| FR-G12 | A manager cancels a single session with a reason. Each enrolled member on a per-session plan gets one session back, once; a second cancel is refused (`409`). Members are notified and the action is audited. | `POST /v1/sessions/:id/cancel`, **BR-26** |
+| FR-G13 | A manager moves a session to another time on the same court with the same coach. A clash is refused (`409 CONFLICT_SLOT`). A move less than 12 hours before the old time needs a reason (`422`). The original time is kept. | `POST /v1/sessions/:id/reschedule`, **BR-21**, **BR-28** |
+| FR-G14 | A manager puts another coach on a class from now on. The coach must teach that sport and be free at every upcoming time. | `POST /v1/classes/:id/coach`, **BR-23**, **BR-21**, **BR-27** |
+| FR-G15 | A manager edits a class — capacity, open/closed status — or cancels it. Capacity cannot go below the number already enrolled. Cancelling refunds one session per enrolled member once, cancels upcoming sessions and notifies members and the waitlist. | `PATCH /v1/classes/:id`, **BR-22**, **BR-67**, **BR-26** |
+| FR-G16 | A manager issues staff accounts (receptionist or coach), locks and unlocks them, changes role between those two, resets a password (temporary, change forced at next sign-in) and revokes sessions. There is no public staff sign-up, no admin role, and a manager cannot lock or demote themselves. Every action is audited with who and when. | `GET/POST /v1/staff`, `PATCH /v1/staff/:id`, `POST /v1/staff/:id/reset-password`, `POST /v1/staff/:id/revoke-sessions` |
+| FR-G17 | A manager approves or rejects pending refunds from a queue on the manager side (not only from the desk). | `approve-refund`, `reject-refund` |
+| FR-G18 | A manager sees every member with filters, paging, plan and class count, and opens one. | `GET /v1/directory/members`, `/manager/members` |
+| FR-G19 | A manager opens a plan to see price, duration, court hours or sessions, discount, sport scope, whether it is on sale, and how many members hold it. A plan cannot be hard-deleted; "Stop selling" withdraws it and members who hold it keep using it. | `GET /v1/plans/:id`, `PATCH /v1/plans/:id`, **BR-65** |
+| FR-G20 | A manager reads a **capacity report** for up to 93 days: occupancy by court and by hour as a heatmap, peak against off-peak (from `price_rules.is_peak`), with court revenue kept apart from class fees. | `GET /v1/reports/capacity` (**FR-CRT-09**) |
+| FR-G21 | A manager reads a **members and enrolment report**: new and renewing members (a renewal is a new plan within 30 days of the previous one ending), enrolment per class, and attendance %. Attendance % is hidden when F4 is off or nothing has been marked, rather than printed as 0%. | `GET /v1/reports/members` (**FR-PAY-06**), **BR-62** |
+| FR-G22 | A manager exports the revenue, capacity and members reports as Excel (`xlsx`) or PDF. Money cells in the spreadsheet are numbers, not text. An unknown `format` is `400` with `field: "format"`; an unknown report is `404`; the PDF uses an embedded font so Vietnamese diacritics render. Receptionists and coaches are refused. | `GET /v1/reports/{revenue,capacity,members}/export?format=xlsx\|pdf` (manager only) |
+| FR-G23 | Settings reject bad input rather than failing: each key is validated, a wrong field is `400 VALIDATION` with its `field`, the form marks that field, and closing time must be after opening time. `timezone` and `currency` are fixed by design (A1). | `PATCH /v1/settings` |
+
+> **Known limit.** Class fees and equipment rental create no payment row, so
+> they are zero in the revenue report; the screen says so rather than inventing
+> a number. Splitting them out needs a product decision to record that income.
+
+### 6.3 Training (coach and manager, feature flag F4)
+
+When F4 is off these endpoints answer `403 FORBIDDEN` with `br: "BR-62"`. A coach
+reaches only classes they lead or assist (**BR-59**); a manager reaches all. A
+student's health notes leave this module only inside that scope (**BR-55**).
+Nothing here charges money or changes a membership balance (**BR-56**).
+
+| ID | Requirement | Enforced by |
+| --- | --- | --- |
+| FR-TRN-01 | Attendance results are Present, Late, Absent, Excused. Late is the coach's call, not derived from the gate (**BR-54**, **BR-57**). Saving a register checks each student's absence streak. | `PUT /v1/sessions/:id/attendance` |
+| FR-TRN-02 | **Absence streak.** Three consecutive Absent marks in a class raise an `absent_streak` alert to the head coach, the assistant coach and every active manager. An Excused mark breaks the streak. The system never drops the enrolment by itself. | `checkAbsentStreaks`, **BR-58**, `ABSENT_STREAK_LIMIT = 3` |
+| FR-TRN-03 | A coach opens a student's profile: goal, level per sport, attendance totals (present, late, absent, excused), session results, reviews, staff notes and homework, with the student's details limited to what the coach's scope allows. | `GET /v1/students/:id/profile`, **BR-55**, **BR-59** |
+| FR-TRN-04 | **Session results.** For each student in the session a coach records a plan-completion % (0–100) and optional metrics — `smash_count` (≤ 1000), `freethrow_pct` (≤ 100), `serve_pct` (≤ 100) — and a note. Out-of-range values are `400` with the field. | `GET/PUT /v1/sessions/:id/results` |
+| FR-TRN-05 | **Training plans.** A plan is up to 12 blocks (title ≤ 120 characters, 1–180 minutes, phase warm-up / technique / fitness / match / cool-down), attached to a class, a session or one student. A plan can be published or hidden. "Suggest" drafts one from sport, level and focus. A coach can copy last week's plans into the current week; the copies are **drafts** the coach must publish. | `GET/POST/PATCH /v1/training-plans`, `POST /v1/training-plans/suggest`, `POST /v1/classes/:id/plans/duplicate-week` |
+| FR-TRN-06 | **Level and reviews.** A coach sets a student's level per sport (beginner, intermediate, advanced) and writes reviews for a 2- or 4-week period with technique, fitness and attitude scored 1–5. A review is append-only — it cannot be edited or deleted — and notifies the student. | `PUT /v1/students/:id/level`, `POST /v1/students/:id/reviews` (`progress_reviews` append-only trigger) |
+| FR-TRN-07 | **Homework.** A coach assigns homework to a class or to one student (not both), with a checklist of at most 20 items of at most 120 characters and an optional due date. Recipients are notified. | `GET/POST /v1/homework`, `homework_recipients` |
+| FR-TRN-08 | **Staff notes.** A coach records a note about a student visible to staff only. | `POST /v1/students/:id/notes`, `coach_notes` |
+| FR-TRN-09 | Only a manager can correct a closed register, and must give a reason; the correction is audited. A coach asking gets `422`. | `PUT /v1/sessions/:id/attendance`, **BR-53** |
+>>>>>>> upstream/main
 
 ---
 
@@ -461,7 +503,7 @@ message }`, so any refusal in the UI can be traced to the line that made it.
 | BR-35 | Opening hours; court must be ready. |
 | BR-38 | Equipment stock. |
 | BR-39 | Occupancy integrity. |
-| BR-44 | Debt limit blocks new bookings. |
+| BR-44 | Money may be taken at the desk only within the receptionist's open cashier shift. |
 | BR-49 | An open till shift is required to take money. |
 | BR-65 | A withdrawn plan cannot be ordered. |
 | BR-66 | No booking in the past; walk-in needs 20 minutes left. |
@@ -575,3 +617,10 @@ Unit-level rules are covered by `src/lib/arena3/arena3.test.ts` via `npm test`.
 - Product decisions still open: mid-term plan upgrade, member-initiated plan
   cancellation with refund rule, assessment tests and teaching documents,
   and the outbound channel for email.
+
+## Revision history
+
+| Version | Date | Description |
+| --- | --- | --- |
+| v2.4 | 2026-10-14 | Removed day pass (UC-23) and residual debt wording; corrected BR-44 to the open-shift rule. |
+

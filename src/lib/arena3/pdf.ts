@@ -183,7 +183,7 @@ class Cursor {
 function drawHead(c: Cursor, doc: InvoiceDoc, wide: boolean) {
   c.line(doc.seller.legal_name, { size: wide ? 12 : 10, bold: true });
   if (doc.seller.address) c.line(doc.seller.address, { size: 7.5, grey: true });
-  c.line(`MST: ${doc.seller.tax_code ?? "—"}`, { size: 7.5, grey: true });
+  c.line(`MST: ${doc.seller.tax_code ?? "-"}`, { size: 7.5, grey: true });
   c.gap(8);
 
   c.line("HÓA ĐƠN BÁN HÀNG", { size: wide ? 14 : 11, bold: true, align: "centre" });
@@ -208,7 +208,7 @@ function drawBuyer(c: Cursor, doc: InvoiceDoc) {
   c.line(`Họ tên người mua: ${doc.buyer.name}`, { size: 8.5 });
   if (doc.buyer.phone) c.line(`Điện thoại: ${doc.buyer.phone}`, { size: 8 });
   if (doc.buyer.address) c.line(`Địa chỉ: ${doc.buyer.address}`, { size: 8 });
-  c.line(`MST người mua: ${doc.buyer.tax_code ?? "—"}`, { size: 8 });
+  c.line(`MST người mua: ${doc.buyer.tax_code ?? "-"}`, { size: 8 });
   c.line(`Hình thức thanh toán: ${doc.method_label}    Chứng từ: ${doc.pay_code}`, { size: 8 });
   c.gap(6);
 }
@@ -253,7 +253,7 @@ function drawLines(c: Cursor, doc: InvoiceDoc, wide: boolean) {
   doc.lines.forEach((l, i) => {
     c.text(String(i + 1), { size: 7.5, x: col.no });
     c.text(c.fit(l.description, descWidth, 7.5), { size: 7.5, x: col.desc });
-    c.text(l.unit ?? "—", { size: 7.5, x: col.unit });
+    c.text(l.unit ?? "-", { size: 7.5, x: col.unit });
     c.text(String(l.qty), { size: 7.5, x: col.qty });
     if (wide) c.text(money(l.unit_vnd), { size: 7.5, xRight: col.priceRight });
     c.text(money(l.amount_vnd), { size: 7.5, xRight: col.amountRight });

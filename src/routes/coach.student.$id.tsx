@@ -246,7 +246,7 @@ function Page() {
                     {(["technique", "fitness", "attitude"] as const).map((k) => (
                       <Field
                         key={k}
-                        label={k === "technique" ? t("Technique (1–5)") : k === "fitness" ? t("Fitness (1–5)") : t("Attitude (1–5)")}
+                        label={k === "technique" ? t("Technique (1-5)") : k === "fitness" ? t("Fitness (1-5)") : t("Attitude (1-5)")}
                       >
                         <Select value={rev[k]} onChange={(e) => setRev({ ...rev, [k]: e.target.value })}>
                           {[1, 2, 3, 4, 5].map((n) => (

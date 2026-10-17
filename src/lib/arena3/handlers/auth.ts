@@ -1,7 +1,7 @@
 import type { Sql } from "@/lib/db";
 import { hashOtp, hashPassword, randomOtp, verifyPassword } from "../crypto";
 import { err } from "../errors";
-import { ageYears, audit, getSettings, readJson, str } from "../helpers";
+import { ageYears, audit, classSubscription, getSettings, pageOf, readJson, str } from "../helpers";
 import { isValidVnPhone, normalizePhone, passwordOk, unaccentVi } from "../phone";
 import { limit, RULES } from "../ratelimit";
 import {
@@ -10,7 +10,8 @@ import {
   toPublic,
   type PublicUser,
 } from "../session";
-import { one } from "../tx";
+import { KeepWrites, one } from "../tx";
+import { pageParams } from "../validate";
 
 /**
  * Whether the OTP may be handed straight back to whoever asked for it.
@@ -72,7 +73,7 @@ export async function register(sql: Sql, request: Request) {
   const phone = normalizePhone(str(body.phone) ?? "");
   const password = str(body.password);
   const dob = str(body.dob) ?? str(body.date_of_birth);
-  const email = str(body.email);
+  const email = str(body.email)?.trim().toLowerCase() || null;
   const pii = body.pii_consent === true;
   // `field` names the input at fault, so the form can mark it and not only say what went wrong.
   if (!full_name) throw err.validation("Full name is required.", { field: "full_name" });
@@ -81,18 +82,22 @@ export async function register(sql: Sql, request: Request) {
     throw err.br("BR-02", "Password needs at least 8 characters, with letters and numbers.", { field: "password" });
   }
   if (!pii) throw err.br("BR-04", "You must accept the terms and the data-privacy notice.");
-  const settings = await getSettings(sql);
   if (dob) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dob) || Number.isNaN(Date.parse(`${dob}T00:00:00+07:00`))) {
+      throw err.validation("Use a date like 2010-05-31.", { field: "dob" });
+    }
+    const settings = await getSettings(sql);
     const age = ageYears(dob);
+    if (age < 0 || age > 120) throw err.validation("That date of birth is not possible.", { field: "dob" });
     if (age < settings.minor_age) {
       const gn = str(body.guardian_name);
       const gp = str(body.guardian_phone);
       if (!gn || !gp) throw err.br("BR-03", "A minor needs guardian details.", { field: "guardian_name" });
     }
   }
-  const exists = await one(sql, `select id from users where phone = $1 or email = $2`, [
+  const exists = await one(sql, `select id from users where phone = $1 or (email is not null and lower(email) = lower($2))`, [
     phone,
-    email ?? null,
+    email,
   ]);
   if (exists) throw err.br("BR-01", "That phone or email already has an account.");
   const otp = randomOtp();
@@ -160,7 +165,7 @@ export async function verifyOtp(sql: Sql, request: Request) {
   if (new Date(ch.expires_at) < new Date()) throw err.validation("That OTP has expired.", { field: "otp" });
   if (ch.otp_hash !== hashOtp(otp)) {
     await sql.query(`update otp_challenges set attempts = attempts + 1 where id = $1`, [ch.id]);
-    throw err.validation("That OTP is not correct.", { field: "otp" });
+    throw new KeepWrites(err.validation("That OTP is not correct.", { field: "otp" }));
   }
   if (purpose === "reset") {
     const newPw = str(body.password);
@@ -169,6 +174,8 @@ export async function verifyOtp(sql: Sql, request: Request) {
       hashPassword(newPw),
       phone,
     ]);
+    const u = await one<{ id: string }>(sql, `select id from users where phone = $1`, [phone]);
+    if (u) await sql.query(`update sessions_auth set revoked_at = now() where user_id = $1 and revoked_at is null`, [u.id]);
     await sql.query(`delete from otp_challenges where id = $1`, [ch.id]);
     return { status: 200, body: { ok: true } };
   }
@@ -207,7 +214,7 @@ export async function login(sql: Sql, request: Request) {
   const loginId = str(body.login) ?? str(body.phone) ?? str(body.email);
   const password = str(body.password);
   if (!loginId || !password) throw err.validation("Enter your login and password.");
-  const ident = loginId.includes("@") ? loginId : normalizePhone(loginId);
+  const ident = loginId.includes("@") ? loginId.trim().toLowerCase() : normalizePhone(loginId);
   const user = await findUserByLogin(sql, ident);
   if (!user) throw err.unauth("Wrong login or password.");
   if (user.status !== "active") throw err.unauth("This account is not active.");
@@ -226,10 +233,10 @@ export async function login(sql: Sql, request: Request) {
         `update users set failed_logins = $1, locked_until = now() + interval '15 minutes' where id = $2`,
         [fails, user.id],
       );
-      throw err.rateLimited("5 wrong passwords — locked for 15 minutes.");
+      throw new KeepWrites(err.rateLimited("5 wrong passwords — locked for 15 minutes."));
     }
     await sql.query(`update users set failed_logins = $1 where id = $2`, [fails, user.id]);
-    throw err.unauth("Wrong login or password.");
+    throw new KeepWrites(err.unauth("Wrong login or password."));
   }
   await sql.query(`update users set failed_logins = 0, locked_until = null where id = $1`, [user.id]);
   const session = await issueSession(sql, toPublic(user));
@@ -325,10 +332,20 @@ export async function meGet(sql: Sql, user: PublicUser) {
       [user.id],
     ),
     sql.query(
-      `select e.id, e.status, e.waitlist_pos, e.class_id, cl.sport, cl.level, cl.rrule, c.court_code
+      // `leave_until` is the last moment leaving is allowed (BR-24: cancel_class_hours before the
+      // next session), worked out here with the same rule enrollmentDelete applies.
+      `select e.id, e.status, e.waitlist_pos, e.class_id, cl.sport, cl.level, cl.rrule, c.court_code,
+              nx.start_at as next_session_at,
+              nx.start_at - make_interval(hours => st.cancel_class_hours) as leave_until
          from enrollments e
          join classes cl on cl.id = e.class_id
          join courts c on c.id = cl.court_id
+         cross join (select cancel_class_hours from center_settings where id = 1) st
+         left join lateral (
+           select s.start_at from sessions s
+            where s.class_id = e.class_id and s.status = 'scheduled' and s.start_at > now()
+            order by s.start_at limit 1
+         ) nx on true
         where e.user_id = $1 and e.status in ('confirmed','waitlisted')`,
       [user.id],
     ),
@@ -342,6 +359,19 @@ export async function meGet(sql: Sql, user: PublicUser) {
     ),
     sql.query<{ key: string; enabled: boolean }>(`select key, enabled from feature_flags`),
   ]);
+  // What enrolling in each sport would take (BR-19, BR-20), from the plan enrolment itself picks
+  // (classSubscription), so a class card can say so before the tap instead of after.
+  const classAccess =
+    user.role === "member"
+      ? Object.fromEntries(
+          await Promise.all(
+            (["badminton", "basketball", "volleyball"] as const).map(async (sport) => {
+              const sub = await classSubscription(sql, user.id, sport);
+              return [sport, sub ? { covered: true, session_left: sub.session_left } : { covered: false, session_left: null }];
+            }),
+          ),
+        )
+      : undefined;
   return {
     status: 200,
     body: {
@@ -350,6 +380,7 @@ export async function meGet(sql: Sql, user: PublicUser) {
       inbox,
       enrollments,
       offers,
+      class_access: classAccess,
       flags: Object.fromEntries(flags.map((f) => [f.key, f.enabled])),
       today: { bookings: today, classes: classesToday },
     },
@@ -360,19 +391,33 @@ export async function meGet(sql: Sql, user: PublicUser) {
  * Mark notifications read. One id, or every unread one when none is named.
  * Scoped to the caller: someone else's id simply matches nothing.
  */
-/** The member's in-app notifications and how many are unread, for the header bell. */
-export async function meNotifications(sql: Sql, user: PublicUser) {
-  const items = await sql.query(
-    `select id, template, payload, sent_at, read_at from inbox
-      where user_id = $1 order by sent_at desc limit 100`,
-    [user.id],
+/**
+ * The inbox a page at a time, newest first. Without `?limit` the caller gets the newest 100 as
+ * before; `?unread=1` keeps only what is still unread. `unread` always counts the whole inbox,
+ * so the bell can ask for `?limit=1` and still be right.
+ */
+export async function meNotifications(sql: Sql, request: Request, user: PublicUser) {
+  const { limit, offset } = pageParams(request, { def: 100, max: 100 });
+  const onlyUnread = new URL(request.url).searchParams.get("unread") === "1";
+  const rows = await sql.query<{ total: number } & Record<string, unknown>>(
+    `select id, template, payload, sent_at, read_at, count(*) over ()::int as total from inbox
+      where user_id = $1 and (not $2::bool or read_at is null)
+      order by sent_at desc limit $3 offset $4`,
+    [user.id, onlyUnread, limit, offset],
   );
   const unread = await one<{ n: number }>(
     sql,
     `select count(*)::int as n from inbox where user_id = $1 and read_at is null`,
     [user.id],
   );
-  return { status: 200, body: { items, unread: unread?.n ?? 0 } };
+  const page = await pageOf(rows, { limit, offset }, async () =>
+    ((await one<{ n: number }>(
+      sql,
+      `select count(*)::int as n from inbox where user_id = $1 and (not $2::bool or read_at is null)`,
+      [user.id, onlyUnread],
+    ))?.n ?? 0),
+  );
+  return { status: 200, body: { ...page, unread: unread?.n ?? 0 } };
 }
 
 export async function meNotificationsRead(sql: Sql, request: Request, user: PublicUser) {
@@ -438,6 +483,7 @@ export async function mePassword(sql: Sql, request: Request, user: PublicUser) {
       where id = $2`,
     [hashPassword(next), user.id],
   );
+  await sql.query(`update sessions_auth set revoked_at = now() where user_id = $1 and revoked_at is null`, [user.id]);
   await audit(sql, user.id, "change_password", "user", user.id);
   return { status: 200, body: { ok: true } };
 }

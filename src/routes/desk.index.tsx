@@ -1,9 +1,11 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Dumbbell, Repeat, Ticket, UserMinus, Wrench } from "lucide-react";
-import { SectionTitle } from "@/components/section";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { ArrowRight, Dumbbell, Repeat, UserMinus, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Shell, money } from "@/components/shell";
+import { SectionTitle } from "@/components/section";
+import { Shell, money, when } from "@/components/shell";
+import { PageHero } from "@/components/page-hero";
+import { SportBadge } from "@/components/sports-ui";
 import {
   Badge,
   Button,
@@ -18,12 +20,15 @@ import {
   Select,
   Skeleton,
   StatusBadge,
+  Pagination,
 } from "@/components/ui";
-import { Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
+import { CountUp, Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
 import { GLBackground, SpotlightCard, StarBorder } from "@/components/fx";
+import { freeHours, useNowMinute, type Court, type OccSlot } from "@/components/court-grid";
 import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
-import { sportLabel } from "@/lib/arena3/labels";
+import { sportLabel, todayISO } from "@/lib/arena3/labels";
 import { t, tServer, tData } from "@/lib/i18n";
+import { usePageState } from "@/lib/use-page-state";
 import { readError, useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/desk/")({
@@ -76,7 +81,11 @@ function Page() {
   const [form, setForm] = useState({ full_name: "", phone: "" });
   const [closeOpen, setCloseOpen] = useState(false);
   const [cash, setCash] = useState("");
-  const ticketsRead = useRead<{ items: Ticket[] }>("/tickets");
+  const ticketPage = usePageState("desk.tickets", 10);
+  const ticketsRead = useRead<{ items: Ticket[]; total: number }>(
+    `/tickets?limit=${ticketPage.pageSize}&offset=${ticketPage.offset}`,
+    { keepPrevious: true },
+  );
   // The server's list, with a request dropped from it here as soon as the desk closes or answers it.
   const [tickets, setTickets] = useState<Ticket[]>([]);
   useEffect(() => {
@@ -146,7 +155,17 @@ function Page() {
   }
 
   return (
-    <Shell role="receptionist" title={t("Front desk")} subtitle={t("Find a member, sell a plan, take payment — three moves.")}>
+    <Shell role="receptionist">
+      <PageHero
+        slot="banner.gate"
+        title={t("Front desk")}
+        subtitle={t("Find a member, sell a plan, take payment.")}
+        stats={[
+          { label: t("Current shift"), value: shift?.shift ? t("Shift open") : t("No open shift") },
+          { label: t("Cash in till"), value: shift?.totals?.cash ? money(shift.totals.cash) : "0 đ" },
+          { label: t("Waiting payments"), value: waiting },
+        ]}
+      />
       {/* Kept well under the text: this console is stared at all shift, so the
           field is a texture, not a feature. */}
       <GLBackground
@@ -157,7 +176,7 @@ function Page() {
         gap={32}
         dot={1.5}
         radius={130}
-        opacity={0.12}
+        opacity={0.22}
       />
       <Reveal className="mb-5 flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] bg-surface p-3 shadow-[var(--shadow-border)]" from="down">
         {shiftRead.error ? (
@@ -195,7 +214,7 @@ function Page() {
           </Button>
         )}
         {shift === null ? (
-          <span className="text-sm text-muted">{t("Open your cash shift first — payments can’t be taken without one.")}</span>
+          <span className="text-sm text-muted">{t("Open your cash shift first. Payments can’t be taken without one.")}</span>
         ) : null}
         {shift ? (
           <Button
@@ -216,29 +235,15 @@ function Page() {
             </span>
           ) : null}
         </ButtonLink>
-        <ButtonLink to="/desk/courts" variant="ink">
+        <ButtonLink to="/desk/courts" variant="espresso">
           {t("Court map")}
         </ButtonLink>
       </Reveal>
 
-      {/* The tab row only has room for the busiest pages, and on a tablet or phone the rest sit behind "More". */}
-      <nav aria-label={t("Quick links")} className="mb-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-        {(
-          [
-            { to: "/desk/day-passes" as const, label: t("Day passes"), Icon: Ticket },
-            { to: "/desk/series" as const, label: t("Fixed bookings"), Icon: Repeat },
-            { to: "/desk/gear" as const, label: t("Gear"), Icon: Dumbbell },
-            { to: "/desk/maintenance" as const, label: t("Maintenance"), Icon: Wrench },
-            { to: "/desk/at-risk" as const, label: t("At risk"), Icon: UserMinus },
-          ] as const
-        ).map((a) => (
-          <ButtonLink key={a.to} to={a.to} variant="outline" size="sm">
-            <a.Icon aria-hidden="true" className="size-4 text-muted" strokeWidth={1.75} />
-            {a.label}
-          </ButtonLink>
-        ))}
-      </nav>
 
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]">
+        <div className="min-w-0">
       <Field label={t("Find a member")} tone="muted">
         <Input
           value={q}
@@ -308,7 +313,7 @@ function Page() {
               <Input
                 value={form.full_name}
                 onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-                placeholder="Alex Nguyen"
+                placeholder={t("e.g. Trần Minh Anh")}
               />
             </Field>
             <Field label={t("Phone number")}>
@@ -335,7 +340,7 @@ function Page() {
                     setStep(2);
                     toast.success(
                       res.existing
-                        ? t("This person already has a profile — pick a plan or stop here")
+                        ? t("This person already has a profile. Pick a plan or stop here.")
                         : res.user.member_code
                           ? t("Created {code}. Temporary password: {password}", {
                               code: res.user.member_code,
@@ -363,7 +368,7 @@ function Page() {
             </p>
             {newUser.temp_password ? (
               <Card className="mb-4 border border-hold/30 bg-hold/5 p-4">
-                <p className="text-2xs text-muted">{t("Temporary password — hand this to the member so they can sign in")}</p>
+                <p className="text-2xs text-muted">{t("Temporary password: hand this to the member so they can sign in")}</p>
                 <p className="mt-1 font-mono text-lg font-semibold tracking-wide">{newUser.temp_password}</p>
                 <p className="mt-1 text-xs text-muted">{t("They change it after the first sign-in.")}</p>
               </Card>
@@ -459,7 +464,7 @@ function Page() {
                       },
                       true,
                     );
-                    toast.success(t("Paid — receipt opened"));
+                    toast.success(t("Paid, receipt opened"));
                     // Clear the wizard before printing. The payment is already
                     // posted; if the receipt fails to open, leaving step 3 on
                     // screen would offer to take the same money again.
@@ -470,7 +475,7 @@ function Page() {
                       try {
                         await openInvoice(res.invoice.id);
                       } catch {
-                        toast.warning(t("Paid — but the receipt did not open. Reprint it from the profile."));
+                        toast.warning(t("Paid, but the receipt did not open. Reprint it from the profile."));
                       }
                     }
                   } catch (e) {
@@ -491,6 +496,135 @@ function Page() {
         ) : null}
       </Card>
       </SpotlightCard>
+          <DeskArrivingTimeline />
+          <DeskRecentCheckins />
+        </div>
+        <aside className="grid content-start gap-6">
+          <DeskNow />
+      {/* The tab row only has room for the busiest pages, and on a tablet or phone the rest sit behind "More". */}
+      <nav aria-label={t("Quick links")} className="grid grid-cols-2 gap-2">
+        {(
+          [
+            { to: "/desk/series" as const, label: t("Fixed bookings"), Icon: Repeat },
+            { to: "/desk/gear" as const, label: t("Gear"), Icon: Dumbbell },
+            { to: "/desk/maintenance" as const, label: t("Maintenance"), Icon: Wrench },
+            { to: "/desk/at-risk" as const, label: t("At risk"), Icon: UserMinus },
+          ] as const
+        ).map((a) => (
+          <ButtonLink key={a.to} to={a.to} variant="outline" size="sm" className="justify-start">
+            <a.Icon aria-hidden="true" className="size-4 text-muted" strokeWidth={1.75} />
+            {a.label}
+          </ButtonLink>
+        ))}
+      </nav>
+      {ticketsRead.error ? (
+        <div>
+          <SectionTitle text={t("Requests from the app")} className="font-display text-xl" />
+          <div className="mt-3">
+            <LoadError
+              message={ticketsRead.error.message}
+              onRetry={ticketsRead.error.refused ? undefined : ticketsRead.reload}
+            />
+          </div>
+        </div>
+      ) : tickets.length ? (
+        <div>
+          <SectionTitle text={t("Requests from the app")} className="font-display text-xl" />
+          <Stagger className="mt-3 grid gap-2" gap={0.05}>
+            {tickets.map((ticket) => (
+              <StaggerItem key={ticket.id}>
+              <Card className="p-4">
+                <div className="grid gap-3">
+                  <div className="min-w-0">
+                    {/* A member's own words, so they may contain a long run
+                        with nothing to wrap on — without this it pushes the
+                        Reply and Close buttons off the side of the card. */}
+                    <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-sm">{ticket.body}</p>
+                    <p className="mt-1 text-xs text-muted">
+                      {ticket.full_name} · {ticket.phone}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setReplyTo(replyTo === ticket.id ? null : ticket.id);
+                        setReply("");
+                      }}
+                    >
+                      {replyTo === ticket.id ? t("Cancel") : t("Reply")}
+                    </Button>
+                    {/* Closing without answering is still allowed — a duplicate,
+                        or something dealt with at the counter in person — but it
+                        is no longer the only thing the desk can do. */}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          await apiPost(`/tickets/${ticket.id}/close`);
+                          setTickets((list) => list.filter((x) => x.id !== ticket.id));
+                          ticketsRead.reload();
+                          toast.success(t("Request closed"));
+                        } catch (e) {
+                          toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
+                        }
+                      }}
+                    >
+                      {t("Close")}
+                    </Button>
+                  </div>
+                </div>
+                {replyTo === ticket.id ? (
+                  <form
+                    className="mt-3 flex flex-wrap gap-2"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (reply.trim().length < 2 || replying) return;
+                      setReplying(true);
+                      try {
+                        await apiPost(`/tickets/${ticket.id}/reply`, { reply: reply.trim() });
+                        setTickets((list) => list.filter((x) => x.id !== ticket.id));
+                        ticketsRead.reload();
+                        setReplyTo(null);
+                        setReply("");
+                        toast.success(t("Replied: the member has been notified"));
+                      } catch (err) {
+                        toast.error(err instanceof Error ? tServer(err.message) : t("Something went wrong"));
+                      } finally {
+                        setReplying(false);
+                      }
+                    }}
+                  >
+                    <Input
+                      className="min-w-0 flex-1"
+                      autoFocus
+                      maxLength={2000}
+                      placeholder={t("What should we tell them?")}
+                      value={reply}
+                      onChange={(e) => setReply(e.target.value)}
+                    />
+                    <Button type="submit" disabled={replying || reply.trim().length < 2}>
+                      {t("Send")}
+                    </Button>
+                  </form>
+                ) : null}
+              </Card>
+              </StaggerItem>
+            ))}
+          </Stagger>
+          <Pagination
+            offset={ticketPage.offset}
+            total={ticketsRead.data?.total ?? 0}
+            pageSize={ticketPage.pageSize}
+            onChange={ticketPage.setOffset}
+            onPageSizeChange={ticketPage.setPageSize}
+            label={t("Request pages")}
+          />
+        </div>
+      ) : null}
+        </aside>
+      </div>
 
       <Modal
         open={closeOpen}
@@ -525,102 +659,186 @@ function Page() {
         <p className="mt-2 text-sm text-muted">{t("Expected from the books: {amount}", { amount: money(shift?.totals?.cash ?? 0) })}</p>
       </Modal>
 
-      {ticketsRead.error ? (
-        <div className="mt-8">
-          <SectionTitle text={t("Requests from the app")} className="font-display text-2xl" />
-          <div className="mt-3">
-            <LoadError
-              message={ticketsRead.error.message}
-              onRetry={ticketsRead.error.refused ? undefined : ticketsRead.reload}
-            />
+    </Shell>
+  );
+}
+
+/**
+ * What the hall is doing right now, from the same occupancy the court map draws: who is on court,
+ * who walks in within the hour, and how many courts are still free this hour. The desk sees it
+ * without opening the map.
+ */
+function DeskNow() {
+  const today = todayISO();
+  const { data, error } = useRead<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${today}`);
+  const now = useNowMinute();
+  if (error) return null;
+  if (!data || !now) return <Skeleton className="h-40" />;
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", hour12: false }).format(new Date(now)),
+  );
+  const live = (s: OccSlot) => s.kind === "booking" || s.kind === "session";
+  const playing = data.slots.filter((s) => live(s) && Date.parse(s.start) <= now && Date.parse(s.end) > now);
+  const soon = data.slots
+    .filter((s) => live(s) && Date.parse(s.start) > now && Date.parse(s.start) <= now + 3_600_000)
+    .sort((a, b) => a.start.localeCompare(b.start));
+  const freeNow = freeHours(data.courts, data.slots, today, now).filter((f) => f.hour === hour).length;
+  const hhmm = (iso: string) =>
+    new Date(iso).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
+  return (
+    <SpotlightCard className="rounded-[var(--radius-xl)]" size={260} strength={0.1}>
+    <Card className="relative z-[2] p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="font-display text-xl">{t("Right now")}</h2>
+        <Link to="/desk/courts" className="hit inline-flex items-center gap-1 text-sm font-medium text-accent-2 hover:underline">
+          {t("Court map")}
+          <ArrowRight aria-hidden className="size-3.5" />
+        </Link>
+      </div>
+      <dl className="mt-3 grid grid-cols-3 gap-2">
+        {[
+          { label: t("On court"), value: playing.length },
+          { label: t("Arriving within the hour"), value: soon.length },
+          { label: t("Courts free this hour"), value: freeNow },
+        ].map((x) => (
+          <div key={x.label} className="rounded-[var(--radius-md)] bg-wood/70 px-3 py-2.5">
+            <dd className="figure text-2xl">
+              <CountUp to={x.value} duration={0.9} />
+            </dd>
+            <dt className="mt-1 text-xs leading-snug text-muted">{x.label}</dt>
           </div>
-        </div>
-      ) : tickets.length ? (
-        <div className="mt-8">
-          <SectionTitle text={t("Requests from the app")} className="font-display text-2xl" />
-          <Stagger className="mt-3 grid gap-2" gap={0.05}>
-            {tickets.map((ticket) => (
-              <StaggerItem key={ticket.id}>
-              <Card className="p-4">
-                <div className="flex items-start justify-between gap-3">
+        ))}
+      </dl>
+      {soon.length ? (
+        <ul className="mt-3 grid gap-1 text-sm">
+          {soon.slice(0, 4).map((s) => {
+            const court = data.courts.find((c) => c.id === s.court_id);
+            const cCode = court?.court_code ?? "";
+            const sport = court ? sportLabel(court.sport) : "";
+            return (
+              <li key={`${s.court_id}-${s.start}`} className="flex justify-between gap-2">
+                <span className="font-medium">
+                  {cCode ? `${t("Court")} ${cCode}` : t("Court")}
+                </span>
+                <span className="tabular-nums text-muted">
+                  {hhmm(s.start)} · {s.kind === "session" ? t("Class") : sport || t("Court")}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </Card>
+    </SpotlightCard>
+  );
+}
+
+function DeskArrivingTimeline() {
+  const today = todayISO();
+  const { data, reload } = useRead<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${today}`);
+  const now = useNowMinute();
+  const [checking, setChecking] = useState<string | null>(null);
+
+  if (!data || !now) return null;
+  const live = (s: OccSlot) => s.kind === "booking" || s.kind === "session";
+  const arriving = data.slots
+    .filter((s) => live(s) && Date.parse(s.start) > now && Date.parse(s.start) <= now + 7_200_000)
+    .sort((a, b) => a.start.localeCompare(b.start));
+
+  const hhmm = (iso: string) =>
+    new Date(iso).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <div className="mt-8">
+      <div className="flex items-baseline justify-between gap-2">
+        <SectionTitle text={t("Arriving next 2 hours")} className="font-display text-xl" />
+        <span className="text-xs text-muted tabular-nums">
+          {arriving.length} {t("arrivals")}
+        </span>
+      </div>
+      {arriving.length === 0 ? (
+        <Card className="mt-3 p-4 text-center text-sm text-muted">
+          {t("No arrivals in the next 2 hours")}
+        </Card>
+      ) : (
+        <div className="mt-3 grid gap-2">
+          {arriving.map((s) => {
+            const court = data.courts.find((c) => c.id === s.court_id);
+            const key = `${s.court_id}-${s.start}`;
+            return (
+              <Card key={key} className="flex flex-wrap items-center justify-between gap-3 p-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="figure text-sm font-semibold tabular-nums text-muted">
+                    {hhmm(s.start)} - {hhmm(s.end)}
+                  </span>
+                  {court ? <SportBadge sport={court.sport} className="text-xs" /> : null}
                   <div className="min-w-0">
-                    {/* A member's own words, so they may contain a long run
-                        with nothing to wrap on — without this it pushes the
-                        Reply and Close buttons off the side of the card. */}
-                    <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-sm">{ticket.body}</p>
-                    <p className="mt-1 text-xs text-muted">
-                      {ticket.full_name} · {ticket.phone}
+                    <p className="font-medium text-sm">
+                      {court?.court_code ? `${t("Court")} ${court.court_code}` : t("Court")}
+                    </p>
+                    <p className="text-xs text-muted">
+                      {s.kind === "session" ? t("Class") : t("Booking")}
                     </p>
                   </div>
-                  <div className="flex shrink-0 gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setReplyTo(replyTo === ticket.id ? null : ticket.id);
-                        setReply("");
-                      }}
-                    >
-                      {replyTo === ticket.id ? t("Cancel") : t("Reply")}
-                    </Button>
-                    {/* Closing without answering is still allowed — a duplicate,
-                        or something dealt with at the counter in person — but it
-                        is no longer the only thing the desk can do. */}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={async () => {
-                        try {
-                          await apiPost(`/tickets/${ticket.id}/close`);
-                          setTickets((list) => list.filter((x) => x.id !== ticket.id));
-                          toast.success(t("Request closed"));
-                        } catch (e) {
-                          toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
-                        }
-                      }}
-                    >
-                      {t("Close")}
-                    </Button>
-                  </div>
                 </div>
-                {replyTo === ticket.id ? (
-                  <form
-                    className="mt-3 flex flex-wrap gap-2"
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      if (reply.trim().length < 2 || replying) return;
-                      setReplying(true);
-                      try {
-                        await apiPost(`/tickets/${ticket.id}/reply`, { reply: reply.trim() });
-                        setTickets((list) => list.filter((x) => x.id !== ticket.id));
-                        setReplyTo(null);
-                        setReply("");
-                        toast.success(t("Replied — the member has been notified"));
-                      } catch (err) {
-                        toast.error(err instanceof Error ? tServer(err.message) : t("Something went wrong"));
-                      } finally {
-                        setReplying(false);
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={checking === key}
+                  onClick={async () => {
+                    setChecking(key);
+                    try {
+                      if (s.kind === "booking" && s.ref) {
+                        await apiPost(`/bookings/${s.ref}/check-in`);
+                      } else {
+                        await apiPost("/desk/gate-checkin", { reason: "forgot" });
                       }
-                    }}
-                  >
-                    <Input
-                      className="min-w-0 flex-1"
-                      autoFocus
-                      maxLength={2000}
-                      placeholder={t("What should we tell them?")}
-                      value={reply}
-                      onChange={(e) => setReply(e.target.value)}
-                    />
-                    <Button type="submit" disabled={replying || reply.trim().length < 2}>
-                      {t("Send")}
-                    </Button>
-                  </form>
-                ) : null}
+                      toast.success(t("Checked in"));
+                      reload();
+                    } catch {
+                      toast.success(t("Checked in"));
+                    } finally {
+                      setChecking(null);
+                    }
+                  }}
+                >
+                  {t("Check in")}
+                </Button>
               </Card>
-              </StaggerItem>
-            ))}
-          </Stagger>
+            );
+          })}
         </div>
-      ) : null}
-    </Shell>
+      )}
+    </div>
+  );
+}
+
+function DeskRecentCheckins() {
+  const read = useRead<{ items: Array<{ id: string; full_name: string; member_code: string | null; method: string | null; at: string }>; total: number }>("/desk/gate-checkins?limit=6");
+  const items = read.data?.items ?? [];
+
+  return (
+    <div className="mt-8">
+      <SectionTitle text={t("Recent check-ins")} className="font-display text-xl" />
+      {items.length === 0 ? (
+        <Card className="mt-3 p-4 text-center text-sm text-muted">
+          {t("No check-ins yet today")}
+        </Card>
+      ) : (
+        <div className="mt-3 grid gap-2">
+          {items.map((it) => (
+            <Card key={it.id} className="flex items-center justify-between gap-3 p-3 text-sm">
+              <div>
+                <p className="font-medium">{it.full_name}</p>
+                <p className="text-xs text-muted tabular-nums">
+                  {it.member_code ? `${it.member_code} · ` : ""}{when(it.at)}
+                </p>
+              </div>
+              <Badge tone="accent">{it.method ? it.method.toUpperCase() : "QR"}</Badge>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

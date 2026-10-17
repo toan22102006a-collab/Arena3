@@ -42,7 +42,7 @@ Mức ưu tiên: **Cao** = trung tâm thật thiếu là mất tiền. **Vừa**
 | G5 | **Nhắc lịch qua Zalo** | Khách Việt dùng Zalo, ít đọc email. Tin nhắn giảm no-show | SMS đã bỏ, email là stub, chỉ có thông báo trong app | Cao |
 | G6 | **Giải đấu và giao hữu** (đăng ký, bốc thăm, lịch, kết quả) | Chương trình chiếm khoảng 40% doanh thu ở trung tâm tốt | Không có | Vừa |
 | G7 | **Ghép trận / chơi mở** (open play): người lẻ tìm người chơi chung | Lấp giờ vắng, tạo cộng đồng | Không có | Vừa |
-| G8 | **Khách mời, vé ngày** (guest pass, vé lượt) | Khách mới thử trước khi mua thẻ | Có gói thử, chưa có vé lượt | Vừa |
+| G8 | **Khách mời, vé ngày** (guest pass, vé lượt) | Khách mới thử trước khi mua thẻ | Removed by scope decision (v2.4) | Vừa |
 | G9 | **Tích điểm, giới thiệu bạn bè, hạng thành viên** | Giữ khách. Hiện chỉ có mã khuyến mãi | Không có | Vừa |
 | G10 | **Bảo trì sân theo phiếu việc** (thay lưới, sơn sân, sửa đèn) | Sân hỏng mà không ai biết là mất giờ bán | Có trạng thái sân, chưa có phiếu việc | Vừa |
 | G11 | **Tính lương và hoa hồng HLV, ca nhân viên** | Trung tâm trả HLV theo buổi dạy. Dữ liệu đã có sẵn | Có điểm danh, chưa tính tiền | Vừa |

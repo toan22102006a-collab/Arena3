@@ -272,7 +272,9 @@ export async function promosValidate(sql: Sql, request: Request, user: PublicUse
     const court = await one<{ sport: string }>(sql, `select sport::text as sport from courts where id = $1`, [courtId]);
     if (!court) throw err.notFound("No such court.");
     const settings = await getSettings(sql);
-    const list = await lookupPrice(sql, { sport: court.sport, courtId, start: new Date(startAt) });
+    const start = new Date(startAt);
+    if (Number.isNaN(start.getTime())) throw err.field("start_at", "That time is not valid.");
+    const list = await lookupPrice(sql, { sport: court.sport, courtId, start });
     const disc = await memberDiscount(sql, targetUser, court.sport);
     const order = applyDiscount(list.price_vnd, disc.pct, settings.round_vnd);
     const q = await quotePromo(sql, { code, userId: targetUser, scope, sport: court.sport, orderVnd: order, planDiscountPct: disc.pct, listVnd: list.price_vnd });

@@ -38,12 +38,15 @@ export function toPublic(u: Record<string, unknown>): PublicUser {
   };
 }
 
+import { limit, RULES } from "./ratelimit";
+
 export async function findUserByLogin(sql: Sql, login: string) {
+  const clean = login.trim();
   return one<AuthUser>(
     sql,
     `select ${PUBLIC_COLS}, password_hash from users
-     where phone = $1 or email = $1 limit 1`,
-    [login],
+     where phone = $1 or (email is not null and lower(email) = lower($1)) limit 1`,
+    [clean],
   );
 }
 
@@ -75,17 +78,25 @@ export async function authFromRequest(sql: Sql, request: Request): Promise<Publi
     must_change_password: boolean;
     locked_until: string | null;
     expires_at: string;
+    revoked_at: string | null;
   }>(
     sql,
     `select u.id, u.member_code, u.full_name, u.phone, u.email, u.role, u.status,
             u.date_of_birth, u.health_notes, u.must_change_password,
-            s.expires_at, u.locked_until
+            s.expires_at, s.revoked_at, u.locked_until
        from sessions_auth s
        join users u on u.id = s.user_id
       where s.token_hash = $1`,
     [sha256(m[1]!)],
   );
   if (!row) throw err.unauth("That session is not valid.");
+  if (row.revoked_at) {
+    const url = new URL(request.url);
+    if (request.method.toUpperCase() === "POST" && /\/v1\/me\/password\/?$/.test(url.pathname)) {
+      limit(`pw:${row.id}`, RULES.passwordChange, "password changes");
+    }
+    throw err.unauth("That session is not valid.");
+  }
   if (new Date(row.expires_at) < new Date()) throw err.unauth("Your session has expired.");
   if (row.status !== "active") throw err.unauth("This account is not active.");
   if (row.locked_until && new Date(row.locked_until) > new Date()) {

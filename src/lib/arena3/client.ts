@@ -215,7 +215,9 @@ export async function api<T>(
   init: RequestInit & { idempotent?: boolean } = {},
 ): Promise<T> {
   const headers = new Headers(init.headers);
-  if (!headers.has("content-type") && init.body) headers.set("content-type", "application/json");
+  if (!headers.has("content-type") && init.body && !(init.body instanceof FormData)) {
+    headers.set("content-type", "application/json");
+  }
   const token = getToken();
   if (token) headers.set("authorization", `Bearer ${token}`);
   if (init.idempotent) headers.set("idempotency-key", newIdem());

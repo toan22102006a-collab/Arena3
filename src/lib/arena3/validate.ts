@@ -51,7 +51,6 @@ export const SETTING_RULES: Record<string, SettingRule> = {
   series_discount_pct: int(0, 50),
   loyalty_earn_vnd: int(1000, 10_000_000),
   loyalty_redeem_vnd: int(1, 100_000),
-  day_pass_vnd: int(0, 10_000_000),
   // Column limits: legal_name VARCHAR(190), tax_code VARCHAR(20), address TEXT.
   legal_name: { kind: "text", max: 190 },
   tax_code: { kind: "text", max: 20 },
@@ -86,7 +85,6 @@ const SETTING_LABEL: Record<string, string> = {
   series_discount_pct: "Fixed booking discount",
   loyalty_earn_vnd: "Spend per loyalty point",
   loyalty_redeem_vnd: "Value of a loyalty point",
-  day_pass_vnd: "Day pass price",
   legal_name: "Legal name",
   tax_code: "Tax code",
   address: "Address",
@@ -113,6 +111,26 @@ export function parseInteger(field: string, label: string, v: unknown, min: numb
     throw err.field(field, `${label} must be between ${min.toLocaleString("en-US")} and ${max.toLocaleString("en-US")}.`);
   }
   return n;
+}
+
+/**
+ * `?limit=&offset=` for a paged list. Absent values fall back to `def` rows from the top, so a
+ * caller that never asked for paging keeps the page it always got. Queries pair this with
+ * `count(*) over ()` and answer `{ items, total, limit, offset }`.
+ */
+export function pageParams(
+  request: Request,
+  opts: { def: number; max: number; prefix?: string },
+): { limit: number; offset: number } {
+  const sp = new URL(request.url).searchParams;
+  // A screen that pages two lists through one endpoint names one of them, e.g. `receipt_limit`.
+  const key = (name: string) => `${opts.prefix ?? ""}${name}`;
+  const rawLimit = sp.get(key("limit"));
+  const rawOffset = sp.get(key("offset"));
+  return {
+    limit: rawLimit === null ? opts.def : parseInteger(key("limit"), "Page size", rawLimit, 1, opts.max),
+    offset: rawOffset === null ? 0 : parseInteger(key("offset"), "Offset", rawOffset, 0, 1_000_000),
+  };
 }
 
 function parseDecimal(field: string, label: string, v: unknown, min: number, max: number): number {

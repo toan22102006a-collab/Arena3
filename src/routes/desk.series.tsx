@@ -218,7 +218,7 @@ function Page() {
     <Shell
       role={role}
       title={t("Fixed weekly bookings")}
-      subtitle={t("Same court, same hour, every week — paid up front for the whole block at a discount.")}
+      subtitle={t("Same court, same hour, every week. Paid up front for the whole block at a discount.")}
     >
       {tillOpen ? null : <TillNotice />}
       <Reveal from="down">
@@ -250,7 +250,7 @@ function Page() {
                 </Field>
                 <Field
                   label={t("Name (for a guest)")}
-                  hint={fieldErr("guest_name") ?? t("Only for a guest — a member is found by their phone number.")}
+                  hint={fieldErr("guest_name") ?? t("Only for a guest. A member is found by their phone number.")}
                   tone={fieldErr("guest_name") ? "danger" : "muted"}
                 >
                   <Input
@@ -281,7 +281,7 @@ function Page() {
                         </option>
                       ))
                     ) : (
-                      <option value="">{courtsRead.data ? t("No courts") : courtsRead.error ? "—" : t("Loading")}</option>
+                      <option value="">{courtsRead.data ? t("No courts") : courtsRead.error ? "-" : t("Loading")}</option>
                     )}
                   </Select>
                 </Field>
@@ -364,7 +364,7 @@ function Page() {
                 >
                   <span>{formatDate(l.date)}</span>
                   <span className="tabular-nums">
-                    {l.available ? money(l.price_vnd) : l.reason === "past" ? t("In the past") : t("Already taken — skipped")}
+                    {l.available ? money(l.price_vnd) : l.reason === "past" ? t("In the past") : t("Already taken: skipped")}
                   </span>
                 </li>
               ))}
@@ -521,7 +521,7 @@ function StopDialog({ series, onClose, onDone }: { series: Series | null; onClos
             checked={waive}
             onChange={(e) => setWaive(e.target.checked)}
             label={t("Waive the fee")}
-            hint={t("For cancellations that are not the customer's doing — centre closed, flood, accident.")}
+            hint={t("For cancellations that are not the customer's doing: centre closed, flood, accident.")}
           />
         </div>
       ) : null}

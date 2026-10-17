@@ -3,7 +3,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { ArenaMark } from "@/components/mark";
-import { Cover, media } from "@/components/media";
+import { Cover } from "@/components/media";
 import { Button, Card, Check, DateField, Field, Input } from "@/components/ui";
 import { AnimatePresence, motion } from "motion/react";
 import { Reveal } from "@/components/motion";
@@ -13,6 +13,29 @@ import { LangSwitch } from "@/components/lang-switch";
 import { t, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/register")({ component: Register });
+
+/**
+ * The consent sentence with its two documents linked (R-1). They open in a new tab: following a
+ * link must not throw away a half-filled form. A link inside the label does not tick the box.
+ */
+function ConsentLabel() {
+  const [before, rest] = t("I agree to the {terms} and the {policy}, under Decree 13/2023 on personal data protection.").split("{terms}");
+  const [middle, after] = (rest ?? "").split("{policy}");
+  const link = "font-medium text-accent-2 underline underline-offset-2";
+  return (
+    <span>
+      {before}
+      <a href="/terms" target="_blank" rel="noopener" className={link}>
+        {t("terms of use")}
+      </a>
+      {middle}
+      <a href="/privacy" target="_blank" rel="noopener" className={link}>
+        {t("personal data notice")}
+      </a>
+      {after}
+    </span>
+  );
+}
 
 /** Puts a styled node where a translated sentence has its single placeholder. */
 const SLOT = "";
@@ -44,8 +67,10 @@ function Register() {
     // without it there is no way to reach the person signing up.
     email: "",
     password: "",
-    dob: "1998-01-15",
-    pii_consent: true,
+    // Both start empty. A pre-filled birthday let anyone under 18 skip the guardian step by not
+    // touching it, and a pre-ticked box is not consent under Decree 13/2023: the person has to tick it.
+    dob: "",
+    pii_consent: false,
   });
   /** Opens when the date of birth makes this a minor — the server decides the age, so the form asks only then. */
   const [askGuardian, setAskGuardian] = useState(false);
@@ -85,7 +110,7 @@ function Register() {
       setSentTo(res.sent_to ?? null);
       setStep("otp");
       toast.message(
-        res.sent_to ? t("Code sent to {email}", { email: res.sent_to }) : t("Code generated — check with the front desk."),
+        res.sent_to ? t("Code sent to {email}", { email: res.sent_to }) : t("Code generated. Check with the front desk."),
       );
     } catch (err) {
       const field = err instanceof ApiClientError ? (err.body.field ?? null) : null;
@@ -118,11 +143,11 @@ function Register() {
   return (
     <main id="main-content" tabIndex={-1} className="min-h-dvh lg:grid lg:grid-cols-2">
       <div className="grain relative hidden overflow-hidden lg:block">
-        <Cover src={media.athlete} alt="" className="h-full min-h-dvh" scrim="hero">
+        <Cover slot="auth.register.image" alt="" className="h-full min-h-dvh" scrim="hero">
           <GLBackground
             variant="threads"
             className="opacity-50 mix-blend-screen"
-            color="#dbe5ff"
+            color="#e6eed9"
             amplitude={1}
             speed={0.45}
             opacity={0.28}
@@ -197,7 +222,7 @@ function Register() {
                   required
                   type="email"
                   autoComplete="email"
-                  placeholder="ban@example.com"
+                  placeholder="you@example.com"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                 />
@@ -265,7 +290,7 @@ function Register() {
                 className="text-muted"
                 checked={form.pii_consent}
                 onChange={(e) => setForm({ ...form, pii_consent: e.target.checked })}
-                label={t("I agree to the terms and to Decree 13/2023 on personal data protection.")}
+                label={<ConsentLabel />}
               />
               {error ? (
                 <p id="register-error" role="alert" className="text-sm text-danger">
@@ -275,7 +300,7 @@ function Register() {
               <Magnet radius={140} pull={0.22} wrapperClassName="w-full" className="w-full">
                 <Button
                   type="submit"
-                  disabled={busy || mismatch || tooWeak || !form.password || !form.email}
+                  disabled={busy || mismatch || tooWeak || !form.password || !form.email || !form.dob || !form.pii_consent}
                   className="w-full"
                 >
                   {busy ? t("Sending…") : t("Send OTP")}
@@ -307,7 +332,7 @@ function Register() {
               </p>
               {shown ? (
                 <p className="rounded-[var(--radius-md)] border border-hold/40 px-3 py-2 text-sm text-hold">
-                  {slot(t("Demo build — the code is {code}.", { code: SLOT }), <span className="font-medium tabular-nums">{shown}</span>)}
+                  {slot(t("Demo build: the code is {code}.", { code: SLOT }), <span className="font-medium tabular-nums">{shown}</span>)}
                 </p>
               ) : null}
               <Field label={t("6-digit OTP")}>

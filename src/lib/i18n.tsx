@@ -4,7 +4,7 @@ import { viData } from "@/lib/i18n/vi.data";
 import { VI_SERVER_EXACT, VI_SERVER_PATTERNS } from "@/lib/i18n/vi.srv";
 
 /**
- * English / Vietnamese, with English as the source text.
+ * English first, Vietnamese as the second language, with English as the source text.
  *
  * `t("Open shift")` returns the English string unchanged in English and the Vietnamese entry
  * from `src/lib/i18n/vi.*.ts` in Vietnamese; a missing entry falls back to the English so a
@@ -22,6 +22,7 @@ export type Lang = "en" | "vi";
 type Vars = Record<string, string | number>;
 
 const STORAGE_KEY = "arena3.lang";
+// English is the primary language (PRODUCT.md): it is what the server renders and what a first visit sees.
 let current: Lang = "en";
 const subscribers = new Set<() => void>();
 

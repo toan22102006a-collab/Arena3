@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Field, Input, LoadError, Modal, Select, Skeleton, StatusBadge } from "@/components/ui";
-import { hhmm, money, when } from "@/components/shell";
+import { hhmm, initials, money, when } from "@/components/shell";
+import { Cover } from "@/components/media";
 import { apiPatch, apiPost } from "@/lib/arena3/client";
 import { formatDate, kindLabel, levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
 import { scrollBehavior } from "@/lib/calm";
@@ -112,21 +113,30 @@ export function ClassDetailModal({
         <Skeleton className="h-40" />
       ) : (
         <div className="grid gap-5">
-          <div className="grid gap-1 text-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium tabular-nums">{c.code}</span>
-              <StatusBadge status={c.status} />
-              <Badge tone="muted">
-                {t("{n}/{cap} enrolled", { n: c.enrolled_count, cap: c.capacity })}
-              </Badge>
+          <div className="flex items-center gap-3">
+            <Cover
+              slot={"coach." + c.coach_id}
+              fallbackInitials={initials(c.coach_name)}
+              className="size-12 shrink-0 rounded-full border border-line"
+              initialsClassName="text-sm font-bold"
+              alt={c.coach_name}
+            />
+            <div className="min-w-0 grid gap-1 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium tabular-nums">{c.code}</span>
+                <StatusBadge status={c.status} />
+                <Badge tone="muted">
+                  {t("{n}/{cap} enrolled", { n: c.enrolled_count, cap: c.capacity })}
+                </Badge>
+              </div>
+              <p className="text-muted">
+                {t("Coach {name}", { name: c.coach_name })}
+                {c.assistant_name ? ` · ${t("assisted by {name}", { name: c.assistant_name })}` : ""} · {c.court_code}
+              </p>
+              <p className="text-muted">
+                {rruleLabel(c.rrule, c.duration_min)} · {formatDate(c.start_on)} - {formatDate(c.end_on)}
+              </p>
             </div>
-            <p className="text-muted">
-              {t("Coach {name}", { name: c.coach_name })}
-              {c.assistant_name ? ` · ${t("assisted by {name}", { name: c.assistant_name })}` : ""} · {c.court_code}
-            </p>
-            <p className="text-muted">
-              {rruleLabel(c.rrule, c.duration_min)} · {formatDate(c.start_on)} – {formatDate(c.end_on)}
-            </p>
           </div>
 
           <section>
@@ -141,7 +151,7 @@ export function ClassDetailModal({
                     className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] bg-wood/60 px-3 py-2"
                   >
                     <span className="tabular-nums">
-                      {sessionDay(s.start_at)} · {hhmm(s.start_at)}–{hhmm(s.end_at)}
+                      {sessionDay(s.start_at)} · {hhmm(s.start_at)}-{hhmm(s.end_at)}
                     </span>
                     <span className="flex items-center gap-2 text-muted">
                       {s.court_code} · <span className="tabular-nums">{s.headcount}</span>/{c.capacity}
@@ -174,7 +184,7 @@ export function ClassDetailModal({
             ) : (
               <p className="mt-2 text-sm text-muted">
                 {c.status === "draft"
-                  ? t("No sessions yet — they are created when the class is published.")
+                  ? t("No sessions yet. They are created when the class is published.")
                   : t("No sessions on the calendar.")}
               </p>
             )}
@@ -190,7 +200,7 @@ export function ClassDetailModal({
                   <li key={r.id} className="flex flex-wrap justify-between gap-2 px-1">
                     <span className="font-medium">{r.full_name}</span>
                     <span className="tabular-nums text-muted">
-                      {r.member_code ?? "—"} · {r.phone}
+                      {r.member_code ?? "-"} · {r.phone}
                     </span>
                   </li>
                 ))}
@@ -272,14 +282,14 @@ function ActionForm({
     try {
       if (action.kind === "cancel-session") {
         const r = await apiPost<{ notified: number; refunded: number }>(`/sessions/${action.sessionId}/cancel`, { reason });
-        toast.success(t("Session cancelled — {told} told, {back} given a session back", { told: r.notified, back: r.refunded }));
+        toast.success(t("Session cancelled: {told} told, {back} given a session back", { told: r.notified, back: r.refunded }));
       } else if (action.kind === "move-session") {
         if (!start) throw Object.assign(new Error(t("Pick the new start time.")), { field: "start_at" });
         await apiPost(`/sessions/${action.sessionId}/reschedule`, {
           start_at: toIctIso(start),
           ...(reason ? { reason } : {}),
         });
-        toast.success(t("Session moved — members and coaches were told"));
+        toast.success(t("Session moved: members and coaches were told"));
       } else if (action.kind === "coach") {
         if (!coachId) throw Object.assign(new Error(t("Choose the new coach.")), { field: "coach_id" });
         await apiPost(`/classes/${classData.id}/coach`, { coach_id: coachId, ...(reason ? { reason } : {}) });
@@ -289,7 +299,7 @@ function ActionForm({
         toast.success(t("Capacity saved"));
       } else {
         await apiPatch(`/classes/${classData.id}`, { status: "cancelled", reason });
-        toast.success(t("Class cancelled — everyone enrolled was told"));
+        toast.success(t("Class cancelled: everyone enrolled was told"));
       }
       onDone();
     } catch (e) {
@@ -462,14 +472,14 @@ export function OccupancyDetailModal({
         <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-sm">
           <dt className="text-muted">{t("Customer")}</dt>
           <dd className="font-medium">
-            {data.customer.name ?? "—"}{" "}
+            {data.customer.name ?? "-"}{" "}
             <Badge tone={data.customer.type === "member" ? "accent" : "muted"}>
               {data.customer.type === "member" ? t("Member") : t("Walk-in")}
             </Badge>
           </dd>
           <dt className="text-muted">{t("Phone")}</dt>
           <dd className="tabular-nums">
-            {data.customer.phone ?? "—"}
+            {data.customer.phone ?? "-"}
             {data.customer.member_code ? ` · ${data.customer.member_code}` : ""}
           </dd>
           <dt className="text-muted">{t("Court")}</dt>
@@ -478,7 +488,7 @@ export function OccupancyDetailModal({
           </dd>
           <dt className="text-muted">{t("Time")}</dt>
           <dd className="tabular-nums">
-            {sessionDay(data.booking.start_at)} · {hhmm(data.booking.start_at)}–{hhmm(data.booking.end_at)}
+            {sessionDay(data.booking.start_at)} · {hhmm(data.booking.start_at)}-{hhmm(data.booking.end_at)}
           </dd>
           <dt className="text-muted">{t("Amount")}</dt>
           <dd className="tabular-nums">
@@ -511,7 +521,7 @@ export function OccupancyDetailModal({
           <dd>{data.session.court_code}</dd>
           <dt className="text-muted">{t("Time")}</dt>
           <dd className="tabular-nums">
-            {sessionDay(data.session.start_at)} · {hhmm(data.session.start_at)}–{hhmm(data.session.end_at)}
+            {sessionDay(data.session.start_at)} · {hhmm(data.session.start_at)}-{hhmm(data.session.end_at)}
           </dd>
           <dt className="text-muted">{t("Students")}</dt>
           <dd className="tabular-nums">
@@ -524,7 +534,7 @@ export function OccupancyDetailModal({
           <dd>{data.maintenance.court_code}</dd>
           <dt className="text-muted">{t("Time")}</dt>
           <dd className="tabular-nums">
-            {when(data.maintenance.start_at)} – {hhmm(data.maintenance.end_at)}
+            {when(data.maintenance.start_at)} - {hhmm(data.maintenance.end_at)}
           </dd>
           <dt className="text-muted">{t("Reason")}</dt>
           <dd>{data.maintenance.reason ?? t("No reason recorded.")}</dd>

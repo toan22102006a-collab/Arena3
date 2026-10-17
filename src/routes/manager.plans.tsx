@@ -3,12 +3,15 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Cover, sportPhoto } from "@/components/media";
 import { Shell, money } from "@/components/shell";
+import { PageHero } from "@/components/page-hero";
+import { StatStrip } from "@/components/stat-strip";
+import { SportBadge, useSports } from "@/components/sports-ui";
 import { Badge, Button, Card, Check, EmptyState, Field, Input, LoadError, Modal, MoneyInput, Select, Skeleton } from "@/components/ui";
 import { Lift, Stagger, StaggerItem } from "@/components/motion";
 import { GlareHover, SpotlightCard } from "@/components/fx";
 import { ApiClientError, apiGet, apiPatch, apiPost } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
-import { t, tServer, tData } from "@/lib/i18n";
+import { t, tk, tServer, tData } from "@/lib/i18n";
 import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/manager/plans")({
@@ -107,12 +110,29 @@ function Page() {
     }
   }
 
+  const sports = useSports();
+  const totalPlans = items?.length ?? 0;
+  const onSalePlans = items?.filter((p) => p.is_on_sale).length ?? 0;
+  const stoppedPlans = totalPlans - onSalePlans;
+
   return (
-    <Shell
-      role="manager"
-      title={t("Membership plans")}
-      subtitle={t("Plans are never deleted: one you stop selling leaves the app, and members who hold it keep it.")}
-    >
+    <Shell role="manager">
+      <PageHero
+        slot="banner.manager"
+        title={t("Membership plans")}
+        subtitle={t("Plans are never deleted: one you stop selling leaves the app, and members who hold it keep it.")}
+        className="mb-6"
+      />
+
+      <StatStrip
+        stats={[
+          { label: tk("Available plans"), value: onSalePlans },
+          { label: tk("Total plans"), value: totalPlans },
+          { label: tk("Not for sale"), value: stoppedPlans },
+        ]}
+        className="mb-6"
+      />
+
       <div className="mb-4 flex justify-end">
         <Button onClick={() => setOpen(true)}>{t("New plan")}</Button>
       </div>
@@ -132,20 +152,26 @@ function Page() {
           <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={320} strength={0.1}>
           <Card interactive className="relative z-[2] flex h-full flex-col overflow-hidden p-0">
             <GlareHover>
-              <Cover src={sportPhoto(p.sport_scope)} alt="" className="h-28">
+              <Cover slot={sportPhoto(p.sport_scope)} alt="" className="h-28">
                 <p className="absolute bottom-3 left-4 text-2xs text-on-media on-media">
                   {sportLabel(p.sport_scope)}
                 </p>
               </Cover>
             </GlareHover>
             <div className="flex flex-1 flex-col p-5">
-              <Badge tone={p.is_on_sale ? "accent" : "muted"}>{p.is_on_sale ? t("On sale") : t("Not for sale")}</Badge>
+              <div className="flex items-center gap-2">
+                <Badge tone={p.is_on_sale ? "accent" : "muted"}>{p.is_on_sale ? t("On sale") : t("Not for sale")}</Badge>
+                {p.sport_scope && p.sport_scope !== "all" ? (
+                  <SportBadge sport={p.sport_scope} />
+                ) : null}
+              </div>
               <h2 className="mt-2 font-display text-2xl">{tData(p.name)}</h2>
               <p className="mt-2 font-display text-3xl tabular-nums">{money(p.price_vnd)}</p>
               <p className="mt-2 text-sm text-muted">
                 {p.duration_days ? t("{n} days", { n: p.duration_days }) : t("Per session")}
                 {p.session_quota ? ` · ${t("{n} class sessions", { n: p.session_quota })}` : ""}
-                {` · ${t("{n} court hours", { n: p.court_hours })} · ${t("{pct}% off courts", { pct: p.court_discount_pct })}`}
+                {p.court_hours > 0 ? ` · ${t("{n} court hours", { n: p.court_hours })}` : ""}
+                {p.court_discount_pct > 0 ? ` · ${t("{pct}% off courts", { pct: p.court_discount_pct })}` : ""}
               </p>
               <div className="mt-auto flex gap-2 pt-4">
                 <Button variant="outline" onClick={() => void openDetail(p.id)}>
@@ -191,10 +217,12 @@ function Page() {
               value={form.sport_scope}
               onChange={(e) => setForm({ ...form, sport_scope: e.target.value })}
             >
-              <option value="badminton">{t("Badminton")}</option>
-              <option value="basketball">{t("Basketball")}</option>
-              <option value="volleyball">{t("Volleyball")}</option>
               <option value="all">{t("All three sports")}</option>
+              {sports.map((s) => (
+                <option key={s.code} value={s.code}>
+                  {s.name}
+                </option>
+              ))}
             </Select>
           </Field>
           <div className="grid grid-cols-2 gap-3">

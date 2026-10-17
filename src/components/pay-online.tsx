@@ -115,7 +115,7 @@ export function PayOnlineButton({
           setPhase("failed");
           setNote(r.status === "expired" ? t("The link expired.") : t("The customer cancelled."));
         } else if (r.status === "underpaid") {
-          setNote(t("Not the full amount yet — {detail}", { detail: tServer(r.detail ?? "") }));
+          setNote(t("Not the full amount yet: {detail}", { detail: tServer(r.detail ?? "") }));
         }
       } catch {
         // A poll that fails is not a payment that failed; keep asking.
@@ -174,15 +174,15 @@ export function PayOnlineButton({
               />
             ) : (
               <div className="mx-auto grid size-64 place-items-center rounded-[var(--radius-md)] border border-line text-sm text-muted">
-                {t("No QR — use the payment page")}
+                {t("No QR: use the payment page")}
               </div>
             )}
             <p className="font-display text-3xl tabular-nums">{money(raised.amount_vnd)}</p>
             <p className="text-2xs text-muted">{raised.payment_code}</p>
             <p className="text-sm text-muted">
               {raised.raised_by === "member"
-                ? t("We are waiting for your bank. Do not pay twice — this confirms by itself.")
-                : t("Waiting for the bank to confirm. This posts by itself — there is nothing to press.")}
+                ? t("We are waiting for your bank. Do not pay twice: this confirms by itself.")
+                : t("Waiting for the bank to confirm. This posts by itself. There is nothing to press.")}
             </p>
             {note ? <p className="text-sm text-hold">{note}</p> : null}
             <a

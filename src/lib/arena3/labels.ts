@@ -60,6 +60,9 @@ export const STATUS_LABEL: Record<string, string> = lazyLabels({
   excused: tk("Excused"),
   out: tk("Checked out"),
   returned: tk("Returned"),
+  // Class sessions: a finished one used to show the raw word "done".
+  done: tk("Session done"),
+  scheduled: tk("Scheduled"),
 });
 
 export const KIND_LABEL: Record<string, string> = lazyLabels({

@@ -196,13 +196,14 @@ export async function onlineSequence(sql: Sql) {
 }
 
 /**
- * Raise a payment link for something already owed.
+ * Raise a payment link for an order awaiting payment.
  *
  * A member may only do this for their own held court. Staff may do it for
  * anybody, which is the counter case: the customer is at the desk and will
  * scan the QR that appears on reception's screen.
  */
 export async function onlineCreate(sql: Sql, request: Request, user: PublicUser) {
+  requireRole(user, ["member", "receptionist", "manager"]);
   if (!payosConfigured()) {
     throw err.br("C-08", "Online payment is not switched on for this centre.");
   }
@@ -236,9 +237,15 @@ export async function onlineCreate(sql: Sql, request: Request, user: PublicUser)
     // Members order plans in the app but pay at the desk, so raising a link for
     // one is reception's job.
     if (!staff) throw err.forbidden("Ask the front desk to take payment for a plan.");
-    const sub = await one<{ user_id: string; plan_id: string; status: string; promo_discount_vnd: number }>(
+    const sub = await one<{
+      user_id: string;
+      plan_id: string;
+      status: string;
+      promo_discount_vnd: number;
+      price_vnd: number | null;
+    }>(
       sql,
-      `select user_id, plan_id, status, promo_discount_vnd from subscriptions where id = $1`,
+      `select user_id, plan_id, status, promo_discount_vnd, price_vnd from subscriptions where id = $1`,
       [refId],
     );
     if (!sub) throw err.notFound();
@@ -250,7 +257,8 @@ export async function onlineCreate(sql: Sql, request: Request, user: PublicUser)
       `select price_vnd from membership_plans where id = $1`,
       [sub.plan_id],
     );
-    amount = Math.max(0, (plan?.price_vnd ?? 0) - sub.promo_discount_vnd);
+    const basePrice = sub.price_vnd ?? plan?.price_vnd ?? 0;
+    amount = Math.max(0, basePrice - (sub.promo_discount_vnd ?? 0));
     payerId = sub.user_id;
     label = "plan";
   } else {

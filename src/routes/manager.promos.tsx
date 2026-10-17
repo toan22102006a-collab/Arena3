@@ -2,6 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Shell, money } from "@/components/shell";
+import { PageHero } from "@/components/page-hero";
+import { StatStrip } from "@/components/stat-strip";
+import { SportBadge, useSports } from "@/components/sports-ui";
 import { Badge, Button, Card, Check, EmptyState, Field, Input, LoadError, Modal, MoneyInput, Select, Skeleton } from "@/components/ui";
 import { ApiClientError, apiGet, apiPatch, apiPost } from "@/lib/arena3/client";
 import { formatDate, sportLabel } from "@/lib/arena3/labels";
@@ -138,7 +141,7 @@ function Page() {
   async function toggle(p: Promo) {
     try {
       await apiPatch(`/promotions/${p.id}`, { status: p.status === "active" ? "paused" : "active" });
-      toast.success(p.status === "active" ? t("Paused — new orders can't use it") : t("Back on"));
+      toast.success(p.status === "active" ? t("Paused: new orders can't use it") : t("Back on"));
       read.reload();
     } catch (e) {
       toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
@@ -154,12 +157,31 @@ function Page() {
     }
   }
 
+  const sports = useSports();
+  const totalCodes = items?.length ?? 0;
+  const activeCodes = items?.filter((p) => p.state === "active").length ?? 0;
+  const pausedCodes = items?.filter((p) => p.state === "paused").length ?? 0;
+  const totalGiven = items?.reduce((sum, p) => sum + (p.discount_given_vnd || 0), 0) ?? 0;
+
   return (
-    <Shell
-      role="manager"
-      title={t("Promo codes")}
-      subtitle={t("A code is counted when the money posts, and handed back if the payment is fully refunded.")}
-    >
+    <Shell role="manager">
+      <PageHero
+        slot="banner.manager"
+        title={t("Promo codes")}
+        subtitle={t("A code is counted when the money posts, and handed back if the payment is fully refunded.")}
+        className="mb-6"
+      />
+
+      <StatStrip
+        stats={[
+          { label: tk("Active codes"), value: activeCodes },
+          { label: tk("Total codes"), value: totalCodes },
+          { label: tk("Paused"), value: pausedCodes },
+          { label: tk("Discount given"), value: money(totalGiven) },
+        ]}
+        className="mb-6"
+      />
+
       <div className="mb-4">
         <Button onClick={() => setOpen(true)}>{t("New code")}</Button>
       </div>
@@ -169,7 +191,11 @@ function Page() {
       ) : !items ? (
         <Skeleton className="h-40" />
       ) : !items.length ? (
-        <EmptyState title={t("No promo codes yet")} hint={t("Create one and give it to members at the desk or in a campaign.")} />
+        <EmptyState
+          title={t("No promo codes yet")}
+          hint={t("Create one and give it to members at the desk or in a campaign.")}
+          action={<Button onClick={() => setOpen(true)}>{t("New code")}</Button>}
+        />
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {items.map((p) => (
@@ -179,7 +205,10 @@ function Page() {
                   <p className="font-display text-2xl tracking-wide">{p.code}</p>
                   <p className="text-sm text-muted">{p.name}</p>
                 </div>
-                <Badge tone={STATE_TONE[p.state]}>{t(STATE_LABEL[p.state])}</Badge>
+                <div className="flex items-center gap-2">
+                  {p.sport ? <SportBadge sport={p.sport} /> : null}
+                  <Badge tone={STATE_TONE[p.state]}>{t(STATE_LABEL[p.state])}</Badge>
+                </div>
               </div>
               <p className="text-sm">
                 <span className="font-medium">{describe(p)}</span>
@@ -243,7 +272,7 @@ function Page() {
               <option value="amount">{t("Fixed amount off")}</option>
             </Select>
           </Field>
-          <Field label={form.kind === "percent" ? t("Percent (1–100)") : t("Amount (đ, multiple of 1,000)")} hint={bad("value")}>
+          <Field label={form.kind === "percent" ? t("Percent (1-100)") : t("Amount (đ, multiple of 1,000)")} hint={bad("value")}>
             {form.kind === "percent" ? (
               <Input inputMode="numeric" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
             ) : (
@@ -277,9 +306,11 @@ function Page() {
           <Field label={t("Sport")}>
             <Select value={form.sport} onChange={(e) => setForm({ ...form, sport: e.target.value })}>
               <option value="">{t("Any sport")}</option>
-              <option value="badminton">{t("Badminton")}</option>
-              <option value="basketball">{t("Basketball")}</option>
-              <option value="volleyball">{t("Volleyball")}</option>
+              {sports.map((s) => (
+                <option key={s.code} value={s.code}>
+                  {s.name}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label={t("Only this plan")} hint={planRead.error?.message}>
@@ -293,7 +324,7 @@ function Page() {
             </Select>
           </Field>
           <fieldset className="flex flex-wrap items-center gap-x-6 text-sm sm:col-span-2">
-            <legend className="mb-1 text-xs text-muted">{t("Applies to")} {bad("applies_to") ? `— ${bad("applies_to")}` : ""}</legend>
+            <legend className="mb-1 text-xs text-muted">{t("Applies to")} {bad("applies_to") ? `: ${bad("applies_to")}` : ""}</legend>
             <Check checked={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.checked })} label={t("Membership plans")} />
             <Check checked={form.court} onChange={(e) => setForm({ ...form, court: e.target.checked })} label={t("Court bookings")} />
           </fieldset>
@@ -306,7 +337,7 @@ function Page() {
       <Modal
         open={history !== null}
         onClose={() => setHistory(null)}
-        title={history ? t("{code} — who used it", { code: history.promo.code }) : ""}
+        title={history ? t("{code}: who used it", { code: history.promo.code }) : ""}
       >
         {history && !history.rows.length ? <p className="text-sm text-muted">{t("Nobody yet.")}</p> : null}
         <ul className="grid gap-2">

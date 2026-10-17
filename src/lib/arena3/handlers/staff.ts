@@ -2,10 +2,11 @@ import { randomInt } from "node:crypto";
 import type { Sql } from "@/lib/db";
 import { hashPassword } from "../crypto";
 import { err } from "../errors";
-import { audit, readJson, str } from "../helpers";
+import { audit, pageOf, readJson, str } from "../helpers";
 import { isValidVnPhone, normalizePhone, unaccentVi } from "../phone";
 import { requireRole, type PublicUser } from "../session";
 import { one, q } from "../tx";
+import { pageParams } from "../validate";
 
 /**
  * Staff accounts (R-01…R-03).
@@ -95,7 +96,7 @@ async function managedTarget(sql: Sql, id: string, manager: PublicUser): Promise
 }
 
 export async function revoke(sql: Sql, userId: string): Promise<number> {
-  const gone = await q<{ id: string }>(sql, `delete from sessions_auth where user_id = $1 returning id`, [userId]);
+  const gone = await q<{ id: string }>(sql, `update sessions_auth set revoked_at = now() where user_id = $1 and revoked_at is null returning id`, [userId]);
   return gone.length;
 }
 
@@ -121,12 +122,18 @@ export async function staffList(sql: Sql, request: Request, user: PublicUser) {
     params.push(`%${unaccentVi(text)}%`, `%${text}%`);
     where.push(`(u.name_normalized ilike $${params.length - 1} or u.phone ilike $${params.length} or u.email ilike $${params.length})`);
   }
-  const items = await q<StaffRow>(
+  const { limit, offset } = pageParams(request, { def: 200, max: 200 });
+  const filter = where.join(" and ");
+  const rows = await q<StaffRow & { total: number }>(
     sql,
-    `${STAFF_SELECT} where ${where.join(" and ")} order by u.role, u.full_name limit 200`,
-    params,
+    `${STAFF_SELECT.replace(/^\s*select /, "select count(*) over ()::int as total, ")} where ${filter}
+      order by u.role, u.full_name limit $${params.length + 1} offset $${params.length + 2}`,
+    [...params, limit, offset],
   );
-  return { status: 200, body: { items } };
+  const body = await pageOf(rows, { limit, offset }, async () =>
+    Number((await q<{ n: number }>(sql, `select count(*)::int as n from users u where ${filter}`, params))[0]?.n ?? 0),
+  );
+  return { status: 200, body };
 }
 
 export async function staffCreate(sql: Sql, request: Request, user: PublicUser) {
@@ -147,7 +154,7 @@ export async function staffCreate(sql: Sql, request: Request, user: PublicUser) 
     phone,
     email,
   ]);
-  if (dup) throw err.br("BR-01", "That phone or email already has an account.");
+  if (dup) throw err.br("BR-01", "That phone or email already has an account.", { field: "phone" });
 
   const tmp = tempPassword();
   const row = await one<{ id: string }>(
@@ -158,6 +165,18 @@ export async function staffCreate(sql: Sql, request: Request, user: PublicUser) 
   );
   for (const s of sports) {
     await sql.query(`insert into coach_sports (user_id, sport) values ($1, $2::sport_kind)`, [row!.id, s]);
+  }
+  if (role === "coach") {
+    await sql.query(
+      `insert into site_assets (slot, kind, alt_en, alt_vi, enabled, version)
+       values ($1, 'image', $2, $3, true, 1)
+       on conflict (slot) do nothing`,
+      [
+        `coach.${row!.id}`,
+        `Photo of coach ${full_name}`,
+        `Ảnh HLV ${full_name}`,
+      ],
+    );
   }
   await audit(sql, user.id, "create_staff", "user", row!.id, null, { role, phone, sports });
   return { status: 201, body: { staff: await loadStaff(sql, row!.id), temp_password: tmp } };
@@ -216,6 +235,16 @@ export async function staffPatch(sql: Sql, id: string, request: Request, user: P
       for (const s of sports) {
         await sql.query(`insert into coach_sports (user_id, sport) values ($1, $2::sport_kind)`, [id, s]);
       }
+      await sql.query(
+        `insert into site_assets (slot, kind, alt_en, alt_vi, enabled, version)
+         values ($1, 'image', $2, $3, true, 1)
+         on conflict (slot) do nothing`,
+        [
+          `coach.${id}`,
+          `Photo of coach ${target.full_name}`,
+          `Ảnh HLV ${target.full_name}`,
+        ],
+      );
     } else {
       await sql.query(`delete from coach_sports where user_id = $1`, [id]);
     }

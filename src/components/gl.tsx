@@ -180,7 +180,7 @@ const AURORA_FRAG = /* glsl */ `
 
 /** Hanging curtain of light along the top edge of its container. */
 export function Aurora({
-  colors = ["#1e4fd8", "#5b86ff", "#c8f31d"],
+  colors = ["#3f7d20", "#8bc34a", "#b5e04a"],
   amplitude = 1,
   speed = 1,
   opacity = 0.7,
@@ -197,9 +197,9 @@ export function Aurora({
       uAmplitude: { value: amplitude },
       uSpeed: { value: speed },
       uOpacity: { value: opacity },
-      uColor0: { value: new Color(colors[0] ?? "#1e4fd8") },
-      uColor1: { value: new Color(colors[1] ?? "#5b86ff") },
-      uColor2: { value: new Color(colors[2] ?? "#c8f31d") },
+      uColor0: { value: new Color(colors[0] ?? "#3f7d20") },
+      uColor1: { value: new Color(colors[1] ?? "#8bc34a") },
+      uColor2: { value: new Color(colors[2] ?? "#b5e04a") },
     }),
     [key, amplitude, speed, opacity],
   );
@@ -242,7 +242,7 @@ const SILK_FRAG = /* glsl */ `
 
 /** Slow folded-cloth sheen. Calmer than Aurora; good behind long-form panels. */
 export function Silk({
-  color = "#1e4fd8",
+  color = "#3f7d20",
   speed = 1,
   scale = 1.4,
   opacity = 0.32,
@@ -348,7 +348,7 @@ export function Threads({
  * — the loop parks itself once the ripple has settled.
  */
 export function DotGrid({
-  color = "#1e4fd8",
+  color = "#3f7d20",
   gap = 26,
   dot = 1.8,
   radius = 150,

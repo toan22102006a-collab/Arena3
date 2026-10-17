@@ -1,11 +1,15 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Shell } from "@/components/shell";
-import { Badge, Card, EmptyState, FilterChip, Input, LoadError, Pagination, Select, Skeleton, StatusBadge } from "@/components/ui";
-import { formatDate, sportLabel } from "@/lib/arena3/labels";
+import { PageHero } from "@/components/page-hero";
+import { StatStrip } from "@/components/stat-strip";
+import { SportBadge, useSports } from "@/components/sports-ui";
+import { Badge, Button, Card, EmptyState, FilterChip, Input, LoadError, Pagination, Select, Skeleton, StatusBadge } from "@/components/ui";
+import { formatDate } from "@/lib/arena3/labels";
 import { cn } from "@/lib/cn";
 import { locale, t, tk, tData } from "@/lib/i18n";
 import { useRead } from "@/lib/use-read";
+import { usePageState } from "@/lib/use-page-state";
 
 export const Route = createFileRoute("/manager/members")({
   component: Page,
@@ -24,8 +28,6 @@ type Row = {
   classes: number;
 };
 
-const PAGE = 25;
-
 const PLAN_LABEL: Record<Row["plan_state"], string> = {
   active: tk("Plan active"),
   expiring: tk("Ends within a week"),
@@ -39,7 +41,7 @@ function Page() {
   const [status, setStatus] = useState("");
   const [sport, setSport] = useState("");
   const [plan, setPlan] = useState("");
-  const [offset, setOffset] = useState(0);
+  const { offset, setOffset, pageSize, setPageSize, reset } = usePageState("manager.members", 25);
 
   // Typing waits a beat so one search is one request, and any filter change goes back to page one.
   const [term, setTerm] = useState("");
@@ -47,9 +49,9 @@ function Page() {
     const timer = setTimeout(() => setTerm(q.trim()), 250);
     return () => clearTimeout(timer);
   }, [q]);
-  useEffect(() => setOffset(0), [term, status, sport, plan]);
+  useEffect(reset, [term, status, sport, plan, reset]);
 
-  const params = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
+  const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
   if (term) params.set("q", term);
   if (status) params.set("status", status);
   if (sport) params.set("sport", sport);
@@ -68,8 +70,30 @@ function Page() {
     { value: "none", label: t("No plan") },
   ];
 
+  const sports = useSports();
+  const activeCount = data?.items.filter((m) => m.plan_state === "active").length ?? 0;
+  const expiringCount = data?.items.filter((m) => m.plan_state === "expiring").length ?? 0;
+  const noPlanCount = data?.items.filter((m) => m.plan_state === "none").length ?? 0;
+
   return (
-    <Shell role="manager" title={t("Members")} subtitle={t("Everyone with an account. Open a member for their plan, classes, balance and attendance.")}>
+    <Shell role="manager">
+      <PageHero
+        slot="banner.manager"
+        title={t("Members")}
+        subtitle={t("Everyone with an account. Open a member for their plan, classes, balance and attendance.")}
+        className="mb-6"
+      />
+
+      <StatStrip
+        stats={[
+          { label: tk("Total members"), value: total },
+          { label: tk("Plan active"), value: activeCount },
+          { label: tk("Ends within a week"), value: expiringCount },
+          { label: tk("No plan"), value: noPlanCount },
+        ]}
+        className="mb-6"
+      />
+
       <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0" role="group" aria-label={t("Plan state")}>
         {PLAN_CHIPS.map((c) => (
           <FilterChip key={c.value || "all"} active={plan === c.value} onClick={() => setPlan(c.value)} label={c.label} />
@@ -90,9 +114,9 @@ function Page() {
         </Select>
         <Select value={sport} onChange={(e) => setSport(e.target.value)} aria-label={t("Sport")}>
           <option value="">{t("Any sport")}</option>
-          {["badminton", "basketball", "volleyball"].map((s) => (
-            <option key={s} value={s}>
-              {sportLabel(s)}
+          {sports.map((s) => (
+            <option key={s.code} value={s.code}>
+              {s.name}
             </option>
           ))}
         </Select>
@@ -104,7 +128,25 @@ function Page() {
       ) : !data ? (
         <Skeleton className="h-48" />
       ) : !data.items.length ? (
-        <EmptyState title={t("No members match")} hint={t("Loosen a filter or check the spelling.")} />
+        <EmptyState
+          title={t("No members match")}
+          hint={t("Loosen a filter or check the spelling.")}
+          action={
+            term || status || sport || plan ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setQ("");
+                  setStatus("");
+                  setSport("");
+                  setPlan("");
+                }}
+              >
+                {t("Clear filters")}
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <>
           <p className="mb-2 text-sm text-muted tabular-nums">
@@ -130,13 +172,16 @@ function Page() {
                         <span className="break-words">{m.full_name}</span>
                         {m.status !== "active" ? <StatusBadge status={m.status} /> : null}
                       </p>
-                      <p className="text-xs tabular-nums text-muted">{m.member_code ?? "—"}</p>
+                      <p className="text-xs tabular-nums text-muted">{m.member_code ?? "-"}</p>
                     </div>
                     <p className="text-sm tabular-nums text-muted">{m.phone}</p>
                     <div className="flex flex-wrap items-center gap-2 text-sm">
                       <Badge tone={m.plan_state === "active" ? "accent" : m.plan_state === "expiring" ? "hold" : "muted"}>
                         {t(PLAN_LABEL[m.plan_state])}
                       </Badge>
+                      {m.sport_scope ? (
+                        <SportBadge sport={m.sport_scope} />
+                      ) : null}
                       {m.plan_name ? (
                         <span className="break-words text-xs text-muted">
                           {tData(m.plan_name)}
@@ -152,7 +197,7 @@ function Page() {
               ))}
             </ul>
           </Card>
-          <Pagination offset={offset} total={total} pageSize={PAGE} onChange={setOffset} />
+          <Pagination offset={offset} total={total} pageSize={pageSize} onChange={setOffset} onPageSizeChange={setPageSize} label={t("Member pages")} />
         </>
       )}
       </div>

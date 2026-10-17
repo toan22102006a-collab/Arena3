@@ -55,7 +55,7 @@ export function ExportButtons({
 
 const SPORTS = ["badminton", "basketball", "volleyball"];
 const hours = (min: number) => Math.round((min / 60) * 10) / 10;
-const pctText = (v: number | null | undefined) => (v == null ? "—" : `${v}%`);
+const pctText = (v: number | null | undefined) => (v == null ? "-" : `${v}%`);
 
 function SportSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
@@ -93,9 +93,24 @@ type Capacity = {
 };
 
 function heat(pct: number): React.CSSProperties {
+  let bg = "var(--color-heat-0)";
+  let fg = "var(--color-fg)";
+  if (pct > 85) {
+    bg = "var(--color-heat-4)";
+    fg = "#ffffff";
+  } else if (pct > 60) {
+    bg = "var(--color-heat-3)";
+    fg = "#ffffff";
+  } else if (pct > 30) {
+    bg = "var(--color-heat-2)";
+    fg = "var(--color-night)";
+  } else if (pct > 0) {
+    bg = "var(--color-heat-1)";
+    fg = "var(--color-fg)";
+  }
   return {
-    background: `color-mix(in srgb, var(--color-accent) ${Math.round(Math.min(100, pct) * 0.9)}%, transparent)`,
-    color: pct >= 55 ? "#fff" : undefined,
+    background: bg,
+    color: fg,
   };
 }
 
@@ -215,6 +230,29 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-line/50 px-4 py-2.5 text-2xs text-muted">
+              <span className="font-medium">{t("Occupancy:")}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-3 rounded-[2px] border border-line" style={{ background: "var(--color-heat-0)" }} />
+                0%
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-1)" }} />
+                1–30%
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-2)" }} />
+                31–60%
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-3)" }} />
+                61–85%
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-4)" }} />
+                86–100%
+              </span>
             </div>
           </Card>
         </>

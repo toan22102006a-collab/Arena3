@@ -4,7 +4,9 @@ import QRCode from "qrcode";
 import { toast } from "sonner";
 import { ScanLine } from "@/components/arena-icons";
 import { Shell, useSessionUser } from "@/components/shell";
-import { Badge, Button, Card, Field, Input, LoadError, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, LoadError, PageHero, Skeleton } from "@/components/ui";
+import { Tilt } from "@/components/motion";
+import { GlareHover } from "@/components/fx";
 import { apiGet, apiPost } from "@/lib/arena3/client";
 import { t } from "@/lib/i18n";
 
@@ -100,52 +102,70 @@ function Page() {
   }
 
   return (
-    <Shell
-      role="member"
-      title={t("Gate pass")}
-      subtitle={t("Show this code to the front desk. It changes every minute, so a photo of it is no use to anyone.")}
-    >
-      <div className="grid max-w-md gap-4">
-        <Card className="grid place-items-center gap-3 p-6">
-          {error ? (
-            <LoadError message={error} onRetry={() => void refresh()} />
-          ) : img ? (
-            // The code must stay readable in sunlight: white tile, no theming.
-            <div className="relative overflow-hidden rounded-[var(--radius-md)]">
-              <img
-                src={img}
-                alt={t("Your check-in code")}
-                className="size-64 bg-white p-2"
-              />
-              <ScanLine />
-            </div>
-          ) : (
-            <Skeleton className="size-64" />
-          )}
-          <div className="my-1 text-center">
-            <p className="text-2xs font-semibold uppercase tracking-wider text-muted">
-              {t("Member Code")}
-            </p>
-            <p className="font-mono text-2xl font-bold tracking-widest text-primary">
-              {tok?.member_code || user?.member_code || "—"}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge tone={left > 10 ? "accent" : "hold"}>{tok ? t("Valid for {n}s", { n: left }) : t("Making a code…")}</Badge>
-            <Button size="sm" variant="ghost" onClick={() => void refresh()}>
-              {t("New code")}
-            </Button>
-          </div>
-          <p className="text-center text-xs text-muted">
-            {t("This only lets the desk see who you are. It does not use up a session or change your plan.")}
-          </p>
-        </Card>
+    <Shell role="member">
+      <PageHero
+        slot="banner.gate"
+        title={t("Gate pass")}
+        subtitle={t("Show this code to the front desk. It changes every minute, so a photo of it is no use to anyone.")}
+        fallbackSpot="gate"
+        stats={[
+          {
+            label: t("Member Code"),
+            value: tok?.member_code || user?.member_code || "—",
+          },
+          {
+            label: t("Time left"),
+            value: `${left}s`,
+            live: left > 0,
+          },
+        ]}
+      />
+
+      <div className="grid max-w-md gap-6 mx-auto sm:mx-0">
+        <Tilt>
+          <GlareHover duration={1.2} className="rounded-[var(--radius-xl)]">
+            <Card className="grid place-items-center gap-3 p-6 bg-surface shadow-[var(--shadow-soft)]">
+              {error ? (
+                <LoadError message={error} onRetry={() => void refresh()} />
+              ) : img ? (
+                // The code must stay readable in sunlight: white tile, no theming.
+                <div className="relative overflow-hidden rounded-[var(--radius-md)]">
+                  <img
+                    src={img}
+                    alt={t("Your check-in code")}
+                    className="size-64 bg-white p-2"
+                  />
+                  <ScanLine />
+                </div>
+              ) : (
+                <Skeleton className="size-64" />
+              )}
+              <div className="my-1 text-center">
+                <p className="text-2xs font-semibold uppercase tracking-wider text-muted">
+                  {t("Member Code")}
+                </p>
+                <p className="font-mono text-2xl font-bold tracking-widest text-primary">
+                  {tok?.member_code || user?.member_code || "—"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge tone={left > 10 ? "accent" : "hold"}>{tok ? t("Valid for {n}s", { n: left }) : t("Making a code…")}</Badge>
+                <Button size="sm" variant="ghost" onClick={() => void refresh()}>
+                  {t("New code")}
+                </Button>
+              </div>
+              <p className="text-center text-xs text-muted">
+                {t("This only lets the desk see who you are. It does not use up a session or change your plan.")}
+              </p>
+            </Card>
+          </GlareHover>
+        </Tilt>
 
         <Card>
           <form onSubmit={selfCheckin} className="grid gap-3">
             <Field tone="muted"
               label={t("Check yourself in")}
-              hint={t("Only when the centre has turned this on. Scan the code on the front-desk screen with your phone camera — or paste what it reads.")}
+              hint={t("Only when the centre has turned this on. Scan the code on the front-desk screen with your phone camera, or paste what it reads.")}
             >
               <Input value={selfCode} onChange={(e) => setSelfCode(e.target.value)} placeholder={t("Code from the desk screen")} />
             </Field>

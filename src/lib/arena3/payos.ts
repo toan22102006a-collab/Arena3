@@ -43,7 +43,7 @@ export function gatewayAmount(priceVnd: number): number {
 
 /** Whether online payment can be offered at all. */
 export function payosConfigured(): boolean {
-  return credentials() !== null;
+  return overridePaymentLinkCreator !== null || credentials() !== null;
 }
 
 let client: PayOS | null = null;
@@ -90,6 +90,12 @@ export type CreatedLink = {
  * with a millisecond value is accepted and then never expires, which would
  * leave a court held open indefinitely.
  */
+let overridePaymentLinkCreator: ((args: Parameters<typeof createPaymentLink>[0]) => Promise<CreatedLink>) | null = null;
+/** @internal test-only */
+export function setOverridePaymentLinkCreator(fn: ((args: any) => Promise<CreatedLink>) | null): void {
+  overridePaymentLinkCreator = fn;
+}
+
 export async function createPaymentLink(args: {
   orderCode: number;
   amountVnd: number;
@@ -98,6 +104,9 @@ export async function createPaymentLink(args: {
   cancelUrl: string;
   expiresInSeconds?: number;
 }): Promise<CreatedLink> {
+  if (overridePaymentLinkCreator) {
+    return overridePaymentLinkCreator(args);
+  }
   const expiredAt = args.expiresInSeconds
     ? Math.floor(Date.now() / 1000) + args.expiresInSeconds
     : undefined;

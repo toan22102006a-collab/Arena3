@@ -33,17 +33,33 @@ import { useCalm } from "@/lib/calm";
  *
  * Every primitive here degrades to a plain, fully-visible element when the
  * visitor asks for reduced motion — content never depends on an animation
- * having run. (The pause button in `@/lib/calm` does not swap elements: see
- * `MotionProvider`.)
+ * having run. (`useCalm()` in `@/lib/calm` follows the same device setting live
+ * without swapping elements: see `MotionProvider`.)
  */
+
+/**
+ * The device's reduced-motion setting, but only once the component has mounted.
+ *
+ * The server cannot know the setting, so it always renders the moving version. If the first
+ * client render already chose the still version (a plain `<div>` instead of a spotlight, whole
+ * text instead of split words), hydration would not match the server's HTML and React would
+ * throw the page away and rebuild it. Answering "no" until mounted keeps hydration exact; the
+ * still version takes over one render later.
+ */
+export function useReducedMotionAfterMount(): boolean {
+  const reduced = useReducedMotion();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted && !!reduced;
+}
 
 export const EASE_SMOOTH = [0.22, 1, 0.36, 1] as const;
 export const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
 /** Wrap a subtree so every nested transition shares the house easing. */
 export function MotionProvider({ children }: { children: ReactNode }) {
-  // "always" is what the pause button asks for; "user" leaves it to the device setting. Slides
-  // become fades either way and nothing remounts, so pressing the button never costs typed text.
+  // "always" once the device asks for reduced motion (read live by useCalm), "user" otherwise.
+  // Slides become fades and nothing remounts, so the setting changing never costs typed text.
   const calm = useCalm();
   return (
     <MotionConfig reducedMotion={calm ? "always" : "user"} transition={{ duration: 0.5, ease: EASE_SMOOTH }}>
@@ -77,7 +93,7 @@ export function Reveal({
   repeat = false,
   as = "div",
 }: RevealProps) {
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   const Tag = motion[as as "div"] ?? motion.div;
 
   const offset =
@@ -144,7 +160,7 @@ export function Stagger({
   delay?: number;
   gap?: number;
 }) {
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   const ref = useRef<HTMLDivElement>(null);
   // `amount: 0` because most of these lists are filled by a fetch: the
   // container is empty and therefore zero-height when the observer first
@@ -190,7 +206,7 @@ export function StaggerItem({
   className,
   ...rest
 }: { children: ReactNode; className?: string } & MotionProps) {
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   const { inView, delay } = useContext(StaggerCtx);
   if (reduced) return <div className={className}>{children}</div>;
   return (
@@ -207,40 +223,6 @@ export function StaggerItem({
 }
 
 export { staggerParent, staggerChild };
-
-/** Drift a decorative layer against the scroll direction. */
-export function Parallax({
-  children,
-  className,
-  speed = 0.2,
-}: {
-  children: ReactNode;
-  className?: string;
-  speed?: number;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const reduced = useReducedMotion();
-  const { scrollYProgress } = useScroll({
-    target: ref,
-    offset: ["start end", "end start"],
-  });
-  const y = useTransform(scrollYProgress, [0, 1], [`${speed * -100}%`, `${speed * 100}%`]);
-
-  if (reduced) {
-    return (
-      <div ref={ref} className={className}>
-        {children}
-      </div>
-    );
-  }
-  return (
-    <div ref={ref} className={cn("relative", className)}>
-      <motion.div style={{ y }} className="size-full">
-        {children}
-      </motion.div>
-    </div>
-  );
-}
 
 /** Count a number up once it enters the viewport. */
 export function CountUp({
@@ -260,7 +242,7 @@ export function CountUp({
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, amount: 0.4 });
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   const [value, setValue] = useState(reduced ? to : 0);
 
   useEffect(() => {
@@ -303,7 +285,7 @@ export function Tilt({
   max?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   const rx = useSpring(useMotionValue(0), { stiffness: 220, damping: 22 });
   const ry = useSpring(useMotionValue(0), { stiffness: 220, damping: 22 });
 
@@ -345,7 +327,7 @@ export function Lift({
   amount = -4,
   ...rest
 }: { children: ReactNode; className?: string; amount?: number } & MotionProps) {
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   if (reduced) return <div className={className}>{children}</div>;
   return (
     <motion.div
@@ -359,66 +341,13 @@ export function Lift({
   );
 }
 
-/** Split a headline into words that rise into place one after another. */
-export function WordReveal({
-  text,
-  className,
-  delay = 0,
-  gap = 0.06,
-}: {
-  text: string;
-  className?: string;
-  delay?: number;
-  gap?: number;
-}) {
-  const reduced = useReducedMotion();
-  if (reduced) return <span className={className}>{text}</span>;
-  const words = text.split(" ");
-  return (
-    <motion.span
-      className={cn("inline-block", className)}
-      initial="hidden"
-      animate="show"
-      variants={{ hidden: {}, show: { transition: { staggerChildren: gap, delayChildren: delay } } }}
-    >
-      {words.map((w, i) => (
-        <span key={`${w}-${i}`} className="inline-block overflow-hidden align-bottom py-[0.28em] -my-[0.28em]">
-          <motion.span
-            className="inline-block"
-            variants={{
-              hidden: { y: "108%", opacity: 0 },
-              show: { y: 0, opacity: 1, transition: { duration: 0.75, ease: EASE_OUT } },
-            }}
-          >
-            {w}
-            {i < words.length - 1 ? " " : ""}
-          </motion.span>
-        </span>
-      ))}
-    </motion.span>
-  );
-}
-
-/** A thin progress bar pinned to the top of the page. */
-export function ScrollProgress({ className }: { className?: string }) {
-  const { scrollYProgress } = useScroll();
-  const scaleX = useSpring(scrollYProgress, { stiffness: 140, damping: 26, restDelta: 0.001 });
-  return (
-    <motion.div
-      aria-hidden
-      style={{ scaleX }}
-      className={cn("fixed inset-x-0 top-0 z-50 h-0.5 origin-left bg-accent", className)}
-    />
-  );
-}
-
 /** Fade/slide route content in on mount. Used by the app shells. */
 export function PageIn({
   children,
   className,
   ...rest
 }: { children: ReactNode; className?: string } & ComponentPropsWithoutRef<"div">) {
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   if (reduced) {
     return (
       <div className={className} {...rest}>

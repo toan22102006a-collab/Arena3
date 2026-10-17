@@ -164,7 +164,7 @@ Bảy phân hệ nghiệp vụ (F1–F7) được chia cho 5 thành viên theo n
 ### PHẦN 2: SỬ — F3 (Sổ cái Tiền tệ, Ca Thu ngân, Hóa đơn & Báo cáo)
 
 #### A. Trách nhiệm kỹ thuật & Business Rules (BR)
-* **File phụ trách:** `src/lib/arena3/handlers/desk.ts`, `online.ts`, `promos.ts`, `reports.ts`, `pdf.ts`, `payos.ts`, `extras.ts` (vé ngày, điểm thưởng, hoa hồng, xuất hóa đơn).
+* **File phụ trách:** `src/lib/arena3/handlers/desk.ts`, `online.ts`, `promos.ts`, `reports.ts`, `pdf.ts`, `payos.ts`, `extras.ts` (điểm thưởng, hoa hồng, xuất hóa đơn).
 * **Quy tắc cốt lõi:**
   * **Mở ca trước khi thu:** Lễ tân không thể thu tiền nếu chưa mở ca trực (`till_shifts`). Tiền thu vào gắn chặt với `shift_id` của nhân viên đó.
   * **Nguyên tắc "Chuyển khoản là lời hứa":** Khi khách chọn chuyển khoản, hệ thống **tuyệt đối không tạo bản ghi thanh toán** (không tạo row `payments` với status pending). Khoản tiền chỉ là lời hứa ghi nhận trên booking. Khi nào lễ tân đối soát thấy tiền nổi trên tài khoản ngân hàng và bấm "Xác nhận" thì mới gọi `settleHeldBooking` để tạo phiếu thu `posted`.
@@ -225,7 +225,7 @@ Bảy phân hệ nghiệp vụ (F1–F7) được chia cho 5 thành viên theo n
 
 #### C. Bộ câu hỏi phản biện & Phương án trả lời (Dành cho Sử)
 * **Câu hỏi 1 (Giảng viên):** *"Tại sao khi khách chọn chuyển khoản ngân hàng, em không tạo luôn một dòng payment với trạng thái `pending` trong database cho tiện theo dõi?"*
-  * **Sử trả lời:** *"Dạ thưa thầy, thiết kế này xuất phát từ nguyên tắc kế toán: Tiền chưa về tài khoản thì chưa phải là tài sản. Nếu tạo dòng `pending` trong bảng `payments`, các câu truy vấn tính tổng doanh thu, công nợ hội viên và thuế sẽ rất dễ bị tính nhầm nếu lập trình viên sơ suất quên mệnh đề `WHERE status = 'posted'`. Vì vậy hệ thống coi chuyển khoản chỉ là một 'lời hứa' gắn trên booking. Bảng `payments` của trung tâm là sổ cái sạch, chỉ ghi nhận những giao dịch tiền thật đã được xác minh."*
+  * **Sử trả lời:** *"Dạ thưa thầy, thiết kế này xuất phát từ nguyên tắc kế toán: Tiền chưa về tài khoản thì chưa phải là tài sản. Nếu tạo dòng `pending` trong bảng `payments`, các câu truy vấn tính tổng doanh thu, các khoản cần thu của hội viên và thuế sẽ rất dễ bị tính nhầm nếu lập trình viên sơ suất quên mệnh đề `WHERE status = 'posted'`. Vì vậy hệ thống coi chuyển khoản chỉ là một 'lời hứa' gắn trên booking. Bảng `payments` của trung tâm là sổ cái sạch, chỉ ghi nhận những giao dịch tiền thật đã được xác minh."*
 * **Câu hỏi 2 (Giảng viên):** *"Nếu khách quét mã thanh toán payOS thành công nhưng mạng bị rớt, webhook và trình duyệt cùng gọi về máy chủ một lúc thì có bị cộng tiền 2 lần không?"*
   * **Sử trả lời:** *"Dạ hoàn toàn không thể bị trùng. Cả hai luồng webhook và polling đều phải đi qua hàm `settleHeldBooking` được bọc bởi wrapper `withIdempotency` với khóa duy nhất là mã đơn hàng. Nếu transaction đầu tiên đã xử lý và ghi nhận, transaction thứ hai đến sẽ trả về ngay kết quả đã lưu mà không thực thi lại logic trừ tiền."*
 
@@ -393,29 +393,17 @@ Bảy phân hệ nghiệp vụ (F1–F7) được chia cho 5 thành viên theo n
 
 Quy trình phối hợp 7 bước liên tục giữa cả 5 thành viên. Chạy theo **chuỗi sự kiện nghiệp vụ thực tế**, người trước xong bước của mình thì chuyển giao rõ ràng cho người kế tiếp:
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Hieu as Bước 1 & 2: Hiếu (F1/F7)
-    actor Su as Bước 3: Sử (F3)
-    actor Toan as Bước 4: Toàn (F2)
-    actor Tan as Bước 5: Tân (F4/F5)
-    actor Phuc as Bước 6: Phúc (F6)
-    actor HieuAudit as Bước 7: Hiếu (Audit)
-    
-    Hieu->>Hieu: B1: Đăng nhập 4 vai trò & Khẳng định phân quyền RBAC
-    Hieu->>Hieu: B2: Nam & Linh tranh chấp Sân H (Concurrency)
-    Hieu->>Su: Bàn giao giữ chỗ Sân H của Nam
-    Su->>Su: B3: Lễ tân mở ca, thu tiền mặt, in hóa đơn PDF
-    Su->>Toan: Bàn giao Sân H (đã bán) & Sân T (trống)
-    Toan->>Toan: B4: Tạo lớp đè Sân H (bị chặn), mở lớp Sân T, Nam ghi danh
-    Toan->>Tan: Bàn giao lớp học của Nam
-    Tan->>Tan: B5: Nam quét mã cổng QR -> HLV mở sổ điểm danh lớp
-    Tan->>Phuc: Nam hoàn thành buổi học
-    Phuc->>Phuc: B6: Nam hỏi hạn gói -> Gửi ticket quầy -> Lễ tân đóng ticket
-    Phuc->>HieuAudit: Bàn giao chuỗi thao tác hoàn tất
-    HieuAudit->>HieuAudit: B7: Mở Audit Log đối chiếu toàn bộ vết dữ liệu
-```
+| Bước | Người phụ trách | Vai trò / Module | Hành động chi tiết | Bàn giao cho bước tiếp |
+| :---: | :--- | :--- | :--- | :--- |
+| **B1** | Hiếu (Trưởng nhóm) | Quản lý / F1 & F7 | Đăng nhập 4 vai trò, xác thực phân quyền RBAC độc lập | Bắt đầu tranh chấp sân |
+| **B2** | Hiếu (Trưởng nhóm) | Hội viên Nam & Linh | Tạo giữ chỗ đồng thời trên cùng Sân H; Concurrency lock bảo vệ ô sân, chỉ 1 người thành công | Bàn giao giữ chỗ Sân H cho Lễ tân |
+| **B3** | Sử | Lễ tân / F3 | Lễ tân mở ca trực, thu tiền mặt tại quầy, xuất hoá đơn biên lai PDF chuẩn VAT | Bàn giao Sân H (đã bán) & Sân T (trống) |
+| **B4** | Toàn | Quản lý / F2 | Tạo lớp đè Sân H (bị chặn do xung đột), mở lớp Sân T, hội viên ghi danh | Bàn giao danh sách lớp học |
+| **B5** | Tân | HLV Khoa / F4 & F5 | Hội viên quét mã QR qua cổng -> HLV mở sổ điểm danh, ghi nhận kết quả rèn luyện | Bàn giao hội viên hoàn thành buổi học |
+| **B6** | Phúc | Hội viên & Lễ tân / F6 | Hội viên tra cứu lịch sử, gửi ticket hỗ trợ tới quầy; Lễ tân tiếp nhận và đóng ticket | Bàn giao dữ liệu chuỗi thao tác |
+| **B7** | Hiếu (Trưởng nhóm) | Quản trị / Audit | Mở màn hình Audit Log đối chiếu toàn bộ vết dữ liệu liên hoàn từ B1 đến B6 | Hoàn tất buổi nghiệm thu liên hoàn |
+
+*(Sơ đồ tuần tự chuẩn Draw.io XML lưu tại [diagrams/sequence-diagram.drawio](diagrams/sequence-diagram.drawio)).*
 
 ### Hướng dẫn chi tiết từng bước & Lời thoại chuyển giao (Handoff Cues):
 

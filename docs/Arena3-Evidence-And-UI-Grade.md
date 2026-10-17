@@ -42,7 +42,6 @@ Ngày: 05/10/2026. Viết bằng tiếng Việt đơn giản.
 | Cầu lông 30 ngày | 800.000đ | Nằm thấp hơn khoảng "gói tháng 2–5 triệu" vì đây là gói *một môn* kèm 2 giờ sân. Hợp lý. |
 | All-access 30 ngày | 1.500.000đ | Hơi thấp so với 2–5 triệu. Nên cân nhắc 2–2,5 triệu nếu muốn sát thị trường. |
 | All-access 90 ngày | 3.900.000đ | Nằm trong khoảng 5–15 triệu/3 tháng–1 năm nhưng ở mức thấp. Ổn cho trung tâm mới. |
-| Vé ngày (mới) | 60.000đ | Nằm giữa 40–100k. Chủ trung tâm đổi được trong Cài đặt. |
 
 > Kết luận: giá mẫu **không vô lý**, nhưng All-access 30 ngày hơi rẻ. Mình **chưa tự đổi** giá. Bạn quyết thì mình đổi.
 
@@ -91,7 +90,6 @@ Nguồn: decathlon.vn (blog), kết quả tìm kiếm. [Tóm tắt tìm kiếm /
 
 | Tính năng | Ngoài đời | Arena3 làm | Màn hình |
 |---|---|---|---|
-| **Vé ngày** | Khách vãng lai mua vé 1 ngày, thường 40–100k [Chung chung] | Bán vé (mặc định 60.000đ), chọn ngày dùng, bấm "Cho vào" khi khách tới, "Hủy & hoàn tiền" nếu chưa dùng | `/desk/day-passes` |
 | **Tích điểm** | The Picklr, các CLB: chi tiêu → điểm → ưu đãi | 10.000đ = 1 điểm, 1 điểm = 100đ (tức hoàn khoảng 1%). Hạng Bạc/Vàng. Đổi điểm lấy mã giảm giá (tối thiểu 50 điểm, hạn 60 ngày) | `/app/points` |
 | **Hoa hồng HLV** | Trả theo buổi dạy + thưởng theo số học viên [Chung chung] | Mặc định 150.000đ/buổi + 10.000đ/học viên có mặt. Quản lý chỉnh theo từng HLV, chốt tháng, đánh dấu đã trả. HLV tự xem thu nhập | `/manager/commission`, `/coach/earnings` |
 | **Phiếu bảo trì** | Báo hỏng → sửa → ghi chi phí | Tạo phiếu, mức khẩn, tuỳ chọn **khoá sân** đến khi sửa xong, ghi chi phí sửa | `/desk/maintenance` |
@@ -137,7 +135,7 @@ Mình đã chụp lại **9 màn mới** trên máy tính (1366px) và điện t
 1. (Đã sửa) Tiêu đề danh sách "Đặt cố định" gây hiểu nhầm.
 2. Ô nhập tiền hoa hồng: hiện dấu chấm ngăn cách hàng nghìn.
 3. Form "Đặt cố định": gộp bớt ô, gợi ý sẵn giờ phổ biến.
-4. Đưa "Đặt cố định" và "Vé ngày" lên nơi dễ thấy hơn cho lễ tân (hiện nằm trong "Thêm").
+4. Đưa "Đặt cố định" lên nơi dễ thấy hơn cho lễ tân (hiện nằm trong "Thêm").
 5. Kiểm bằng công cụ đọc màn hình và kiểm bàn phím.
 
 ### Những gì mình chưa làm được / chưa kiểm

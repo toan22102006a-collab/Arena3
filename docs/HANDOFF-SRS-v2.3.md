@@ -1,5 +1,8 @@
 # HANDOFF — Restructure the Arena 3 SRS to the FPT template (v2.2 → v2.3)
 
+> [!NOTE]
+> Superseded in part by v2.4: day pass removed, BR-44 = open shift.
+
 Read this file first, then `docs/SRS-FPT-Template-Rules.md` (403 lines, the binding spec) and `CLAUDE.md`.
 Repo: `D:\learning material\Arena 3` (GitHub `facingshootingstar/Arena3`, branch `working`, merged to `main`). Date of handoff: 2026-10-12.
 

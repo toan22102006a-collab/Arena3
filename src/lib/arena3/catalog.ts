@@ -73,7 +73,9 @@ export const getPublicAvailability = createServerFn({ method: "POST" })
     const [courts, slots] = await Promise.all([
       sql.query<CatalogCourt>(
         `select id, court_code, sport, status
-           from courts order by court_code`,
+           from courts
+          where retired_at is null
+          order by sort_order nulls last, court_code`,
       ),
       sql.query<{ court_id: string; start_at: string | Date; end_at: string | Date; kind: string }>(
         `select court_id, start_at, end_at, kind
@@ -101,7 +103,7 @@ export const getPublicAvailability = createServerFn({ method: "POST" })
 export const getPublicCatalog = createServerFn({ method: "POST" }).handler(async () => {
   const { getSql } = await import("@/lib/db");
   const sql = await getSql();
-  const [plans, classes, prices] = await Promise.all([
+  const [plans, classes, prices, venueRows, coaches] = await Promise.all([
     sql.query<CatalogPlan>(
       `select id, name, sport_scope, duration_days, session_quota, court_hours,
               court_discount_pct, price_vnd
@@ -128,6 +130,19 @@ export const getPublicCatalog = createServerFn({ method: "POST" }).handler(async
          from price_rules
         order by sport, day_kind, start_local`,
     ),
+    sql.query<{ open_time: string; close_time: string; hold_minutes: number }>(
+      `select open_time::text, close_time::text, hold_minutes from center_settings where id = 1`,
+    ),
+    sql.query<{ id: string; name: string; sports: string[] }>(
+      `select u.id, u.full_name as name,
+              coalesce(array_remove(array_agg(cs.sport::text), null), '{}') as sports
+         from users u
+         left join coach_sports cs on cs.user_id = u.id
+        where u.role = 'coach' and u.status = 'active'
+        group by u.id, u.full_name
+        order by u.full_name`,
+    ),
   ]);
-  return { plans, classes, prices };
+  // Opening hours and hold length for the landing's copy and grid (see src/lib/venue.ts).
+  return { plans, classes, prices, venue: venueRows[0] ?? null, coaches };
 });

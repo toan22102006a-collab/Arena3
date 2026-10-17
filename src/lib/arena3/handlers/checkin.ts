@@ -16,12 +16,13 @@
 import type { Sql } from "@/lib/db";
 import { ApiError, err } from "../errors";
 import { requireFlag } from "../flags";
-import { audit, getSettings, readJson, str } from "../helpers";
+import { audit, getSettings, pageOf, readJson, str } from "../helpers";
 import { signCheckinToken, verifyCheckinToken } from "../checkin";
 import { normalizePhone } from "../phone";
 import { requireRole, type PublicUser } from "../session";
 import { addDays, ictDateString, ictDateTime } from "../time";
 import { one } from "../tx";
+import { pageParams } from "../validate";
 import { bookingsCheckIn } from "./bookings";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -310,18 +311,29 @@ function result(
   };
 }
 
-export async function gateCheckins(sql: Sql, user: PublicUser) {
+/** Today's gate check-ins, newest first, a page at a time (a busy day passes a hundred). */
+export async function gateCheckins(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["receptionist", "manager"]);
   await requireFlag(sql, "F4");
+  const { limit, offset } = pageParams(request, { def: 100, max: 100 });
   const today = ictDateString();
-  const items = await sql.query(
-    `select a.id, a.at, a.method, a.flagged, a.reason, u.id as user_id, u.full_name, u.member_code
+  const span = [ictDateTime(today, "00:00").toISOString(), ictDateTime(addDays(today, 1), "00:00").toISOString()];
+  const rows = await sql.query<{ total: number } & Record<string, unknown>>(
+    `select a.id, a.at, a.method, a.flagged, a.reason, u.id as user_id, u.full_name, u.member_code,
+            count(*) over ()::int as total
        from attendance a join users u on u.id = a.user_id
       where a.kind = 'gate' and a.at >= $1 and a.at < $2
-      order by a.at desc limit 100`,
-    [ictDateTime(today, "00:00").toISOString(), ictDateTime(addDays(today, 1), "00:00").toISOString()],
+      order by a.at desc limit $3 offset $4`,
+    [...span, limit, offset],
   );
-  return { status: 200, body: { items } };
+  const body = await pageOf(rows, { limit, offset }, async () =>
+    ((await one<{ n: number }>(
+      sql,
+      `select count(*)::int as n from attendance where kind = 'gate' and at >= $1 and at < $2`,
+      span,
+    ))?.n ?? 0),
+  );
+  return { status: 200, body };
 }
 
 /** The member's own door code (UI-22). Short-lived and single use. */

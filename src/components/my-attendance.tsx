@@ -41,7 +41,7 @@ export function MyAttendance() {
       ) : !data.items.length ? (
         <EmptyState
           title={t("No finished sessions yet")}
-          hint={t("After each class your coach marks you present, late, absent or excused — the marks show up here.")}
+          hint={t("After each class your coach marks you present, late, absent or excused, and the marks show up here.")}
         />
       ) : (
         <>

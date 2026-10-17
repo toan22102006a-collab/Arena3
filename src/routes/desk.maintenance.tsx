@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { SectionTitle } from "@/components/section";
 import { Shell, money, useSessionUser, when } from "@/components/shell";
@@ -16,10 +16,12 @@ import {
   Select,
   Skeleton,
   Stat,
+  Pagination,
 } from "@/components/ui";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { ApiClientError, apiPatch, apiPost } from "@/lib/arena3/client";
 import { t, tServer } from "@/lib/i18n";
+import { usePageState } from "@/lib/use-page-state";
 import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/desk/maintenance")({ component: Page });
@@ -42,7 +44,7 @@ type WO = {
   closed_at: string | null;
   reporter: string | null;
 };
-type Data = { items: WO[]; open: number; urgent: number; cost_month_vnd: number };
+type Data = { items: WO[]; total: number; open: number; urgent: number; cost_month_vnd: number };
 
 const prio = (p: string) => (p === "urgent" ? t("Urgent") : p === "low" ? t("Low") : t("Normal"));
 const stat = (s: string) => (s === "open" ? t("Open") : s === "in_progress" ? t("In progress") : s === "done" ? t("Done") : t("Cancelled"));
@@ -51,12 +53,16 @@ function Page() {
   const user = useSessionUser();
   const role = user?.role === "manager" ? "manager" : user?.role === "coach" ? "coach" : "receptionist";
   const canEdit = role !== "coach";
-  const read = useRead<Data>("/work-orders");
+  const [filter, setFilter] = useState("active");
+  const { offset, setOffset, pageSize, setPageSize, reset } = usePageState("desk.maintenance", 25);
+  useEffect(reset, [filter, reset]);
+  const woParams = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
+  if (filter !== "all") woParams.set("status", filter);
+  const read = useRead<Data>(`/work-orders?${woParams}`, { keepPrevious: true });
   // null = not known yet (still asking, or the question failed) — never zero tickets.
   const data = read.data;
   const courtsRead = useRead<{ items: Court[] }>("/courts");
   const courts = courtsRead.data?.items ?? [];
-  const [filter, setFilter] = useState("active");
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [courtId, setCourtId] = useState("");
@@ -105,7 +111,8 @@ function Page() {
     }
   }
 
-  const shown = (data?.items ?? []).filter((w) => (filter === "active" ? w.status === "open" || w.status === "in_progress" : filter === "all" ? true : w.status === filter));
+  // The server applies the view ("active" = open or in progress) and pages it.
+  const shown = data?.items ?? [];
   const f = (k: string) => (fe?.field === k ? fe.message : undefined);
 
   return (
@@ -154,9 +161,9 @@ function Page() {
       </Reveal>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <Stat label={t("Open tickets")} value={data ? String(data.open) : "—"} />
-        <Stat label={t("Urgent")} value={data ? String(data.urgent) : "—"} />
-        <Stat label={t("Repair cost this month")} value={data ? money(data.cost_month_vnd) : "—"} />
+        <Stat label={t("Open tickets")} value={data ? String(data.open) : "-"} />
+        <Stat label={t("Urgent")} value={data ? String(data.urgent) : "-"} />
+        <Stat label={t("Repair cost this month")} value={data ? money(data.cost_month_vnd) : "-"} />
       </div>
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -185,7 +192,7 @@ function Page() {
                       {w.title} <span className="font-mono text-xs text-muted">{w.code}</span>
                     </p>
                     <p className="text-xs text-muted">
-                      {w.court_code ?? t("General")} · {w.reporter ?? "—"} · {when(w.created_at)}
+                      {w.court_code ?? t("General")} · {w.reporter ?? "-"} · {when(w.created_at)}
                       {w.assignee ? ` · ${w.assignee}` : ""}
                     </p>
                     {w.description ? <p className="mt-1 text-sm">{w.description}</p> : null}
@@ -242,6 +249,14 @@ function Page() {
           ))}
         </Stagger>
       )}
+      <Pagination
+        offset={offset}
+        total={data?.total ?? 0}
+        pageSize={pageSize}
+        onChange={setOffset}
+        onPageSizeChange={setPageSize}
+        label={t("Ticket pages")}
+      />
     </Shell>
   );
 }

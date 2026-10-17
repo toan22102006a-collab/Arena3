@@ -95,7 +95,7 @@ function Forgot() {
     setBusy(true);
     try {
       await apiPost("/auth/otp/verify", { phone, otp, purpose: "reset", password });
-      toast.success(t("Password changed — sign in with the new one."));
+      toast.success(t("Password changed. Sign in with the new one."));
       void navigate({ to: "/login" });
     } catch (err) {
       setError({
@@ -173,11 +173,11 @@ function Forgot() {
                 )}
               </p>
               <p className="text-sm text-muted">
-                {t("No email on your account, or can't open it? Ask the front desk to reset your password — they will give you a temporary one.")}
+                {t("No email on your account, or can't open it? Ask the front desk to reset your password. They will give you a temporary one.")}
               </p>
               {demoOtp ? (
                 <p className="rounded-[var(--radius-md)] border border-hold/40 px-3 py-2 text-sm text-hold">
-                  {slot(t("Demo build — the code is {code}.", { code: SLOT }), <span className="font-medium tabular-nums">{demoOtp}</span>)}
+                  {slot(t("Demo build: the code is {code}.", { code: SLOT }), <span className="font-medium tabular-nums">{demoOtp}</span>)}
                 </p>
               ) : null}
 

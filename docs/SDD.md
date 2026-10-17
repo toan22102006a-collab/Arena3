@@ -213,8 +213,8 @@ The alternative — a payment row with status `pending` — was rejected for a
 specific reason: `pay_status` is a Postgres enum, and `ALTER TYPE … ADD VALUE`
 cannot have its new value used in the same transaction, which makes it awkward
 to migrate safely. But the stronger reason is semantic. A pending payment row
-would be counted by the revenue report, the subscription-debt view and the
-refundable-amount ledger, all of which read `payments`. The centre's books
+would be counted by the revenue report and the refundable-amount ledger, both
+of which read `payments`. The centre's books
 would show money that nobody has looked for yet. An unpaid transfer is not a
 payment; it is a promise, and a promise belongs on the booking.
 

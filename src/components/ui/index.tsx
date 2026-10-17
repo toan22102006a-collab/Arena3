@@ -16,20 +16,29 @@ import {
 } from "react";
 import { createLink } from "@tanstack/react-router";
 import { createPortal } from "react-dom";
-import { Spot, type SpotName } from "../illustrations";
-import { ArrowDownRight, ArrowUpRight, Minus, type LucideIcon } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Minus,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/cn";
+import { PAGE_SIZES, lastPageOffset, pageWindow } from "@/lib/paging";
 import { locale, t } from "@/lib/i18n";
 import { formatDate, statusLabel, statusTone } from "@/lib/arena3/labels";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { EASE_SMOOTH } from "../motion";
 
-type ButtonVariant = "primary" | "ghost" | "outline" | "danger" | "ink";
+type ButtonVariant = "primary" | "ghost" | "outline" | "danger" | "ink" | "espresso";
 type ButtonSize = "md" | "sm" | "lg";
 type ButtonLook = { variant?: ButtonVariant; size?: ButtonSize };
 
 const BUTTON_BASE =
-  "inline-flex items-center whitespace-nowrap justify-center gap-2 font-medium tracking-tight transition-[opacity,transform,background-color,box-shadow,color] duration-150 ease-[var(--ease-smooth)] disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
+  "inline-flex items-center whitespace-nowrap justify-center gap-2 font-medium tracking-tight transition-[opacity,transform,background-color,box-shadow,color] duration-150 ease-[var(--ease-smooth)] disabled:bg-disabled disabled:text-disabled-fg disabled:border-transparent disabled:pointer-events-none disabled:shadow-none active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
 // Softly squared (not pills): sits calmly next to tables, cards and court grids.
 const BUTTON_SIZES = {
   lg: "min-h-13 rounded-[var(--radius-md)] px-7 text-[0.95rem]",
@@ -38,8 +47,9 @@ const BUTTON_SIZES = {
   sm: "min-h-11 rounded-[var(--radius-sm)] px-3.5 text-[0.8125rem] sm:min-h-9",
 } as const;
 const BUTTON_STYLES = {
-  primary: "bg-accent text-accent-fg hover:bg-accent-2",
-  ink: "bg-fg text-bg hover:opacity-90",
+  primary: "bg-accent text-accent-fg hover:bg-accent-hover",
+  ink: "bg-espresso text-espresso-fg hover:opacity-90",
+  espresso: "bg-espresso text-espresso-fg hover:opacity-90",
   outline: "border border-line-strong/70 bg-surface text-fg hover:bg-wood",
   ghost: "text-fg hover:bg-wood",
   danger: "bg-danger text-bg hover:opacity-90",
@@ -377,9 +387,9 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-[var(--radius-xl)] bg-surface p-5 shadow-[var(--shadow-border)]",
+        "rounded-[var(--radius-xl)] bg-surface p-5 border border-line shadow-[var(--shadow-soft)]",
         interactive &&
-          "transition-shadow duration-200 hover:shadow-[var(--shadow-soft)]",
+          "transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
         className,
       )}
       {...props}
@@ -402,7 +412,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium tabular-nums",
+        "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-2xs font-medium tabular-nums",
         map[tone],
         className,
       )}
@@ -471,27 +481,6 @@ export function Skeleton({ className }: { className?: string }) {
   );
 }
 
-export function EmptyState({
-  title,
-  hint,
-  art,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  /** Picture to show; defaults to the neutral empty tray (the page header already carries the screen's own picture). */
-  art?: SpotName;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="grid place-items-center rounded-[var(--radius-xl)] border border-dashed border-line-strong/70 px-6 py-10 text-center">
-      <Spot name={art ?? "empty"} className="mb-2 h-24 w-[7.5rem]" />
-      <p className="font-medium">{t(title)}</p>
-      {hint ? <p className="mt-1 max-w-sm text-sm text-muted">{t(hint)}</p> : null}
-      {children ? <div className="mt-4">{children}</div> : null}
-    </div>
-  );
-}
 
 /**
  * What a panel shows when its data would not load: the reason, and a button that asks again.
@@ -542,7 +531,9 @@ export function Seg({
   const group = useId();
   const reduced = useReducedMotion();
   return (
-    <div className="flex flex-wrap gap-1 rounded-[var(--radius-md)] bg-wood p-1">
+    // One line, always: on a narrow phone the segments scroll sideways instead of wrapping into a
+    // second row that reads as a different control.
+    <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-[var(--radius-md)] bg-wood p-1">
       {options.map((o) => {
         const active = value === o.value;
         return (
@@ -552,7 +543,7 @@ export function Seg({
             onClick={() => onChange(o.value)}
             aria-pressed={active}
             className={cn(
-              "relative min-h-11 min-w-11 rounded-[var(--radius-sm)] px-4 text-sm font-medium transition-colors duration-200 sm:min-h-9 sm:min-w-9",
+              "relative min-h-11 min-w-11 shrink-0 whitespace-nowrap rounded-[var(--radius-sm)] px-3 text-sm font-medium transition-colors duration-200 sm:min-h-9 sm:min-w-9 sm:px-4",
               active ? "text-accent-fg" : "text-muted hover:text-fg",
             )}
           >
@@ -621,42 +612,131 @@ export function FilterChip({
   );
 }
 
-/** "21–40 of 1,000" with Previous / Next, so no list is ever longer than one screenful or two. */
+/**
+ * "21-40 of 1,000", rows per page, and the pages themselves: first, last, the ones around the
+ * current page, gaps between. An old row is two clicks away instead of twenty presses of Next.
+ * Phones get Previous / "Page 3 of 20" / Next, the numbers need more room than a phone has.
+ *
+ * `onPageSizeChange` adds the rows-per-page picker (pair it with `usePageState`, which remembers
+ * the choice per list). A list that shrinks under the current page moves back to its last page.
+ */
 export function Pagination({
   offset,
   total,
   pageSize,
   onChange,
+  onPageSizeChange,
+  pageSizes = PAGE_SIZES,
+  label,
 }: {
   offset: number;
   total: number;
   pageSize: number;
   onChange: (offset: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  pageSizes?: readonly number[];
+  label?: string;
 }) {
+  const outOfRange = total > 0 && offset >= total;
+  useEffect(() => {
+    if (outOfRange) onChange(lastPageOffset(total, pageSize));
+  }, [outOfRange, total, pageSize, onChange]);
+
   if (total <= 0) return null;
-  const from = offset + 1;
-  const to = Math.min(offset + pageSize, total);
-  const page = Math.floor(offset / pageSize) + 1;
-  const pages = Math.ceil(total / pageSize);
+  const page = Math.floor(Math.min(offset, total - 1) / pageSize) + 1;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  const go = (p: number) => onChange((Math.min(Math.max(p, 1), pages) - 1) * pageSize);
+  // The picker only earns its place once there is more than the smallest page to show.
+  const picker = onPageSizeChange && total > Math.min(...pageSizes);
+
   return (
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
-      <span className="tabular-nums">
-        {t("Showing {from}–{to} of {total}", { from, to, total: total.toLocaleString(locale()) })}
-      </span>
+    <nav aria-label={label ?? t("Pages")} className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 text-sm text-muted">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span className="tabular-nums">
+          {t("Showing {from}-{to} of {total}", { from, to, total: total.toLocaleString(locale()) })}
+        </span>
+        {picker ? (
+          <label className="flex items-center gap-2">
+            <span>{t("Rows per page")}</span>
+            <Select
+              value={String(pageSize)}
+              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+              className="h-11 w-auto min-w-[4.5rem] pr-8 tabular-nums sm:h-9"
+            >
+              {pageSizes.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </Select>
+          </label>
+        ) : null}
+      </div>
       {pages > 1 ? (
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => onChange(Math.max(0, offset - pageSize))}>
-            {t("Previous")}
-          </Button>
-          <span className="px-1 tabular-nums">
-            {t("Page {page} of {pages}", { page, pages })}
-          </span>
-          <Button size="sm" variant="outline" disabled={to >= total} onClick={() => onChange(offset + pageSize)}>
-            {t("Next")}
-          </Button>
+        <div className="flex items-center gap-1">
+          <PageButton label={t("First page")} disabled={page === 1} onClick={() => go(1)}>
+            <ChevronsLeft aria-hidden className="size-4" />
+          </PageButton>
+          <PageButton label={t("Previous page")} disabled={page === 1} onClick={() => go(page - 1)}>
+            <ChevronLeft aria-hidden className="size-4" />
+          </PageButton>
+          <span className="px-2 tabular-nums sm:hidden">{t("Page {page} of {pages}", { page, pages })}</span>
+          <div className="hidden items-center gap-1 sm:flex">
+            {pageWindow(page, pages).map((p, i) =>
+              p === "gap" ? (
+                <span key={`gap-${i}`} aria-hidden className="px-1 text-subtle">
+                  …
+                </span>
+              ) : (
+                <PageButton key={p} label={t("Page {page}", { page: p })} current={p === page} onClick={() => go(p)}>
+                  {p}
+                </PageButton>
+              ),
+            )}
+          </div>
+          <PageButton label={t("Next page")} disabled={page === pages} onClick={() => go(page + 1)}>
+            <ChevronRight aria-hidden className="size-4" />
+          </PageButton>
+          <PageButton label={t("Last page")} disabled={page === pages} onClick={() => go(pages)}>
+            <ChevronsRight aria-hidden className="size-4" />
+          </PageButton>
         </div>
       ) : null}
-    </div>
+    </nav>
+  );
+}
+
+function PageButton({
+  label,
+  current = false,
+  disabled = false,
+  onClick,
+  children,
+}: {
+  label: string;
+  current?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-current={current ? "page" : undefined}
+      disabled={disabled || current}
+      onClick={onClick}
+      className={cn(
+        "inline-grid min-h-11 min-w-11 place-items-center rounded-[var(--radius-sm)] px-2 text-sm tabular-nums transition-colors duration-150 sm:min-h-9 sm:min-w-9",
+        current
+          ? "bg-accent font-semibold text-accent-fg disabled:opacity-100"
+          : "border border-line-strong/70 bg-surface text-fg hover:bg-wood disabled:cursor-not-allowed disabled:opacity-40",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -832,3 +912,10 @@ export function ShowMore({ shown, total, step, onMore }: { shown: number; total:
     </div>
   );
 }
+
+export { PageHero, type PageHeroStat } from "@/components/page-hero";
+export { StatStrip, type StatItem } from "@/components/stat-strip";
+export { EmptyState, type EmptyStateAction } from "@/components/empty-state";
+export { RowActions, type RowActionItem } from "@/components/row-actions";
+export { ContextLayout, ContextCard } from "@/components/context-layout";
+export { useSports, SportBadge, SportDot, SportThumbnail, type SportInfo } from "@/components/sports-ui";

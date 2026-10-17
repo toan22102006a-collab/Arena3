@@ -6,9 +6,11 @@ import {
   enqueue,
   enqueueReceipt,
   getSettings,
+  isUuid,
   issueInvoice,
   nextCode,
   num,
+  pageOf,
   readJson,
   str,
 } from "../helpers";
@@ -20,7 +22,7 @@ import { validatePriceRules } from "../rules";
 import { requireRole, type PublicUser } from "../session";
 import { addDays, ictDateString } from "../time";
 import { one } from "../tx";
-import { checkOpeningHours, parseInteger, parseSettingsPatch } from "../validate";
+import { checkOpeningHours, pageParams, parseInteger, parseSettingsPatch } from "../validate";
 
 export async function shiftOpen(sql: Sql, user: PublicUser) {
   requireRole(user, ["receptionist"]);
@@ -64,8 +66,11 @@ export async function shiftCurrent(sql: Sql, user: PublicUser, request: Request)
 export async function shiftClose(sql: Sql, id: string, request: Request, user: PublicUser) {
   requireRole(user, ["receptionist"]);
   const b = await readJson(request);
-  const cash = num(b.cash_declared_vnd);
-  if (cash == null) throw err.validation("cash_declared_vnd is required.");
+  const raw = b.cash_declared_vnd;
+  if (raw === null || raw === undefined || raw === "" || Number.isNaN(Number(raw))) {
+    throw err.validation("cash_declared_vnd is required.");
+  }
+  const cash = parseInteger("cash_declared_vnd", "Cash declared", raw, 0, 2_000_000_000);
   const sh = await one<{ id: string; receptionist_id: string; closed_at: string | null }>(
     sql,
     `select * from cashier_shifts where id = $1 for update`,
@@ -239,6 +244,13 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
   if (!ref_type || !ref_id || !method || amount == null) {
     throw err.validation("ref_type, ref_id, method and amount_vnd are required.");
   }
+  const ALLOWED_PAYMENT_METHODS = ["cash", "card", "transfer"] as const;
+  if (!ALLOWED_PAYMENT_METHODS.includes(method as any)) {
+    throw err.field("method", `Payment method must be one of ${ALLOWED_PAYMENT_METHODS.join(", ")}.`);
+  }
+  if (ref_type !== "booking" && ref_type !== "subscription") {
+    throw err.field("ref_type", "ref_type must be booking or subscription.");
+  }
   // Money in is a positive whole number of đồng. Zero and negative amounts used
   // to post: a -5,000 "payment" quietly lowered what the member had paid, and a
   // later one-đồng payment then activated the plan (D-01).
@@ -246,15 +258,34 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
     throw err.field("amount_vnd", "Enter an amount above zero, in whole đồng.");
   }
   const settings = await getSettings(sql);
-  let shiftId: string | null = str(b.shift_id) ?? null;
-  if (user.role === "receptionist") {
-    const sh = await one<{ id: string }>(
+  let shiftId: string | null = null;
+  const shiftIdRaw = str(b.shift_id);
+  if (shiftIdRaw) {
+    if (!isUuid(shiftIdRaw)) throw err.notFound("Shift does not exist.");
+    const sh = await one<{ id: string; receptionist_id: string; closed_at: string | null }>(
       sql,
-      `select id from cashier_shifts where receptionist_id = $1 and closed_at is null`,
-      [user.id],
+      `select id, receptionist_id, closed_at from cashier_shifts where id = $1`,
+      [shiftIdRaw],
     );
-    if (!sh) throw err.br("BR-44", "The front desk needs an open shift.");
+    if (!sh) throw err.notFound("Shift does not exist.");
+    if (user.role === "receptionist") {
+      if (sh.receptionist_id !== user.id || sh.closed_at !== null) {
+        throw err.forbidden("Cannot record payment to another or closed shift.");
+      }
+    } else {
+      throw err.forbidden("Cannot record payment to a shift.");
+    }
     shiftId = sh.id;
+  } else {
+    if (user.role === "receptionist") {
+      const sh = await one<{ id: string }>(
+        sql,
+        `select id from cashier_shifts where receptionist_id = $1 and closed_at is null`,
+        [user.id],
+      );
+      if (!sh) throw err.br("BR-44", "The front desk needs an open shift.");
+      shiftId = sh.id;
+    }
   }
   let buyer = user.full_name;
   let buyerPhone: string | null = null;
@@ -264,11 +295,15 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
   if (ref_type === "booking") {
     // The receipt is made out to whoever the booking is for — the member, or
     // the walk-in's typed name and phone — never to the receptionist taking it.
+    if (!isUuid(ref_id)) throw err.notFound("Booking does not exist.");
+    const bookingExists = await one<{ id: string }>(sql, `select id from court_bookings where id = $1`, [ref_id]);
+    if (!bookingExists) throw err.notFound("Booking does not exist.");
     const who = await bookingBuyer(sql, ref_id);
     buyer = who.name;
     buyerPhone = who.phone;
     userId = who.userId;
   } else if (ref_type === "subscription") {
+    if (!isUuid(ref_id)) throw err.field("ref_id", "That value is not in the right format.");
     // Locked for the rest of the transaction: two taps on "Take payment" queue
     // here, and the second sees what the first left behind instead of both
     // reading the same balance.
@@ -277,13 +312,14 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
       plan_id: string;
       status: string;
       price_vnd: number;
+      sub_price_vnd: number | null;
       court_discount_pct: number;
       sport_scope: string;
       promo_id: string | null;
       promo_discount_vnd: number;
     }>(
       sql,
-      `select s.user_id, s.plan_id, s.status::text as status, s.promo_id, s.promo_discount_vnd,
+      `select s.user_id, s.plan_id, s.status::text as status, s.promo_id, s.promo_discount_vnd, s.price_vnd as sub_price_vnd,
               p.price_vnd, p.court_discount_pct, p.sport_scope::text as sport_scope
          from subscriptions s join membership_plans p on p.id = s.plan_id
         where s.id = $1 for update of s`,
@@ -294,7 +330,7 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
     if (sub.status !== "pending" && sub.status !== "active") {
       throw err.conflictState("That plan is not waiting for payment.");
     }
-    // No debt and no deposit (BR-19): a plan is paid in one go for exactly what it
+    // No credit and no deposit (BR-19): a plan is paid in one go for exactly what it
     // costs after any code, or it stays pending and grants nothing.
     if (sub.status === "pending") {
       const paid = await one<{ n: number }>(
@@ -305,6 +341,7 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
       );
       if ((paid?.n ?? 0) > 0) throw err.conflictState("This plan order is already paid for.");
     }
+    const basePrice = sub.sub_price_vnd ?? sub.price_vnd;
     let discount = sub.status === "pending" ? sub.promo_discount_vnd : 0;
     let promoId: string | null = sub.status === "pending" ? sub.promo_id : null;
     const code = str(b.promo_code);
@@ -315,12 +352,12 @@ export async function paymentsCreate(sql: Sql, request: Request, user: PublicUse
         scope: "plan",
         sport: sub.sport_scope,
         planId: sub.plan_id,
-        orderVnd: sub.price_vnd,
+        orderVnd: basePrice,
       });
       discount = quote.discount_vnd;
       promoId = quote.promo_id;
     }
-    const expected = sub.price_vnd - discount;
+    const expected = basePrice - discount;
     if (amount !== expected) {
       throw err.field(
         "amount_vnd",
@@ -441,12 +478,22 @@ export async function paymentsRefund(sql: Sql, id: string, request: Request, use
     await audit(sql, user.id, "refund_pending", "payment", (row as { id: string }).id, null, { reason });
     return { status: 201, body: { payment: row } };
   }
+  let shiftId: string | null = null;
+  if (user.role === "receptionist") {
+    const sh = await one<{ id: string }>(
+      sql,
+      `select id from cashier_shifts where receptionist_id = $1 and closed_at is null`,
+      [user.id],
+    );
+    if (!sh) throw err.br("BR-44", "The front desk needs an open shift.");
+    shiftId = sh.id;
+  }
   const payCode = await nextCode(sql, "PAY");
   const row = await one(
     sql,
-    `insert into payments (code, user_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by)
-     values ($1,$2,'cash',$3,$4,'posted',$5,$6,$7) returning *`,
-    [payCode, orig.user_id, signed, orig.vat_rate, orig.ref_type, orig.ref_id, user.id],
+    `insert into payments (code, user_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by, shift_id)
+     values ($1,$2,'cash',$3,$4,'posted',$5,$6,$7,$8) returning *`,
+    [payCode, orig.user_id, signed, orig.vat_rate, orig.ref_type, orig.ref_id, user.id, shiftId],
   );
   await audit(sql, user.id, "refund", "payment", (row as { id: string }).id, null, { reason });
   const restored = await restoreIfFullyRefunded(sql, orig.ref_type, orig.ref_id);
@@ -547,7 +594,6 @@ export async function paymentsRejectRefund(sql: Sql, id: string, request: Reques
 }
 
 /** How many receipts the reconciliation list will show at once. */
-const RECEIPT_CAP = 60;
 
 /**
  * Everything at the desk that is still waiting on money.
@@ -608,12 +654,12 @@ export async function paymentsPending(sql: Sql, request: Request, user: PublicUs
       order by b.transfer_requested_at asc`,
   );
 
-  // `paid_vnd` rather than the debt view: the desk wants to see a part payment
+  // `paid_vnd` calculated directly from posted payments: the desk wants to see a part payment
   // for what it is ("2 of 5 taken"), not just the balance left over.
   const orders = await sql.query(
     `select s.id, s.sport_scope, s.start_on::text as ordered_on, s.end_on::text as end_on,
             u.id as user_id, u.full_name, u.phone, u.member_code,
-            pl.name as plan_name, pl.price_vnd, pl.id as plan_id,
+            pl.name as plan_name, coalesce(s.price_vnd, pl.price_vnd)::int as price_vnd, pl.id as plan_id,
             s.promo_discount_vnd, pr.code as promo_code,
             coalesce(sum(p.amount_vnd) filter (where p.status = 'posted'), 0)::int as paid_vnd
        from subscriptions s
@@ -623,7 +669,7 @@ export async function paymentsPending(sql: Sql, request: Request, user: PublicUs
        left join payments p on p.ref_type = 'subscription' and p.ref_id = s.id
       where s.status = 'pending'
       group by s.id, s.sport_scope, s.start_on, s.end_on,
-               u.id, u.full_name, u.phone, u.member_code, pl.name, pl.price_vnd, pl.id,
+               u.id, u.full_name, u.phone, u.member_code, pl.name, s.price_vnd, pl.price_vnd, pl.id,
                s.promo_discount_vnd, pr.code
       order by s.start_on asc, u.full_name asc`,
   );
@@ -652,32 +698,40 @@ export async function paymentsPending(sql: Sql, request: Request, user: PublicUs
    * `taken_by` comes along because with cash in the list the obvious next
    * question is whose till it went into.
    */
-  const receipts = await sql.query(
-    `select p.id, p.code, p.method, p.amount_vnd, p.created_at, p.ref_type, p.ref_id,
-            p.capture_mode, p.provider,
-            coalesce(u.full_name, i.buyer_name) as member_name, u.member_code,
-            i.buyer_phone,
-            s.full_name as taken_by,
-            i.id as invoice_id
-       from payments p
-       left join users u on u.id = p.user_id
-       left join users s on s.id = p.created_by
-       left join invoices i on i.payment_id = p.id
-      where p.status = 'posted'
-        and p.created_at >= now() - ($1::int * interval '1 day')
-      order by p.created_at desc
-      limit $2`,
-    [days, RECEIPT_CAP + 1],
-  );
-
-  // One row over the cap is fetched purely to answer "is there more?" — the
-  // desk reads this list back against a bank statement, so a silently truncated
-  // list is worse than a short one that admits it is short.
-  const capped = receipts.length > RECEIPT_CAP;
+  //
+  // Paged and searched here, across the whole window: a statement read back against the bank
+  // needs every row reachable, not the newest sixty.
+  const page = pageParams(request, { def: 25, max: 100, prefix: "receipt_" });
+  const rq = sp.get("receipt_q")?.trim() || null;
+  const needle = rq ? `%${rq.replace(/[\\%_]/g, (c) => "\\" + c)}%` : null;
+  const method = sp.get("receipt_method") || null;
+  const receiptRows = (lim: number, off: number) =>
+    sql.query<{ total: number } & Record<string, unknown>>(
+      `select p.id, p.code, p.method, p.amount_vnd, p.created_at, p.ref_type, p.ref_id,
+              p.capture_mode, p.provider,
+              coalesce(u.full_name, i.buyer_name) as member_name, u.member_code,
+              i.buyer_phone,
+              s.full_name as taken_by,
+              i.id as invoice_id,
+              count(*) over ()::int as total
+         from payments p
+         left join users u on u.id = p.user_id
+         left join users s on s.id = p.created_by
+         left join invoices i on i.payment_id = p.id
+        where p.status = 'posted'
+          and p.created_at >= now() - ($1::int * interval '1 day')
+          and ($4::text is null or p.method::text = $4)
+          and ($5::text is null or concat_ws(' ', coalesce(u.full_name, i.buyer_name), u.member_code, i.buyer_phone, p.code) ilike $5)
+        order by p.created_at desc
+        limit $2 offset $3`,
+      [days, lim, off, method, needle],
+    );
+  const rows = await receiptRows(page.limit, page.offset);
+  const receipts = await pageOf(rows, page, async () => Number((await receiptRows(1, 0))[0]?.total ?? 0));
 
   return {
     status: 200,
-    body: { awaiting, orders, refunds, receipts: receipts.slice(0, RECEIPT_CAP), days, capped },
+    body: { awaiting, orders, refunds, receipts: receipts.items, receipts_total: receipts.total, days, capped: false },
   };
 }
 
@@ -722,19 +776,33 @@ export async function subscriptionDecline(sql: Sql, id: string, user: PublicUser
  */
 export async function invoicesMine(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["member", "receptionist", "manager"]);
-  const sp = new URL(request.url).searchParams;
-  const take = Math.min(100, Math.max(1, Number(sp.get("limit") ?? 30) || 30));
-  const items = await sql.query(
+  const url = new URL(request.url);
+  const rawLimit = url.searchParams.get("limit");
+  let req = request;
+  if (rawLimit && Number(rawLimit) > 100) {
+    url.searchParams.set("limit", "100");
+    req = new Request(url.toString(), request);
+  }
+  const { limit, offset } = pageParams(req, { def: 30, max: 100 });
+  const rows = await sql.query<{ total: number } & Record<string, unknown>>(
     `select i.id, i.code, i.issued_at::text as issued_at,
-            p.code as payment_code, p.method, p.amount_vnd, p.status, p.ref_type
+            p.code as payment_code, p.method, p.amount_vnd, p.status, p.ref_type,
+            count(*) over ()::int as total
        from invoices i
        join payments p on p.id = i.payment_id
       where p.user_id = $1
       order by i.issued_at desc
-      limit $2`,
-    [user.id, take],
+      limit $2 offset $3`,
+    [user.id, limit, offset],
   );
-  return { status: 200, body: { items } };
+  const body = await pageOf(rows, { limit, offset }, async () =>
+    ((await one<{ n: number }>(
+      sql,
+      `select count(*)::int as n from invoices i join payments p on p.id = i.payment_id where p.user_id = $1`,
+      [user.id],
+    ))?.n ?? 0),
+  );
+  return { status: 200, body };
 }
 
 export async function invoicePdf(sql: Sql, id: string, request: Request, user: PublicUser) {
@@ -981,6 +1049,7 @@ export async function reportsOccupancy(sql: Sql, request: Request, user: PublicU
        from courts c
        left join occupancies o
          on o.court_id = c.id and o.start_at < $2 and o.end_at > $1
+       where c.retired_at is null or o.id is not null
       group by c.id, c.court_code
       order by c.court_code`,
     [`${date}T06:00:00+07:00`, `${date}T22:00:00+07:00`],
@@ -1000,7 +1069,7 @@ export async function reportsOccupancy(sql: Sql, request: Request, user: PublicU
 
 export async function settingsGet(sql: Sql, user: PublicUser) {
   requireRole(user, ["manager", "receptionist", "coach"]);
-  const row = await one(sql, `select * from center_settings where id = 1`);
+  const row = await one<Record<string, unknown>>(sql, `select * from center_settings where id = 1`);
   return { status: 200, body: row };
 }
 
@@ -1016,10 +1085,13 @@ export async function settingsPatch(sql: Sql, request: Request, user: PublicUser
             cancel_court_hours, cancel_class_hours, noshow_grace_minutes, checkin_before_minutes,
             refund_manager_vnd, self_checkin_enabled, gate_dedup_minutes, at_risk_idle_days, minor_age, vat_rate, legal_name, tax_code, address,
             freeze_max_days_year, waitlist_offer_hours, deposit_pct, deposit_peak_only, cancel_tiers::text,
-            series_min_weeks, series_max_weeks, series_discount_pct, loyalty_earn_vnd, loyalty_redeem_vnd, day_pass_vnd
+            series_min_weeks, series_max_weeks, series_discount_pct, loyalty_earn_vnd, loyalty_redeem_vnd
        from center_settings where id = 1`,
   );
-  if (keys.length === 0) return { status: 200, body: await one(sql, `select * from center_settings where id = 1`) };
+  if (keys.length === 0) {
+    const row = await one<Record<string, unknown>>(sql, `select * from center_settings where id = 1`);
+    return { status: 200, body: row };
+  }
   // Opening hours are judged as a pair, so changing only one is still checked.
   checkOpeningHours(
     (patch.open_time as string | undefined) ?? current!.open_time,
@@ -1041,7 +1113,8 @@ export async function settingsPatch(sql: Sql, request: Request, user: PublicUser
     Object.fromEntries(keys.map((k) => [k, current![k]])),
     patch,
   );
-  return { status: 200, body: await one(sql, `select * from center_settings where id = 1`) };
+  const finalRow = await one<Record<string, unknown>>(sql, `select * from center_settings where id = 1`);
+  return { status: 200, body: finalRow };
 }
 
 export async function priceRulesGet(sql: Sql) {
@@ -1091,23 +1164,31 @@ export async function auditList(sql: Sql, request: Request, user: PublicUser) {
   if (from && to && from > to) throw err.field("to", "The end date is before the start date.");
   const actor = sp.get("actor");
   if (actor && !/^[0-9a-f-]{36}$/i.test(actor)) throw err.field("actor", "Unknown person.");
-  const limit = sp.get("limit") === null ? 50 : parseInteger("limit", "Page size", sp.get("limit"), 1, 200);
+  const { limit, offset } = pageParams(request, { def: 50, max: 200 });
+  // One search over who, what and which record, across every page; underscores in the stored
+  // action and entity names match the spaces people type.
+  const q = sp.get("q")?.trim() || null;
+  const needle = q ? `%${q.replace(/[\\%_]/g, (c) => "\\" + c)}%` : null;
   // Days are the centre's days: 23:30 on the 31st is still the 31st here.
-  const items = await sql.query<Record<string, unknown>>(
-    `select a.id, a.at, a.actor_id, u.full_name as actor_name, u.role as actor_role,
-            a.action, a.entity, a.entity_id, a.before, a.after
-       from audit_logs a
-       left join users u on u.id = a.actor_id
-      where ($1::text is null or a.action = $1)
-        and ($2::uuid is null or a.actor_id = $2::uuid)
-        and ($3::text is null or a.entity = $3)
-        and ($4::date is null or (a.at at time zone 'Asia/Ho_Chi_Minh')::date >= $4::date)
-        and ($5::date is null or (a.at at time zone 'Asia/Ho_Chi_Minh')::date <= $5::date)
-      order by a.at desc, a.id desc
-      limit $6`,
-    [sp.get("action"), actor, sp.get("entity"), from, to, limit + 1],
-  );
-  const more = items.length > limit;
+  const page = (lim: number, off: number) =>
+    sql.query<{ total: number } & Record<string, unknown>>(
+      `select a.id, a.at, a.actor_id, u.full_name as actor_name, u.role as actor_role,
+              a.action, a.entity, a.entity_id, a.before, a.after, count(*) over ()::int as total
+         from audit_logs a
+         left join users u on u.id = a.actor_id
+        where ($1::text is null or a.action = $1)
+          and ($2::uuid is null or a.actor_id = $2::uuid)
+          and ($3::text is null or a.entity = $3)
+          and ($4::date is null or (a.at at time zone 'Asia/Ho_Chi_Minh')::date >= $4::date)
+          and ($5::date is null or (a.at at time zone 'Asia/Ho_Chi_Minh')::date <= $5::date)
+          and ($8::text is null or concat_ws(' ', u.full_name, replace(a.action, '_', ' '), replace(a.entity, '_', ' '), a.entity_id::text) ilike $8)
+        order by a.at desc, a.id desc
+        limit $6 offset $7`,
+      [sp.get("action"), actor, sp.get("entity"), from, to, lim, off, needle],
+    );
+  const rows = await page(limit, offset);
+  const { items, total } = await pageOf(rows, { limit, offset }, async () => Number((await page(1, 0))[0]?.total ?? 0));
+  const more = offset + items.length < total;
   // What the filters can offer: only what actually exists, so the pickers never
   // drift from the handlers that write the log.
   const actions = await sql.query<{ action: string }>(`select distinct action from audit_logs order by action`);
@@ -1118,8 +1199,11 @@ export async function auditList(sql: Sql, request: Request, user: PublicUser) {
   return {
     status: 200,
     body: {
-      items: more ? items.slice(0, limit) : items,
+      items,
       more,
+      total,
+      limit,
+      offset,
       actions: actions.map((a) => a.action),
       entities: entities.map((e) => e.entity),
       actors,

@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { SectionTitle } from "@/components/section";
 import { Shell, money, when } from "@/components/shell";
-import { Badge, Button, Card, Check, DateField, EmptyState, Field, LoadError, Skeleton, Stat } from "@/components/ui";
+import { Badge, Button, Card, Check, DateField, EmptyState, Field, LoadError, Skeleton, Stat, Pagination } from "@/components/ui";
 import { Reveal } from "@/components/motion";
 import { downloadReport } from "@/lib/arena3/client";
 import { todayISO } from "@/lib/arena3/labels";
 import { t, tServer } from "@/lib/i18n";
+import { usePageState } from "@/lib/use-page-state";
 import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/manager/invoices")({ component: Page });
@@ -29,7 +30,12 @@ function Page() {
   const [to, setTo] = useState(todayISO());
   const [onlyNew, setOnlyNew] = useState(false);
   const [busy, setBusy] = useState(false);
-  const { data, error, reload } = useRead<Data>(`/invoices/export-list?from=${from}&to=${to}`);
+  const { offset, setOffset, pageSize, setPageSize, reset } = usePageState("manager.invoices", 25);
+  useEffect(reset, [from, to, reset]);
+  const { data, error, reload } = useRead<Data>(
+    `/invoices/export-list?from=${from}&to=${to}&limit=${pageSize}&offset=${offset}`,
+    { keepPrevious: true },
+  );
   // A range the server refuses names no date (it only says the range is not valid), so both boxes are marked.
   const refused = error?.refused === true;
   const errorId = "invoices-error";
@@ -122,6 +128,15 @@ function Page() {
               ))}
             </div>
           )}
+          {/* `n` is how many invoices the range holds; `total` in this answer is money. */}
+          <Pagination
+            offset={offset}
+            total={data.n ?? 0}
+            pageSize={pageSize}
+            onChange={setOffset}
+            onPageSizeChange={setPageSize}
+            label={t("Invoice pages")}
+          />
         </>
       )}
     </Shell>

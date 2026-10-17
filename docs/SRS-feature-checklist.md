@@ -93,7 +93,7 @@ Ký hiệu cột cuối:
 - [ ] **UC-21** Đặt sân tại quầy cho khách walk-in — ✅
 - [ ] Đặt cố định hằng tuần 4–12 tuần, giảm 10% — ✅
 - [ ] **UC-22** Xử lý thanh toán chờ: thu phần còn lại sau cọc, xác nhận hoặc từ chối chuyển khoản, hủy đơn chưa trả — ✅
-- [ ] **UC-23** Bán và dùng vé ngày (day pass) 60.000đ, hủy vé — ✅
+- [ ] ~~UC-23 Bán và dùng vé ngày~~: đã gỡ khỏi phạm vi (v2.4)
 - [ ] **UC-24** Tạo yêu cầu hoàn tiền — ✅
 - [ ] Hoàn ≤ 1.000.000đ thì duyệt ngay, lớn hơn thì cần quản lý duyệt — ✅ `migrations/0002_arena3.sql:36`
 - [ ] Hoàn toàn bộ đơn thì trả lại lượt dùng mã khuyến mãi — ✅
@@ -201,7 +201,7 @@ Ký hiệu cột cuối:
 - [ ] Hạn mức hoàn không cần quản lý 1.000.000đ; VAT 0%; làm tròn 1.000đ — ✅
 - [ ] Bảo lưu 30 ngày/năm; tuổi vị thành niên <16; lời mời waitlist 2 giờ — ✅
 - [ ] Giữ chuyển khoản 120 phút — ✅
-- [ ] Điểm: 10.000đ/điểm, 100đ/điểm; vé ngày 60.000đ — ✅
+- [ ] Điểm: 10.000đ/điểm, 100đ/điểm — ✅
 - [ ] Tự check-in tắt; cửa sổ quét lặp 120 phút — ✅
 
 ## K. Phụ lục khác

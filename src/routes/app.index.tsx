@@ -8,7 +8,7 @@ import { PassCard } from "@/components/media";
 import { NotificationList, type Notification } from "@/components/notifications";
 import { CancelBookingDialog } from "@/components/cancel-booking";
 import { PayOnlineButton } from "@/components/pay-online";
-import { Shell, hhmm, money, when } from "@/components/shell";
+import { Shell, hhmm } from "@/components/shell";
 import { Button, ButtonLink, Card, EmptyState, LoadError, Skeleton, StatusBadge } from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
 import { GlareHover, ShinyText, SplitText, SpotlightCard } from "@/components/fx";
@@ -124,7 +124,7 @@ function Page() {
           />
         </div>
         {u?.member_code ? (
-          <span className="rounded-[var(--radius-sm)] border border-line bg-surface px-2.5 py-1 font-mono text-xs font-semibold text-muted">
+          <span className="shrink-0 rounded-[var(--radius-sm)] border border-line bg-surface px-2.5 py-1 font-mono text-xs font-semibold text-muted">
             {u.member_code}
           </span>
         ) : null}
@@ -161,7 +161,7 @@ function Page() {
         <Card className="mb-4">
           <p className="text-sm font-medium">{t("Frozen plans")}</p>
           <p className="mt-1 text-sm text-muted">
-            {t("{plans} — ask the desk to unfreeze.", {
+            {t("{plans}. Ask the desk to unfreeze.", {
               plans: frozen
                 .map((s) => t("{plan} · new end date {date}", { plan: tData(s.plan_name), date: formatDate(s.end_on) }))
                 .join(" · "),
@@ -174,10 +174,10 @@ function Page() {
         <Card className="mb-4 border border-hold/30 bg-hold/5">
           <p className="text-sm font-medium text-fg">{t("Plans expiring soon")}</p>
           <p className="mt-1 text-sm text-muted">
-            {t("{plans} — renew to keep your class seats.", {
+            {t("{plans}. Renew to keep your class seats.", {
               plans: expiring
                 .map((s) =>
-                  t("{plan} — {n} days left (until {date})", {
+                  t("{plan}: {n} days left (until {date})", {
                     plan: tData(s.plan_name),
                     n: daysUntil(s.end_on),
                     date: formatDate(s.end_on),
@@ -201,7 +201,7 @@ function Page() {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          <Reveal className="order-1">
+          <Reveal className="order-2" delay={0.08}>
             {first ? (
               <GlareHover className="rounded-[var(--radius-xl)]" duration={1.1}>
                 <PassCard
@@ -213,13 +213,22 @@ function Page() {
                 />
               </GlareHover>
             ) : (
-              <EmptyState title={t("No active plan")} hint={t("Buy a plan to enrol in classes and book courts.")}>
-                <ButtonLink to="/app/plans">{t("Browse plans")}</ButtonLink>
-              </EmptyState>
+              <div className="rounded-[var(--radius-xl)] bg-pass p-6 text-pass-fg">
+                <div className="flex items-center justify-between">
+                  <span className="inline-block rounded-[var(--radius-sm)] border border-pass-fg/20 bg-volt/15 px-2.5 py-1 text-xs font-bold text-volt">
+                    {t("Membership pass")}
+                  </span>
+                </div>
+                <div className="mt-4">
+                  <EmptyState title={t("No active plan")} hint={t("Buy a plan to enrol in classes and book courts.")}>
+                    <ButtonLink to="/app/plans" className="bg-volt text-night font-semibold hover:bg-volt/90">{t("Browse plans")}</ButtonLink>
+                  </EmptyState>
+                </div>
+              </div>
             )}
           </Reveal>
 
-          <div className="order-2 hidden md:order-3 md:col-span-2 md:block">
+          <div className="order-3 hidden md:col-span-2 md:block">
             <SectionTitle text={t("Quick actions")} className="font-display text-lg tracking-tight" />
             <Stagger className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5" gap={0.06}>
               {(
@@ -250,7 +259,8 @@ function Page() {
             </Stagger>
           </div>
 
-          <Reveal className="order-3 md:order-2" delay={0.08}>
+          {/* Today comes first: it is the one thing on this page that changes what you do next. */}
+          <Reveal className="order-1">
             <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={340} strength={0.1}>
             <Card className="relative z-[2] h-full">
               <div className="mb-3 flex items-baseline justify-between">

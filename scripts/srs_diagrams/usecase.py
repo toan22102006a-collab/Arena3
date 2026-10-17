@@ -159,10 +159,10 @@ def build():
 
     out.append(build_uc(
         "06-uc-desk-sales",
-        left=[("rec", "Receptionist", list(range(7)))],
+        left=[("rec", "Receptionist", list(range(6)))],
         rows=numbered(18, ["Open and close a cashier shift", "Manage a member record at the desk",
                            "Manage a member plan at the desk", "Book a court at the desk",
-                           "Settle pending payments", "Sell and redeem a day pass", "Raise a refund"]),
+                           "Settle pending payments", "Raise a refund"]),
     ))
 
     out.append(build_uc(

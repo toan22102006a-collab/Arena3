@@ -110,7 +110,6 @@ The list numbers all 44 use cases in figure order. Each is one complete goal of 
 | UC-20 | Manage a member plan at the desk | Receptionist | 9 |
 | UC-21 | Book a court at the desk | Receptionist | 9 |
 | UC-22 | Settle pending payments | Receptionist | 9 |
-| UC-23 | Sell and redeem a day pass | Receptionist | 9 |
 | UC-24 | Raise a refund | Receptionist | 9 |
 | UC-25 | Check in a court booking | Receptionist | 10 |
 | UC-26 | Check a member in at the gate | Receptionist | 10 |
@@ -166,7 +165,6 @@ The app has 44 routed screens. Each row names the route exactly as the app serve
 | 20 | Courts | Court map | `/desk/courts` | Live court grid. Sells a walk-in slot. |
 | 21 | Classes | Classes (desk) | `/desk/classes` | Every class with its sessions, court, coach and roster. |
 | 22 | Payments | Payments | `/desk/payments` | Plans awaiting payment, transfers to reconcile, refunds awaiting a manager, receipts. |
-| 23 | Day passes | Day passes | `/desk/day-passes` | Sell, mark as used or void a day pass. |
 | 24 | Bookings | Fixed bookings | `/desk/series` | Fixed weekly bookings over 4–12 weeks at 10% off. |
 | 25 | Care | At risk | `/desk/at-risk` | Members whose attendance has dropped, with a contact log. |
 | 26 | Gear | Gear | `/desk/gear` | Lend and take back equipment against stock. |
@@ -539,7 +537,7 @@ The activity diagram in Figure 3 (I.3.2) shows the three payment paths.
 | Priority | Should have |
 | Frequency of use | Weekly |
 | Business rules | BR-40, BR-41 |
-| Other information | One point is earned for every 10,000đ paid for bookings, plans and day passes. Spending points never lowers the tier. |
+| Other information | One point is earned for every 10,000đ paid for bookings and plans. Spending points never lowers the tier. |
 **Normal flow**
 1. The member opens Points.
 2. The system shows the points balance, the tier and the points needed for the next tier.
@@ -818,31 +816,6 @@ The activity diagram in Figure 4 (I.3.3) shows this flow with its waitlist branc
 - 2d. The booking is not confirmed or has nothing left to pay: CONFLICT\_STATE.
 - 2e. The transfer is not confirmed within 120 minutes: the scheduled job releases the slot.
 - 3a. No open shift: BR-44.
-#### 2.23 UC-23 Sell and redeem a day pass
-| Field | Detail |
-| UC ID and name | UC-23 Sell and redeem a day pass |
-| Created by / date | Arena3 team / 2026-10-12 |
-| Primary actor | Receptionist |
-| Secondary actors | Guest or member |
-| Trigger | The receptionist opens Day passes (/desk/day-passes). |
-| Description | The receptionist sells a day pass for entry on a chosen day and marks it used when the customer arrives. |
-| Preconditions | The receptionist is signed in with an open shift. |
-| Postconditions | Sell: an issued pass with a posted payment and e-invoice. Redeem: the pass is used. |
-| Priority | Should have |
-| Frequency of use | Daily |
-| Business rules | BR-44 |
-**Normal flow**
-1. The receptionist enters the customer's name, or the phone of a member, and the day.
-2. The system prices the pass at the centre day-pass price (60,000đ by default).
-3. The receptionist takes payment.
-4. The system issues the pass with its own code, posts the payment and issues the e-invoice.
-5. On the day, the receptionist finds the pass and selects Use.
-**Alternative flows**
-- 5a. The pass was sold in error and not used: the receptionist voids it and the payment is refunded.
-**Exceptions**
-- 1a. The day is in the past: VALIDATION.
-- 3a. No open shift: BR-44.
-- 5b. The pass is used on another day, or was already used or voided: CONFLICT\_STATE.
 #### 2.24 UC-24 Raise a refund
 | Field | Detail |
 | UC ID and name | UC-24 Raise a refund |
@@ -1465,7 +1438,7 @@ Rules are grouped by business area and typed by the standard business-rule taxon
 | BR-41 | Pricing, promotions and payment | A promo code must not be used beyond its total limit or its per-member limit. | Constraint | UC-08, UC-38 |
 | BR-42 | Pricing, promotions and payment | A promo code that does not stack never combines with a plan discount; the larger of the two applies. | Computation | UC-08 |
 | BR-43 | Pricing, promotions and payment | A promo code that has been used must keep its code; staff pause it and create a new one instead. | Constraint | UC-38 |
-| BR-44 | Pricing, promotions and payment | Money may be taken at the desk only within the receptionist's open cashier shift. | Action enabler | UC-18, UC-20, UC-21, UC-22, UC-23, UC-24, UC-27 |
+| BR-44 | Pricing, promotions and payment | Money may be taken at the desk only within the receptionist's open cashier shift. | Action enabler | UC-18, UC-20, UC-21, UC-22, UC-24, UC-27 |
 | BR-45 | Coaching and training | A coach may act only on classes that the coach leads or assists. | Constraint | UC-30, UC-31, UC-32, UC-33, UC-34 |
 | BR-46 | Coaching and training | A student's health notes are shown only to staff whose role or class gives them a need to know. | Constraint | UC-19, UC-34 |
 | BR-47 | Coaching and training | Training records never take money or change a plan balance. | Constraint | UC-32, UC-33 |
@@ -1490,7 +1463,7 @@ Managers change these values on Centre settings (`/manager/settings`), and the r
 | Money | Refund limit without a manager; VAT rate; rounding | 1,000,000đ; 0%; nearest 1,000đ |
 | Members | Freeze days a year; minor age; waitlist offer | 30 days; under 16; 2 hours |
 | Transfers | Bank transfer hold | 120 minutes |
-| Loyalty and day pass | Spend per point; value per point; day pass price | 10,000đ; 100đ; 60,000đ |
+| Loyalty | Spend per point; value per point | 10,000đ; 100đ |
 | Gate | Self check-in; repeat-scan window | Off; 120 minutes |
 ### 3. Common requirements
 These requirements apply to every function, so the use cases do not repeat them.

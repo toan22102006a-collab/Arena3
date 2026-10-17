@@ -47,6 +47,8 @@ export const RULES = {
   passwordChange: { limit: 5, windowMs: 900_000 },
   /** Profile edits. */
   profileUpdate: { limit: 10, windowMs: 300_000 },
+  /** Manager media asset uploads. */
+  assetUpload: { limit: 60, windowMs: 60_000 },
 } satisfies Record<string, LimitRule>;
 
 /**

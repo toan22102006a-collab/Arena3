@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePageState } from "@/lib/use-page-state";
 import { toast } from "sonner";
 import {
   Badge,
@@ -34,7 +35,7 @@ type Report = {
   students: Array<Counts & { user_id: string; full_name: string; member_code: string | null; class_code: string; sport: string }>;
 };
 
-const pct = (v: number | null) => (v === null ? "—" : `${v}%`);
+const pct = (v: number | null) => (v === null ? "-" : `${v}%`);
 
 /**
  * Attendance rate = (present + late) ÷ (sessions marked − excused). Excused
@@ -194,7 +195,6 @@ const outcomeLabel = (v: string) => {
   return l ? t(l) : v;
 };
 
-const RISK_PAGE = 20;
 type RiskKind = "streak" | "idle" | "expiring";
 type RiskFilter = "todo" | "done" | "all" | RiskKind;
 type RiskSort = "priority" | "plan_end" | "last_seen" | "name";
@@ -203,7 +203,7 @@ const SORTS: Array<{ value: RiskSort; label: string }> = [
   { value: "priority", label: tk("Most urgent first") },
   { value: "plan_end", label: tk("Plan ends soonest") },
   { value: "last_seen", label: tk("Away the longest") },
-  { value: "name", label: tk("Name A–Z") },
+  { value: "name", label: tk("Name A-Z") },
 ];
 
 /** The short word a receptionist reads in a table cell; the long sentence stays in the tooltip. */
@@ -224,7 +224,7 @@ export function AtRiskPanel({ canContact = true }: { canContact?: boolean }) {
   const [filter, setFilter] = useState<RiskFilter>("todo");
   const [sort, setSort] = useState<RiskSort>("priority");
   const [q, setQ] = useState("");
-  const [offset, setOffset] = useState(0);
+  const { offset, setOffset, pageSize, setPageSize, reset } = usePageState("at-risk", 25);
   const top = useRef<HTMLDivElement>(null);
 
   const [loadError, setLoadError] = useState<ReadError | null>(null);
@@ -296,8 +296,8 @@ export function AtRiskPanel({ canContact = true }: { canContact?: boolean }) {
   }, [items, filter, sort, q]);
 
   // A new search, filter or sort starts from the first page; a stale offset would show an empty one.
-  useEffect(() => setOffset(0), [filter, sort, q]);
-  const page = shown.slice(offset, offset + RISK_PAGE);
+  useEffect(reset, [filter, sort, q, reset]);
+  const page = shown.slice(offset, offset + pageSize);
   const goTo = (o: number) => {
     setOffset(o);
     top.current?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
@@ -329,8 +329,8 @@ export function AtRiskPanel({ canContact = true }: { canContact?: boolean }) {
         <summary className="cursor-pointer py-3 font-medium marker:text-muted sm:py-0.5">{t("Who ends up on this list?")}</summary>
         <p className="mt-2 text-muted">
           {t(
-            "Three things put someone here: absent three sessions running, no visit for {n}+ days on a live plan, or a plan ending soon with low attendance. Contacting them is a courtesy call — never a penalty.",
-            { n: idleDays ?? "—" },
+            "Three things put someone here: absent three sessions running, no visit for {n}+ days on a live plan, or a plan ending soon with low attendance. Contacting them is a courtesy call, never a penalty.",
+            { n: idleDays ?? "-" },
           )}
         </p>
       </details>
@@ -415,14 +415,14 @@ export function AtRiskPanel({ canContact = true }: { canContact?: boolean }) {
                   {m.last_contact ? (
                     <p className="text-xs text-muted md:col-span-4">
                       {formatDate(m.last_contact.at)} · {m.last_contact.by}: {outcomeLabel(m.last_contact.outcome)}
-                      {m.last_contact.note ? ` — ${m.last_contact.note}` : ""}
+                      {m.last_contact.note ? ` · ${m.last_contact.note}` : ""}
                     </p>
                   ) : null}
                 </li>
               ))}
             </ul>
           </Card>
-          <Pagination offset={offset} total={shown.length} pageSize={RISK_PAGE} onChange={goTo} />
+          <Pagination offset={offset} total={shown.length} pageSize={pageSize} onChange={goTo} onPageSizeChange={setPageSize} label={t("At-risk pages")} />
         </>
       )}
 

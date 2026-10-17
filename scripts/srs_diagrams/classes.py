@@ -144,10 +144,6 @@ def booking_payment():
         ["+ generateBookings(): void", "+ cancel(): void"], c0, 270)
     cls(d, "payable", "Payable", [], ["+ amountDue(): Integer", "+ settle(payment: Payment): void"],
         c2, 300, kind="interface")
-    cls(d, "pass", "DayPass",
-        ["- code: String", "- guestName: String", "- validOn: Date", "- priceVnd: Integer",
-         "- status: DayPassStatus"],
-        ["+ markUsed(): void", "+ voidPass(): void"], c3, 262)
     cls(d, "method", "PayMethod", ["cash", "transfer", "card", "gateway", "quota"], [], c3, 920, kind="enum")
     cls(d, "user", "User",
         ["- memberCode: String", "- fullName: String", "- phone: String", "- email: String",
@@ -184,7 +180,6 @@ def booking_payment():
     link(d, "booking", "occ", "0..1", "0..1", ("R", 256), ("B", 780), points=[(780, 256)])
     link(d, "series", "booking", "0..1", "1..*", ("R", 370), ("L", 370))
     link(d, "booking", "payable", "", "", ("R", 349), ("L", 349), style=REALIZE)
-    link(d, "pass", "payable", "", "", ("L", 349), ("R", 349), style=REALIZE)
     link(d, "user", "booking", "0..1", "0..*", ("T", x_mid(1)), ("B", x_mid(1)))
     link(d, "cshift", "user", "0..*", "1", ("R", 680), ("L", 680))
     link(d, "pay", "user", "0..*", "0..1", ("L", 640), ("R", 640))
@@ -363,7 +358,7 @@ def operations():
         ["- openTime: Time", "- closeTime: Time", "- slotMinutes: Integer", "- holdMinutes: Integer",
          "- bookAheadDays: Integer", "- maxSlotsPerDay: Integer", "- cancelCourtHours: Integer",
          "- refundManagerVnd: Integer", "- depositPct: Integer", "- freezeMaxDaysYear: Integer",
-         "- gateDedupMinutes: Integer", "- loyaltyEarnVnd: Integer", "- dayPassVnd: Integer",
+         "- gateDedupMinutes: Integer", "- loyaltyEarnVnd: Integer",
          "- vatRate: Decimal"],
         ["+ current(): CenterSettings", "+ update(patch): void"], c3, 40)
     cls(d, "flag", "FeatureFlag", ["- key: String", "- enabled: Boolean"], ["+ toggle(): void"], c4, 40)

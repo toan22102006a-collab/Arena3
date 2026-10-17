@@ -19,6 +19,8 @@ import * as checkinH from "./handlers/checkin";
 import * as promoH from "./handlers/promos";
 import * as attH from "./handlers/attendance";
 import * as xH from "./handlers/extras";
+import * as assetsH from "./handlers/assets";
+import * as courtH from "./handlers/courts";
 
 type Result = { status: number; body: unknown };
 
@@ -97,6 +99,14 @@ async function dispatch(request: Request): Promise<Response | Result> {
     const sql = await getSql();
     return deskH.priceRulesGet(sql);
   }
+  if (method === "GET" && p0 === "site-assets" && !p1) {
+    const sql = await getSql();
+    return assetsH.siteAssetsList(sql);
+  }
+  if (method === "GET" && p0 === "site-assets" && p1 && p2 === "file") {
+    const sql = await getSql();
+    return assetsH.siteAssetGetFile(sql, p1);
+  }
 
   // Authenticated
   const authed = async (fn: (sql: Awaited<ReturnType<typeof getSql>>, user: PublicUser) => Promise<Result | Response>) => {
@@ -134,7 +144,7 @@ async function dispatch(request: Request): Promise<Response | Result> {
     return authed((sql, user) => authH.mePatch(sql, request, user));
   }
   if (method === "GET" && p0 === "me" && p1 === "notifications" && !p2) {
-    return authedRead((sql, user) => authH.meNotifications(sql, user));
+    return authedRead((sql, user) => authH.meNotifications(sql, request, user));
   }
   if (method === "POST" && p0 === "me" && p1 === "notifications" && p2 === "read") {
     return authed((sql, user) => authH.meNotificationsRead(sql, request, user));
@@ -146,7 +156,7 @@ async function dispatch(request: Request): Promise<Response | Result> {
     return authedRead((sql, user) => bookH.occupancyDetail(sql, request, user));
   }
   if (method === "GET" && p0 === "availability" && !p1) {
-    return authedRead((sql) => bookH.availabilityGet(sql, request));
+    return authedRead((sql, user) => bookH.availabilityGet(sql, request, user));
   }
   if (method === "GET" && p0 === "occupancy" && !p1) {
     return authedRead((sql) => bookH.occupancyGet(sql, request));
@@ -330,29 +340,14 @@ async function dispatch(request: Request): Promise<Response | Result> {
     );
   }
   if (method === "GET" && p0 === "series" && !p1) {
-    return authedRead((sql, user) => xH.seriesList(sql, user));
+    return authedRead((sql, user) => xH.seriesList(sql, request, user));
   }
   if (method === "POST" && p0 === "series" && p1 && p2 === "cancel") {
     return authed((sql, user) => xH.seriesCancel(sql, p1, request, user));
   }
-  // Day passes.
-  if (method === "GET" && p0 === "day-passes" && !p1) {
-    return authedRead((sql, user) => xH.dayPassList(sql, request, user));
-  }
-  if (method === "POST" && p0 === "day-passes" && !p1) {
-    return authed((sql, user) =>
-      withIdempotency(sql, request, user.id, false, () => xH.dayPassSell(sql, request, user)),
-    );
-  }
-  if (method === "POST" && p0 === "day-passes" && p1 && p2 === "use") {
-    return authed((sql, user) => xH.dayPassUse(sql, p1, user));
-  }
-  if (method === "POST" && p0 === "day-passes" && p1 && p2 === "void") {
-    return authed((sql, user) => xH.dayPassVoid(sql, p1, user));
-  }
   // Loyalty points.
   if (method === "GET" && p0 === "me" && p1 === "points") {
-    return authedRead((sql, user) => xH.meLoyalty(sql, user));
+    return authedRead((sql, user) => xH.meLoyalty(sql, request, user));
   }
   if (method === "POST" && p0 === "me" && p1 === "points" && p2 === "redeem") {
     return authed((sql, user) => xH.loyaltyRedeem(sql, request, user));
@@ -556,7 +551,7 @@ async function dispatch(request: Request): Promise<Response | Result> {
     return authedRead((sql, user) => checkinH.deskCheckinCode(sql, user));
   }
   if (method === "GET" && p0 === "desk" && p1 === "gate-checkins") {
-    return authedRead((sql, user) => checkinH.gateCheckins(sql, user));
+    return authedRead((sql, user) => checkinH.gateCheckins(sql, request, user));
   }
   if (method === "GET" && p0 === "me" && p1 === "checkin-token") {
     return authedRead((sql, user) => checkinH.meCheckinToken(sql, user));
@@ -588,7 +583,7 @@ async function dispatch(request: Request): Promise<Response | Result> {
   }
   // Before the bare /tickets read, or "mine" is matched as a ticket id.
   if (method === "GET" && p0 === "tickets" && p1 === "mine") {
-    return authedRead((sql, user) => opsH.ticketsMine(sql, user));
+    return authedRead((sql, user) => opsH.ticketsMine(sql, request, user));
   }
   if (method === "GET" && p0 === "tickets" && !p1) {
     return authedRead((sql, user) => opsH.ticketsList(sql, request, user));
@@ -602,6 +597,9 @@ async function dispatch(request: Request): Promise<Response | Result> {
   if (method === "POST" && p0 === "tickets" && p1 && p2 === "close") {
     return authed((sql, user) => opsH.ticketClose(sql, p1, user));
   }
+  if (method === "GET" && p0 === "bank-transfer" && !p1) {
+    return authedRead((_sql, user) => opsH.bankTransferGet(user));
+  }
   if (method === "GET" && p0 === "flags") {
     const sql = await getSql();
     return opsH.flagsGet(sql);
@@ -611,7 +609,60 @@ async function dispatch(request: Request): Promise<Response | Result> {
   }
 
   if (method === "DELETE" && p0 === "payments") {
-    throw err.forbidden("Payments cannot be deleted — issue a refund instead.");
+    return authed(async () => {
+      throw err.forbidden("Payments cannot be deleted — issue a refund instead.");
+    });
+  }
+
+  // Manager site assets
+  if (method === "GET" && p0 === "manager" && p1 === "site-assets" && p2 === "library") {
+    return authedRead((_sql, user) => assetsH.managerMediaLibrary(user));
+  }
+  if (method === "GET" && p0 === "manager" && p1 === "site-assets" && !p2) {
+    return authedRead((sql, user) => assetsH.managerAssetsList(sql, user));
+  }
+  if (method === "POST" && p0 === "manager" && p1 === "site-assets" && p2 === "upload") {
+    return authed((sql, user) => assetsH.managerAssetUpload(sql, request, user));
+  }
+  if ((method === "PUT" || method === "POST") && p0 === "manager" && p1 === "site-assets" && p2 && !parts[3]) {
+    return authed((sql, user) => assetsH.managerAssetUpload(sql, request, user, p2));
+  }
+  if (method === "PATCH" && p0 === "manager" && p1 === "site-assets" && p2 && !parts[3]) {
+    return authed((sql, user) => assetsH.managerAssetPatch(sql, request, user, p2));
+  }
+  if (method === "POST" && p0 === "manager" && p1 === "site-assets" && p2 && parts[3] === "revert") {
+    return authed((sql, user) => assetsH.managerAssetRevert(sql, request, user, p2));
+  }
+  if (method === "POST" && p0 === "manager" && p1 === "site-assets" && p2 && parts[3] === "reset") {
+    return authed((sql, user) =>
+      assetsH.managerAssetRevert(
+        sql,
+        new Request(request.url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ to: "default" }),
+        }),
+        user,
+        p2,
+      ),
+    );
+  }
+
+  // Manager courts
+  if (method === "GET" && p0 === "manager" && p1 === "courts" && !p2) {
+    return authedRead((sql, user) => courtH.managerCourtsList(sql, user));
+  }
+  if (method === "POST" && p0 === "manager" && p1 === "courts" && !p2) {
+    return authed((sql, user) => courtH.managerCourtCreate(sql, request, user));
+  }
+  if (method === "PATCH" && p0 === "manager" && p1 === "courts" && p2 && !parts[3]) {
+    return authed((sql, user) => bookH.courtsPatch(sql, p2, request, user));
+  }
+  if (method === "POST" && p0 === "manager" && p1 === "courts" && p2 && parts[3] === "retire") {
+    return authed((sql, user) => courtH.managerCourtRetire(sql, p2, request, user));
+  }
+  if (method === "POST" && p0 === "manager" && p1 === "courts" && p2 && parts[3] === "restore") {
+    return authed((sql, user) => courtH.managerCourtRestore(sql, p2, user));
   }
 
   void staffRoles;

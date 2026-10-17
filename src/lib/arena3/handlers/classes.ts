@@ -7,6 +7,10 @@ import { requireRole, type PublicUser } from "../session";
 import { addDays, classMinutes, ictDateString, ictDateTime, slotSpan } from "../time";
 import { one } from "../tx";
 import { inviteWaitlist } from "./ops";
+import { assertClassStaff } from "./training";
+import { assertSlotGrid } from "./bookings";
+
+export const MAX_CLASS_CAPACITY = 200;
 
 export async function classesList(sql: Sql, request: Request, user: PublicUser | null) {
   const sport = new URL(request.url).searchParams.get("sport");
@@ -40,6 +44,9 @@ export async function classesCreate(sql: Sql, request: Request, user: PublicUser
   const start_on = str(b.start_on);
   const end_on = str(b.end_on);
   const capacity = num(b.capacity) ?? 12;
+  if (capacity > MAX_CLASS_CAPACITY) {
+    throw err.field("capacity", `Capacity cannot exceed ${MAX_CLASS_CAPACITY}.`);
+  }
   const duration_min = classMinutes(num(b.duration_min));
   if (duration_min == null) {
     throw err.validation("A class runs for whole court hours (60, 120 or 180).");
@@ -47,6 +54,23 @@ export async function classesCreate(sql: Sql, request: Request, user: PublicUser
   if (!sport || !level || !coach_id || !court_id || !rrule || !start_on || !end_on) {
     throw err.validation("Class details are incomplete.");
   }
+  if (start_on > end_on) {
+    throw err.field("end_on", "End date must be on or after start date.");
+  }
+
+  const rruleParts = Object.fromEntries(
+    rrule.split(";").map((p) => {
+      const [k, v] = p.split("=");
+      return [k ?? "", v ?? ""];
+    }),
+  );
+  if (rruleParts.BYHOUR !== undefined) {
+    const byHour = Number(rruleParts.BYHOUR);
+    if (!Number.isInteger(byHour) || byHour < 0 || byHour > 23) {
+      throw err.field("rrule", "BYHOUR must be an integer between 0 and 23.");
+    }
+  }
+
   const coach = await one<{ role: string }>(sql, `select role from users where id = $1`, [coach_id]);
   if (!coach || coach.role !== "coach") throw err.br("BR-25", "That coach is not valid.");
   const sportOk = await one(
@@ -55,6 +79,23 @@ export async function classesCreate(sql: Sql, request: Request, user: PublicUser
     [coach_id, sport],
   );
   if (!sportOk) throw err.br("BR-25", "That coach is not assigned to this sport.");
+
+  const court = await one<{ sport: string; retired_at: string | null }>(
+    sql,
+    `select sport::text as sport, retired_at from courts where id = $1`,
+    [court_id],
+  );
+  if (!court || court.retired_at) throw err.field("court_id", "That court does not exist.");
+  if (court.sport !== sport) {
+    throw err.field("court_id", "Court sport must match class sport.");
+  }
+
+  const assistant_id = str(b.assistant_id);
+  if (assistant_id) {
+    const asst = await one<{ role: string }>(sql, `select role from users where id = $1`, [assistant_id]);
+    if (!asst || asst.role !== "coach") throw err.field("assistant_id", "That assistant coach is not valid.");
+  }
+
   const row = await one(
     sql,
     `insert into classes
@@ -248,6 +289,30 @@ export async function classesEnroll(sql: Sql, id: string, request: Request, user
     [userId, id],
   );
   if (overlap) throw err.br("BR-22", "This clashes with another class you are in.");
+  const pendingOffers = await one<{ n: number }>(
+    sql,
+    `select count(*)::int as n
+       from waitlist_offers o
+       join enrollments e on e.id = o.enrollment_id
+      where e.class_id = $1 and o.status = 'pending' and o.expires_at > now()`,
+    [id],
+  );
+  const reservedSeats = (cl.enrolled_count ?? 0) + (pendingOffers?.n ?? 0);
+  if (reservedSeats >= cl.capacity) {
+    try {
+      const wl = await one<{ enrollment_waitlist: string }>(
+        sql,
+        `select enrollment_waitlist($1::uuid, $2::uuid) as enrollment_waitlist`,
+        [id, userId],
+      );
+      const enr = await one(sql, `select * from enrollments where id = $1`, [wl!.enrollment_waitlist]);
+      return { status: 201, body: { enrollment: enr, waitlisted: true } };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("ALREADY_ENROLLED")) throw err.br("BR-22", "You are already enrolled.");
+      throw e;
+    }
+  }
   await sql.query("savepoint sp_enroll");
   try {
     const row = await one<{ enrollment_confirm: string }>(
@@ -295,6 +360,15 @@ export async function enrollmentDelete(sql: Sql, id: string, user: PublicUser) {
   }>(sql, `select * from enrollments where id = $1 for update`, [id]);
   if (!enr) throw err.notFound();
   if (user.role === "member" && enr.user_id !== user.id) throw err.forbidden();
+  if (user.role === "coach") {
+    const cl = await one<{ coach_id: string; assistant_id: string | null }>(
+      sql,
+      `select coach_id, assistant_id from classes where id = $1`,
+      [enr.class_id],
+    );
+    if (!cl) throw err.notFound();
+    assertClassStaff(cl, user);
+  }
   if (enr.status === "waitlisted") {
     await sql.query(`update enrollments set status = 'cancelled', waitlist_pos = null where id = $1`, [id]);
     return { status: 200, body: { ok: true } };
@@ -490,13 +564,15 @@ type SessionRow = {
   level: string;
   coach_id: string;
   assistant_id: string | null;
+  class_end_on: string | null;
 };
 
 async function lockSession(sql: Sql, sessionId: string): Promise<SessionRow> {
   const s = await one<SessionRow>(
     sql,
     `select s.id, s.class_id, s.court_id, s.start_at, s.end_at, s.status::text as status, s.occupancy_id,
-            s.original_start_at, cl.sport::text as sport, cl.level, cl.coach_id, cl.assistant_id
+            s.original_start_at, cl.sport::text as sport, cl.level, cl.coach_id, cl.assistant_id,
+            cl.end_on::text as class_end_on
        from sessions s join classes cl on cl.id = s.class_id
       where s.id = $1
       for update of s`,
@@ -584,6 +660,18 @@ export async function sessionReschedule(sql: Sql, sessionId: string, request: Re
   if (oldStart.getTime() <= Date.now()) throw err.conflictState("That session has already started.");
   if (newStart.getTime() === oldStart.getTime()) throw err.field("start_at", "That is the time it already has.");
 
+  const settings = await getSettings(sql);
+  assertSlotGrid(newStart, settings);
+  const newStartDate = ictDateString(newStart);
+  if (s.class_end_on && newStartDate > s.class_end_on) {
+    throw err.field("start_at", "Cannot reschedule past class end date.");
+  }
+  const newEnd = new Date(newStart.getTime() + length);
+  const close = ictDateTime(newStartDate, settings.close_time.slice(0, 5));
+  if (newEnd > close) {
+    throw err.field("start_at", "Session would end after closing time.");
+  }
+
   const reason = reasonOf(b);
   const hoursAhead = (oldStart.getTime() - Date.now()) / 3600000;
   if (hoursAhead < MOVE_FREE_HOURS && !reason) {
@@ -594,8 +682,7 @@ export async function sessionReschedule(sql: Sql, sessionId: string, request: Re
     );
   }
 
-  const newEnd = new Date(newStart.getTime() + length);
-  const { slot_minutes } = await getSettings(sql);
+  const { slot_minutes } = settings;
   const held = slotSpan(newStart, newEnd, slot_minutes);
   try {
     // Moved in place, so the session's own old slot never counts as a clash.
@@ -749,8 +836,8 @@ export async function classesPatch(sql: Sql, classId: string, request: Request, 
   if (status && cl.status === "draft") throw err.conflictState("Publish the class before opening or closing it.");
 
   const capacity = b.capacity === undefined ? cl.capacity : num(b.capacity);
-  if (capacity === undefined || !Number.isInteger(capacity) || capacity < 1 || capacity > 200) {
-    throw err.field("capacity", "Capacity must be a whole number from 1 to 200.");
+  if (capacity === undefined || !Number.isInteger(capacity) || capacity < 1 || capacity > MAX_CLASS_CAPACITY) {
+    throw err.field("capacity", `Capacity must be a whole number from 1 to ${MAX_CLASS_CAPACITY}.`);
   }
   if (capacity < cl.enrolled_count) {
     throw err.br("BR-21", `${cl.enrolled_count} members are already enrolled — capacity cannot go below that.`, {

@@ -45,7 +45,7 @@ export async function capacityBody(sql: Sql, from: string, to: string, sport: st
          from courts c
         cross join generate_series($1::date, $2::date, interval '1 day') as d(day)
         cross join generate_series($4::int, $5::int - 1) as h(hr)
-        where c.status = 'ready' and ($3::text is null or c.sport::text = $3)
+        where c.status = 'ready' and c.retired_at is null and ($3::text is null or c.sport::text = $3)
      )
      select s.court_id, s.court_code, s.sport, s.hr, count(*)::int as slots,
             coalesce(sum((

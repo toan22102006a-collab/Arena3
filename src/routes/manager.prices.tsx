@@ -2,6 +2,9 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Shell, money } from "@/components/shell";
+import { PageHero } from "@/components/page-hero";
+import { StatStrip } from "@/components/stat-strip";
+import { SportBadge } from "@/components/sports-ui";
 import { Badge, Button, Card, EmptyState, LoadError, MoneyInput, Skeleton } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/motion";
 import { StarBorder } from "@/components/fx";
@@ -112,12 +115,30 @@ function Page() {
 
   const onSale = (plans ?? []).filter((p) => p.is_on_sale);
 
+  const totalRules = items?.length ?? 0;
+  const peakRules = items?.filter((r) => r.is_peak).length ?? 0;
+  const offPeakRules = totalRules - peakRules;
+  const sportsCount = groups.length;
+
   return (
-    <Shell
-      role="manager"
-      title={t("Pricing")}
-      subtitle={t("A new price only applies to new transactions — bookings and plans already sold keep theirs.")}
-    >
+    <Shell role="manager">
+      <PageHero
+        slot="banner.manager"
+        title={t("Pricing")}
+        subtitle={t("A new price only applies to new transactions: bookings and plans already sold keep theirs.")}
+        className="mb-6"
+      />
+
+      <StatStrip
+        stats={[
+          { label: tk("Total rates"), value: totalRules },
+          { label: tk("Peak rules"), value: peakRules },
+          { label: tk("Off-peak rules"), value: offPeakRules },
+          { label: tk("Sports covered"), value: sportsCount },
+        ]}
+        className="mb-6"
+      />
+
       <section aria-labelledby="court-rates">
         <SectionTitle
           id="court-rates"
@@ -137,9 +158,12 @@ function Page() {
             {groups.map(([sport, rows], gi) => (
               <details key={sport} open={gi === 0 || rows.some((x) => x.index === bad)} className="group">
                 <summary className="mb-2 flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-md)] bg-surface px-3 text-sm font-medium text-muted [&::-webkit-details-marker]:hidden">
-                  <span>
-                    {sportLabel(sport)} <span className="normal-case tracking-normal">· {t("{n} rates", { n: rows.length })}</span>
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <SportBadge sport={sport} />
+                    <span>
+                      {sportLabel(sport)} <span className="normal-case tracking-normal">· {t("{n} rates", { n: rows.length })}</span>
+                    </span>
+                  </div>
                   <ChevronDown aria-hidden="true" className="size-4 transition-transform group-open:rotate-180" />
                 </summary>
                 <Stagger className="grid gap-2" gap={0.03}>
@@ -157,7 +181,7 @@ function Page() {
                           ) : null}
                         </span>
                         <span className="text-sm tabular-nums">
-                          {r.start_local.slice(0, 5)}–{r.end_local.slice(0, 5)}
+                          {r.start_local.slice(0, 5)}-{r.end_local.slice(0, 5)}
                         </span>
                         <span>
                           <Badge tone={r.is_peak ? "accent" : "muted"}>{r.is_peak ? t("Peak") : t("Off-peak")}</Badge>

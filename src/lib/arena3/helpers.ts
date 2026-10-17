@@ -40,7 +40,6 @@ export type Settings = {
   series_discount_pct: number;
   loyalty_earn_vnd: number;
   loyalty_redeem_vnd: number;
-  day_pass_vnd: number;
 };
 
 export async function getSettings(sql: Sql): Promise<Settings> {
@@ -54,7 +53,7 @@ export async function getSettings(sql: Sql): Promise<Settings> {
             self_checkin_enabled, gate_dedup_minutes, at_risk_idle_days,
             tax_code, legal_name, address,
             deposit_pct, deposit_peak_only, cancel_tiers, series_min_weeks, series_max_weeks,
-            series_discount_pct, loyalty_earn_vnd, loyalty_redeem_vnd, day_pass_vnd
+            series_discount_pct, loyalty_earn_vnd, loyalty_redeem_vnd
        from center_settings where id = 1`,
   );
   if (!row) throw err.validation("center_settings is missing.");
@@ -87,7 +86,10 @@ export async function bookingBuyer(
   };
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isUuid(v: unknown): v is string {
+  return typeof v === "string" && UUID_RE.test(v);
+}
 
 export async function audit(
   sql: Sql,
@@ -267,6 +269,12 @@ export async function issueInvoice(
   return inv!.id;
 }
 
+type InFlightIdem = {
+  hash: string;
+  promise: Promise<{ status: number; body: unknown }>;
+};
+const inFlightIdempotency = new Map<string, InFlightIdem>();
+
 export async function withIdempotency(
   sql: Sql,
   request: Request,
@@ -277,8 +285,20 @@ export async function withIdempotency(
   const key = request.headers.get("idempotency-key");
   if (required && !key) throw err.validation("Idempotency-Key is required.");
   if (!key) return handler();
+  const uid = userId ?? "00000000-0000-0000-0000-000000000000";
   const raw = await request.clone().text();
   const hash = sha256(`${request.method}:${new URL(request.url).pathname}:${raw}`);
+
+  const flightKey = `${uid}:${key}`;
+  const existingFlight = inFlightIdempotency.get(flightKey);
+  if (existingFlight) {
+    if (existingFlight.hash !== hash) {
+      throw err.validation("Idempotency-Key was already used for a different request.");
+    }
+    const res = await existingFlight.promise;
+    return { status: res.status, body: res.body, replay: true };
+  }
+
   const existing = await one<{
     request_hash: string;
     response_code: number;
@@ -287,8 +307,8 @@ export async function withIdempotency(
   }>(
     sql,
     `select request_hash, response_code, response_body, expires_at::text
-       from idempotency_keys where key = $1`,
-    [key],
+       from idempotency_keys where user_id = $1 and key = $2`,
+    [uid, key],
   );
   if (existing && new Date(existing.expires_at) > new Date()) {
     if (existing.request_hash !== hash) {
@@ -296,33 +316,70 @@ export async function withIdempotency(
     }
     return { status: existing.response_code, body: existing.response_body, replay: true };
   }
-  const result = await handler();
-  await sql.query(
-    `insert into idempotency_keys
-       (key, user_id, method, path, request_hash, response_code, response_body, expires_at)
-     values ($1,$2,$3,$4,$5,$6,$7::jsonb, now() + interval '24 hours')
-     on conflict (key) do nothing`,
-    [
-      key,
-      userId,
-      request.method,
-      new URL(request.url).pathname,
-      hash,
-      result.status,
-      JSON.stringify(result.body),
-    ],
-  );
-  return result;
+  const promise = (async () => {
+    const result = await handler();
+    await sql.query(
+      `insert into idempotency_keys
+         (key, user_id, method, path, request_hash, response_code, response_body, expires_at)
+       values ($1,$2,$3,$4,$5,$6,$7::jsonb, now() + interval '24 hours')
+       on conflict (user_id, key) do update
+         set response_code = excluded.response_code,
+             response_body = excluded.response_body,
+             request_hash = excluded.request_hash`,
+      [
+        key,
+        uid,
+        request.method,
+        new URL(request.url).pathname,
+        hash,
+        result.status,
+        JSON.stringify(result.body),
+      ],
+    );
+    return result;
+  })();
+
+  inFlightIdempotency.set(flightKey, { hash, promise });
+  try {
+    return await promise;
+  } finally {
+    inFlightIdempotency.delete(flightKey);
+  }
+}
+
+function assertNoNul(value: unknown): void {
+  if (typeof value === "string") {
+    if (value.includes("\u0000")) {
+      throw err.validation("Text must not contain NUL characters.");
+    }
+  } else if (Array.isArray(value)) {
+    for (const item of value) {
+      assertNoNul(item);
+    }
+  } else if (value !== null && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      if (k.includes("\u0000")) {
+        throw err.validation("Text must not contain NUL characters.");
+      }
+      assertNoNul(v);
+    }
+  }
 }
 
 export async function readJson(request: Request): Promise<Record<string, unknown>> {
   const text = await request.text();
   if (!text) return {};
+  let data: unknown;
   try {
-    return JSON.parse(text) as Record<string, unknown>;
+    data = JSON.parse(text);
   } catch {
     throw err.validation("Invalid JSON body.");
   }
+  if (data === null || typeof data !== "object") {
+    throw err.validation("Request body must be a JSON object.");
+  }
+  assertNoNul(data);
+  return data as Record<string, unknown>;
 }
 
 export function str(v: unknown): string | undefined {
@@ -366,3 +423,22 @@ export async function classSubscription(
 }
 
 export type Ctx = { sql: Sql; request: Request; user: PublicUser | null };
+
+/**
+ * Shape a paged query's rows (selected with `count(*) over ()::int as total`) into
+ * `{ items, total, limit, offset }`. Past the last page there are no rows to read the total
+ * from, so `recount` answers instead; the client then steps back to the real last page.
+ */
+export async function pageOf<T extends { total: number }>(
+  rows: T[],
+  page: { limit: number; offset: number },
+  recount: () => Promise<number>,
+): Promise<{ items: Omit<T, "total">[]; total: number; limit: number; offset: number }> {
+  const total = rows.length ? Number(rows[0]!.total) : page.offset > 0 ? await recount() : 0;
+  return {
+    items: rows.map(({ total: _t, ...r }) => r),
+    total,
+    limit: page.limit,
+    offset: page.offset,
+  };
+}

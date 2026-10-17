@@ -2,6 +2,9 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Shell } from "@/components/shell";
+import { PageHero } from "@/components/page-hero";
+import { StatStrip } from "@/components/stat-strip";
+import { SportBadge, useSports } from "@/components/sports-ui";
 import { Button, Card, DateField, EmptyState, Field, Input, LoadError, Select, ShowMore, Skeleton, StatusBadge } from "@/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
 import { SpotlightCard } from "@/components/fx";
@@ -98,8 +101,31 @@ function Page() {
     setDays((prev) => (prev.includes(k) ? prev.filter((d) => d !== k) : [...prev, k]));
   }
 
+  const sports = useSports();
+  const totalClasses = items?.length ?? 0;
+  const publishedClasses = items?.filter((c) => c.status === "published").length ?? 0;
+  const draftClasses = items?.filter((c) => c.status === "draft").length ?? 0;
+  const totalEnrolled = items?.reduce((sum, c) => sum + (c.enrolled_count || 0), 0) ?? 0;
+
   return (
-    <Shell role="manager" title={t("Classes")} subtitle={t("Pick the days and the hour — clashes on court or coach are blocked for you.")}>
+    <Shell role="manager">
+      <PageHero
+        slot="banner.classes"
+        title={t("Classes")}
+        subtitle={t("Pick the days and the hour. Clashes on court or coach are blocked for you.")}
+        className="mb-6"
+      />
+
+      <StatStrip
+        stats={[
+          { label: tk("Active classes"), value: publishedClasses },
+          { label: tk("Drafts"), value: draftClasses },
+          { label: tk("Enrolled students"), value: totalEnrolled },
+          { label: tk("Total classes"), value: totalClasses },
+        ]}
+        className="mb-6"
+      />
+
       {formError ? (
         // Without the courts and coaches the form would offer nothing to pick, so it says why instead.
         <div className="mb-6">
@@ -120,9 +146,11 @@ function Page() {
       <Card className="mb-6 grid gap-3 md:grid-cols-3">
         <Field label={t("Sport")}>
           <Select value={form.sport} onChange={(e) => setForm({ ...form, sport: e.target.value })}>
-            <option value="badminton">{t("Badminton")}</option>
-            <option value="basketball">{t("Basketball")}</option>
-            <option value="volleyball">{t("Volleyball")}</option>
+            {sports.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.name}
+              </option>
+            ))}
           </Select>
         </Field>
         <Field label={t("Level")}>
@@ -247,7 +275,10 @@ function Page() {
           <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={320} strength={0.1}>
           <Card interactive className="relative z-[2] h-full">
             <div className="flex items-center justify-between gap-2">
-              <StatusBadge status={c.status} />
+              <div className="flex items-center gap-2">
+                <SportBadge sport={c.sport} />
+                <StatusBadge status={c.status} />
+              </div>
               <span className="text-2xs tabular-nums text-muted">{c.code}</span>
             </div>
             <h2 className="mt-2 font-display text-2xl">

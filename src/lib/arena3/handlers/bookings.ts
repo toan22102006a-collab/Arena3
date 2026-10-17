@@ -1,5 +1,5 @@
 import type { Sql } from "@/lib/db";
-import { err, isConflictSlot } from "../errors";
+import { ApiError, err, isConflictSlot } from "../errors";
 import {
   audit,
   bookingBuyer,
@@ -8,6 +8,7 @@ import {
   getSettings,
   issueInvoice,
   nextCode,
+  num,
   readJson,
   str,
 } from "../helpers";
@@ -16,7 +17,7 @@ import { depositFor, dueNow, quoteCancel } from "../policy";
 import { applyDiscount, lookupPrice, memberDiscount } from "../pricing";
 import { quotePromo, redeemForBooking, restoreIfFullyRefunded } from "../promos";
 import { requireRole, type PublicUser } from "../session";
-import { addDays, ictClock, ictDateString, ictDateTime, ictStamp, roundVnd } from "../time";
+import { addDays, ictClock, ictDateString, ictDateTime, ictMinutes, ictStamp, roundVnd } from "../time";
 import { one } from "../tx";
 
 async function courtById(sql: Sql, id: string) {
@@ -25,7 +26,10 @@ async function courtById(sql: Sql, id: string) {
     court_code: string;
     sport: string;
     status: string;
-  }>(sql, `select id, court_code, sport, status from courts where id = $1`, [id]);
+    display_name: string | null;
+    sort_order: number | null;
+    retired_at: string | null;
+  }>(sql, `select id, court_code, sport, status, display_name, sort_order, retired_at from courts where id = $1`, [id]);
   if (!c) throw err.notFound("No such court.");
   return c;
 }
@@ -33,6 +37,36 @@ async function courtById(sql: Sql, id: string) {
 function slotBounds(startAt: Date, slotMin: number) {
   const end = new Date(startAt.getTime() + slotMin * 60_000);
   return { start: startAt, end };
+}
+
+export function assertSlotGrid(
+  start: Date,
+  settings: { slot_minutes: number; open_time: string; close_time: string },
+) {
+  if (Number.isNaN(start.getTime())) {
+    throw err.field("start_at", "That time is not valid.");
+  }
+  const date = ictDateString(start);
+  const open = ictDateTime(date, settings.open_time.slice(0, 5));
+  const close = ictDateTime(date, settings.close_time.slice(0, 5));
+  if (start < open || start >= close) {
+    throw err.br("BR-06", "That is outside opening hours.");
+  }
+  const [oh, om] = settings.open_time.split(":").map(Number);
+  const openMinutes = oh * 60 + (om || 0);
+  const startMin = ictMinutes(start);
+
+  if (
+    start.getUTCSeconds() !== 0 ||
+    start.getUTCMilliseconds() !== 0 ||
+    Math.abs(startMin - openMinutes) % settings.slot_minutes !== 0
+  ) {
+    throw err.field("start_at", "Start time must be aligned to the slot grid.");
+  }
+  const end = new Date(start.getTime() + settings.slot_minutes * 60_000);
+  if (end > close) {
+    throw err.field("start_at", "Slot would end after closing time.");
+  }
 }
 
 async function assertBookWindow(
@@ -46,10 +80,7 @@ async function assertBookWindow(
     const remain = (start.getTime() + opts.settings.slot_minutes * 60_000 - now.getTime()) / 60_000;
     if (remain < 20) throw err.br("BR-07", "Walk-ins need at least 20 minutes left in the slot.");
   }
-  const date = ictDateString(start);
-  const open = ictDateTime(date, opts.settings.open_time.slice(0, 5));
-  const close = ictDateTime(date, opts.settings.close_time.slice(0, 5));
-  if (start < open || start >= close) throw err.br("BR-06", "That is outside opening hours.");
+  assertSlotGrid(start, opts.settings);
   if (!opts.walkIn) {
     const ahead = opts.settings.book_ahead_days;
     const max = new Date(now.getTime() + ahead * 86400000);
@@ -103,7 +134,7 @@ export async function occupancyGet(sql: Sql, request: Request) {
     [start.toISOString(), end.toISOString()],
   );
   const courts = await sql.query(
-    `select id, court_code, sport, status from courts order by court_code`,
+    `select id, court_code, sport, status, display_name, sort_order from courts where retired_at is null order by sort_order nulls last, court_code`,
   );
   return {
     status: 200,
@@ -131,7 +162,7 @@ export async function occupancyGet(sql: Sql, request: Request) {
  * of how many there are, and whether the day is inside the booking horizon.
  * Counts only — who holds what stays on the day view.
  */
-export async function availabilityGet(sql: Sql, request: Request) {
+export async function availabilityGet(sql: Sql, request: Request, user?: PublicUser | null) {
   const params = new URL(request.url).searchParams;
   const today = ictDateString();
   const from = params.get("from") ?? today;
@@ -145,7 +176,7 @@ export async function availabilityGet(sql: Sql, request: Request) {
   const first = from < today ? today : from;
   const settings = await getSettings(sql);
   const courts = await sql.query<{ id: string }>(
-    `select id from courts where status = 'ready' and ($1::text is null or sport::text = $1) order by id`,
+    `select id from courts where status = 'ready' and retired_at is null and ($1::text is null or sport::text = $1) order by sort_order nulls last, court_code`,
     [sport],
   );
   const rangeStart = ictDateTime(first, "00:00");
@@ -163,7 +194,21 @@ export async function availabilityGet(sql: Sql, request: Request) {
   const now = Date.now();
   const horizon = now + settings.book_ahead_days * 86400000;
   const step = settings.slot_minutes * 60_000;
-  const out: { date: string; free: number; total: number; bookable: boolean }[] = [];
+  // For a signed-in member, how many courts they already hold each day, counted exactly as the
+  // hold counts them (countSlotsToday), so the day strip can say "you have 2" before the tap
+  // instead of "84 free" and a refusal after it (BR-05).
+  const mine = new Map<string, number>();
+  if (user?.role === "member") {
+    const rows = await sql.query<{ d: string; n: number }>(
+      `select (start_at at time zone 'Asia/Ho_Chi_Minh')::date::text as d, count(*)::int as n
+         from court_bookings
+        where user_id = $1 and status in ('confirmed','in_use') and start_at >= $2 and start_at < $3
+        group by 1`,
+      [user.id, rangeStart.toISOString(), rangeEnd.toISOString()],
+    );
+    for (const r of rows) mine.set(r.d, Number(r.n));
+  }
+  const out: { date: string; free: number; total: number; bookable: boolean; mine?: number }[] = [];
   for (let i = 0; i < days; i++) {
     const date = addDays(first, i);
     const open = ictDateTime(date, settings.open_time.slice(0, 5)).getTime();
@@ -178,9 +223,18 @@ export async function availabilityGet(sql: Sql, request: Request) {
         if (!taken) free++;
       }
     }
-    out.push({ date, free, total, bookable: Boolean(total) && date <= ictDateString(new Date(horizon)) });
+    out.push({
+      date,
+      free,
+      total,
+      bookable: Boolean(total) && date <= ictDateString(new Date(horizon)),
+      ...(user?.role === "member" ? { mine: mine.get(date) ?? 0 } : {}),
+    });
   }
-  return { status: 200, body: { from: first, sport: sport ?? null, days: out } };
+  return {
+    status: 200,
+    body: { from: first, sport: sport ?? null, days: out, cap: settings.max_slots_per_day },
+  };
 }
 
 /**
@@ -358,41 +412,188 @@ export async function occupancyDetail(sql: Sql, request: Request, user: PublicUs
 }
 
 export async function courtsList(sql: Sql) {
-  const items = await sql.query(`select id, court_code, sport, status from courts order by court_code`);
+  const items = await sql.query(
+    `select id, court_code, sport, status, display_name, sort_order, retired_at
+       from courts
+      where retired_at is null
+      order by sort_order nulls last, court_code`,
+  );
   return { status: 200, body: { items } };
 }
 
 const COURT_STATUSES = ["ready", "maintenance", "closed"] as const;
 
 /**
- * Take a court out of service, or put it back.
- *
- * Closing a court does not cancel what is already on it: bookings that were
- * paid for stay honoured, and the desk sorts those out with the members
- * directly. The status only gates *new* holds — `bookingsHold` refuses
- * anything that is not `ready`. Surfacing the count of live occupancies in the
- * response lets the manager see what they have just committed the desk to.
+ * Take a court out of service, put it back, or update court metadata.
  */
 export async function courtsPatch(sql: Sql, id: string, request: Request, user: PublicUser) {
   requireRole(user, ["manager"]);
   const b = await readJson(request);
-  const status = str(b.status);
-  if (!status || !(COURT_STATUSES as readonly string[]).includes(status)) {
-    throw err.validation(`status must be one of ${COURT_STATUSES.join(", ")}.`);
-  }
   const cur = await courtById(sql, id);
-  if (cur.status === status) return { status: 200, body: { court: cur, upcoming: 0 } };
-  const reason = str(b.reason) ?? null;
-  await sql.query(`update courts set status = $2 where id = $1`, [id, status]);
+
+  const status = str(b.status);
+
+  const hasExtraFields =
+    b.court_code !== undefined ||
+    b.display_name !== undefined ||
+    b.sort_order !== undefined ||
+    b.sport !== undefined;
+
+  // Preserve exact original behavior if only status is being patched (or no extra fields)
+  if (!hasExtraFields) {
+    if (!status || !(COURT_STATUSES as readonly string[]).includes(status)) {
+      throw err.validation(`status must be one of ${COURT_STATUSES.join(", ")}.`);
+    }
+    if (cur.status === status) return { status: 200, body: { court: cur, upcoming: 0 } };
+
+    if (status === "closed" && cur.status !== "closed") {
+      const remaining = await one<{ cnt: number }>(
+        sql,
+        `select count(*)::int as cnt from courts where sport = $1 and retired_at is null and status <> 'closed' and id <> $2`,
+        [cur.sport, id],
+      );
+      if (!remaining || remaining.cnt === 0) {
+        const activeSubs = await one<{ cnt: number }>(
+          sql,
+          `select count(*)::int as cnt
+             from subscriptions s
+             join plans p on p.id = s.plan_id
+            where s.status = 'active' and (p.sport_scope = $1 or p.sport_scope = 'all')`,
+          [cur.sport],
+        );
+        const activeClasses = await one<{ cnt: number }>(
+          sql,
+          `select count(*)::int as cnt from classes where sport = $1 and status = 'published'`,
+          [cur.sport],
+        );
+        if ((activeSubs?.cnt ?? 0) > 0 || (activeClasses?.cnt ?? 0) > 0) {
+          throw new ApiError(
+            409,
+            "CONFLICT_STATE",
+            "Cannot close the last available court for a sport with active plans or classes.",
+          );
+        }
+      }
+    }
+
+    const reason = str(b.reason) ?? null;
+    await sql.query(`update courts set status = $2 where id = $1`, [id, status]);
+    const live = await one<{ n: number }>(
+      sql,
+      `select count(*)::int as n from occupancies where court_id = $1 and end_at > now()`,
+      [id],
+    );
+    await audit(sql, user.id, "patch_court", "court", id, { from: cur.status, to: status, reason });
+    const court = await one(
+      sql,
+      `select id, court_code, sport, status, display_name, sort_order, retired_at from courts where id = $1`,
+      [id],
+    );
+    return { status: 200, body: { court, upcoming: live?.n ?? 0 } };
+  }
+
+  if (b.status !== undefined) {
+    if (!status || !(COURT_STATUSES as readonly string[]).includes(status)) {
+      throw err.validation(`status must be one of ${COURT_STATUSES.join(", ")}.`);
+    }
+  }
+
+  let nextCourtCode = cur.court_code;
+  if (b.court_code !== undefined) {
+    const rawCode = str(b.court_code)?.trim().toUpperCase() || "";
+    if (rawCode.length > 8 || !/^[A-Z]{2}-\d{2,3}$/.test(rawCode)) {
+      throw err.field(
+        "court_code",
+        "Court code must match format like CL-01 or BR-12 (2 capital letters, dash, 2-3 digits).",
+      );
+    }
+    if (rawCode !== cur.court_code) {
+      const dup = await one(
+        sql,
+        `select 1 from courts where lower(court_code) = lower($1) and id <> $2`,
+        [rawCode, id],
+      );
+      if (dup) {
+        throw err.conflictSlot("That court code is already in use.");
+      }
+      nextCourtCode = rawCode;
+    }
+  }
+
+  let nextSport = cur.sport;
+  if (b.sport !== undefined) {
+    const s = str(b.sport);
+    if (!s || !["badminton", "basketball", "volleyball"].includes(s)) {
+      throw err.field("sport", "Sport must be badminton, basketball, or volleyball.");
+    }
+    if (s !== cur.sport) {
+      const futureOccupancies = await one<{ cnt: number }>(
+        sql,
+        `select count(*)::int as cnt from (
+           select 1 from occupancies where court_id = $1 and end_at > now()
+           union all
+           select 1 from court_bookings where court_id = $1 and end_at > now() and status::text in ('hold', 'confirmed', 'in_use', 'paid')
+         ) t`,
+        [id],
+      );
+      if (futureOccupancies && futureOccupancies.cnt > 0) {
+        throw new ApiError(
+          409,
+          "CONFLICT_STATE",
+          "Cannot change court sport while it has upcoming bookings or classes.",
+          { affected: futureOccupancies.cnt },
+        );
+      }
+      nextSport = s;
+    }
+  }
+
+  const nextStatus = status || cur.status;
+  const nextDisplayName =
+    b.display_name !== undefined ? str(b.display_name)?.trim() || null : cur.display_name;
+  if (nextDisplayName && nextDisplayName.length > 40) {
+    throw err.field("display_name", "Display name cannot exceed 40 characters.");
+  }
+  const nextSortOrder = b.sort_order !== undefined ? num(b.sort_order) ?? null : cur.sort_order;
+
+  await sql.query(
+    `update courts
+        set court_code = $1, sport = $2, status = $3, display_name = $4, sort_order = $5
+      where id = $6`,
+    [nextCourtCode, nextSport, nextStatus, nextDisplayName, nextSortOrder, id],
+  );
+
   const live = await one<{ n: number }>(
     sql,
     `select count(*)::int as n from occupancies where court_id = $1 and end_at > now()`,
     [id],
   );
-  await audit(sql, user.id, "patch_court", "court", id, { from: cur.status, to: status, reason });
+
+  await audit(
+    sql,
+    user.id,
+    "patch_court",
+    "court",
+    id,
+    {
+      court_code: cur.court_code,
+      sport: cur.sport,
+      status: cur.status,
+      display_name: cur.display_name,
+      sort_order: cur.sort_order,
+    },
+    {
+      court_code: nextCourtCode,
+      sport: nextSport,
+      status: nextStatus,
+      display_name: nextDisplayName,
+      sort_order: nextSortOrder,
+    },
+  );
+
   const court = await one(
     sql,
-    `select id, court_code, sport, status from courts where id = $1`,
+    `select id, court_code, sport, status, display_name, sort_order, retired_at from courts where id = $1`,
     [id],
   );
   return { status: 200, body: { court, upcoming: live?.n ?? 0 } };
@@ -406,6 +607,7 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
   if (!courtId || !startAt) throw err.validation("court_id and start_at are required.");
   const settings = await getSettings(sql);
   const start = new Date(startAt);
+  if (Number.isNaN(start.getTime())) throw err.field("start_at", "That time is not valid.");
   const { end } = slotBounds(start, settings.slot_minutes);
   await assertBookWindow(sql, start, { walkIn: false, settings });
   const court = await courtById(sql, courtId);
@@ -493,6 +695,9 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
       due_now_vnd: deposit > 0 ? deposit : price,
       list_price: list.price_vnd,
       promo: promo ? { code: promo.code, name: promo.name, discount_vnd: promo.discount_vnd } : null,
+      // Court hours the member can spend on this slot right now (BR-12, BR-13): the same plan
+      // the confirm step would charge, so the card offers "Use plan hours" only when it will work.
+      plan_hours_left: Number(disc.court_hours_left) || 0,
     },
   };
 }
@@ -812,6 +1017,7 @@ type CancelRow = {
  * for something that is not their doing.
  */
 export async function bookingsCancelQuote(sql: Sql, id: string, request: Request, user: PublicUser) {
+  requireRole(user, ["member", "receptionist", "manager"]);
   const booking = await one<CancelRow>(sql, `select * from court_bookings where id = $1`, [id]);
   if (!booking) throw err.notFound();
   if (user.role === "member" && booking.user_id !== user.id) throw err.forbidden();
@@ -834,6 +1040,7 @@ export async function bookingsCancelQuote(sql: Sql, id: string, request: Request
 }
 
 export async function bookingsCancel(sql: Sql, id: string, user: PublicUser, request?: Request) {
+  requireRole(user, ["member", "receptionist", "manager"]);
   const body = request ? await readJson(request) : {};
   const booking = await one<CancelRow>(sql, `select * from court_bookings where id = $1 for update`, [id]);
   if (!booking) throw err.notFound();
@@ -1113,10 +1320,15 @@ export async function walkIn(sql: Sql, request: Request, user: PublicUser) {
   if (!courtId || !startAt || !guest_name || !guest_phone_raw) {
     throw err.validation("Court, time, name or phone is missing.");
   }
+  const ALLOWED_WALKIN_METHODS = ["cash", "card", "transfer"] as const;
+  if (!ALLOWED_WALKIN_METHODS.includes(method as any)) {
+    throw err.field("method", `Payment method must be one of ${ALLOWED_WALKIN_METHODS.join(", ")}.`);
+  }
   const guest_phone = normalizePhone(guest_phone_raw);
-  if (!isValidVnPhone(guest_phone)) throw err.validation("That phone number is not valid.");
+  if (!isValidVnPhone(guest_phone)) throw err.validation("That phone number is not valid.", { field: "phone" });
   const settings = await getSettings(sql);
   const start = new Date(startAt);
+  if (Number.isNaN(start.getTime())) throw err.field("start_at", "That time is not valid.");
   const { end } = slotBounds(start, settings.slot_minutes);
   await assertBookWindow(sql, start, { walkIn: true, settings });
   const court = await courtById(sql, courtId);
@@ -1147,22 +1359,22 @@ export async function walkIn(sql: Sql, request: Request, user: PublicUser) {
   const bookingId = (await one<{ id: string }>(sql, `select gen_random_uuid() as id`))!.id;
   let occId: string;
   try {
-    const occ = await one<{ booking_replace_hold: string }>(
+    const occ = await one<{ id: string }>(
       sql,
-      `select booking_replace_hold($1::uuid, $2, $3::uuid, $4::timestamptz, $5::timestamptz, $6::uuid) as booking_replace_hold`,
-      [member?.id ?? null, guest_phone, courtId, start.toISOString(), end.toISOString(), bookingId],
+      `select occupancy_attach($1::uuid, $2::timestamptz, $3::timestamptz, 'booking'::occ_kind, $4::uuid) as id`,
+      [courtId, start.toISOString(), end.toISOString(), bookingId],
     );
-    occId = occ!.booking_replace_hold;
+    occId = occ!.id;
   } catch (e) {
-    if (isConflictSlot(e)) throw err.conflictSlot();
+    if (isConflictSlot(e)) throw err.conflictSlot("Someone just took that slot.");
     throw e;
   }
   const code = await nextCode(sql, "CRT");
   await sql.query(
     `insert into court_bookings
        (id, code, court_id, user_id, guest_name, guest_phone, start_at, end_at, status, channel,
-        price_vnd, discount_pct, vat_rate, occupancy_id)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,'hold','walkin',$9,$10,$11,$12)`,
+        price_vnd, discount_pct, vat_rate, occupancy_id, paid_vnd)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,'confirmed','walkin',$9,$10,$11,$12,$13)`,
     [
       bookingId,
       code,
@@ -1176,15 +1388,11 @@ export async function walkIn(sql: Sql, request: Request, user: PublicUser) {
       discount,
       Number(settings.vat_rate),
       occId,
+      price,
     ],
   );
-  await sql.query(`select occupancy_confirm_hold($1::uuid)`, [occId]);
-  await sql.query(
-    `update court_bookings set status = 'confirmed', hold_until = null, paid_vnd = price_vnd where id = $1`,
-    [bookingId],
-  );
   const payCode = await nextCode(sql, "PAY");
-  const shiftId = user.role === "receptionist" ? (b as { _shift?: string })._shift : str(b.shift_id);
+  const shiftId = user.role === "receptionist" ? ((b as { _shift?: string })._shift ?? null) : null;
   const pay = await one<{ id: string }>(
     sql,
     `insert into payments (code, user_id, shift_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by)
@@ -1217,6 +1425,7 @@ export async function walkIn(sql: Sql, request: Request, user: PublicUser) {
 }
 
 export async function bookingGet(sql: Sql, id: string, user: PublicUser) {
+  requireRole(user, ["member", "receptionist", "manager"]);
   const b = await one(sql, `select * from court_bookings where id = $1`, [id]);
   if (!b) throw err.notFound();
   const row = b as { user_id: string | null };

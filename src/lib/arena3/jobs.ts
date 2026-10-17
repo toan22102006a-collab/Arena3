@@ -1,6 +1,5 @@
 import { withTx } from "./tx";
 import { elapsedAtLeast, ictDateString } from "./time";
-import { flagOn } from "./flags";
 
 export async function expireHolds() {
   return withTx(async (sql) => {
@@ -231,11 +230,28 @@ export async function generateSessions() {
   return n;
 }
 
+/**
+ * Keep the demo court map and takings moving with the clock (0028).
+ *
+ * Seed bookings pinned to a migration date drain within a week: the no-show
+ * sweep releases each one as its hour arrives. The SQL function refills the
+ * book-ahead week and the days since it last ran, and does nothing unless
+ * feature_flags DEMO_FILL is on.
+ */
+export async function demoFill() {
+  return withTx(async (sql) => {
+    const [row] = await sql.query<{ n: number }>(`select demo_fill_calendar() as n`);
+    return row?.n ?? 0;
+  });
+}
+
 export const GENERATE_SESSIONS_EVERY_MS = 10 * 60 * 1000;
+export const DEMO_FILL_EVERY_MS = 60 * 60 * 1000;
 
 const g = globalThis as typeof globalThis & {
   __arena3Jobs__?: boolean;
   __arena3GenAt__?: number;
+  __arena3DemoAt__?: number;
 };
 
 /**
@@ -312,6 +328,10 @@ export async function runDueJobs() {
     if (elapsedAtLeast(g.__arena3GenAt__, now, GENERATE_SESSIONS_EVERY_MS)) {
       g.__arena3GenAt__ = now;
       await generateSessions();
+    }
+    if (elapsedAtLeast(g.__arena3DemoAt__, now, DEMO_FILL_EVERY_MS)) {
+      g.__arena3DemoAt__ = now;
+      await demoFill();
     }
   } catch (e) {
     console.error("[jobs]", e);

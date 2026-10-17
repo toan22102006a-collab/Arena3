@@ -28,7 +28,7 @@ export function LangSwitch({ className }: { className?: string }) {
           onClick={() => setLang(o.value)}
           className={cn(
             "h-11 min-w-11 rounded-full px-2 text-xs font-semibold tracking-wide transition-colors sm:h-8 sm:min-w-9",
-            lang === o.value ? "bg-accent text-white" : "text-muted hover:text-fg",
+            lang === o.value ? "bg-accent text-accent-fg" : "text-muted hover:text-fg",
           )}
         >
           {o.short}

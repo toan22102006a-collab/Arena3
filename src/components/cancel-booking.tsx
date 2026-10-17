@@ -169,7 +169,7 @@ export function CancelBookingDialog({
               checked={waive}
               onChange={(e) => setWaive(e.target.checked)}
               label={t("Waive the fee")}
-              hint={t("For cancellations that are not the customer's doing — centre closed, flood, accident.")}
+              hint={t("For cancellations that are not the customer's doing: centre closed, flood, accident.")}
             />
           ) : null}
         </div>

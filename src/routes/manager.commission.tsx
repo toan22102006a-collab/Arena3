@@ -80,7 +80,7 @@ function Page() {
             <Button
               className="ml-auto"
               disabled={busy}
-              onClick={() => void run(() => apiPost("/commission/close", { period }), t("Month closed — the figures are now locked."))}
+              onClick={() => void run(() => apiPost("/commission/close", { period }), t("Month closed. The figures are now locked."))}
             >
               {t("Close this month")}
             </Button>

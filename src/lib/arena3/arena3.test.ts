@@ -5,7 +5,10 @@ import { rruleLabel } from "./labels.ts";
 import { numberToVietnamese, vndInWords } from "./money-words.ts";
 import { addDays, classMinutes, elapsedAtLeast, ictDateTime, ictHour, ictMinutes, pad2, roundVnd, slotSpan } from "./time.ts";
 import { ApiError, mapDbError } from "./errors.ts";
-import { checkOpeningHours, parseSettingsPatch } from "./validate.ts";
+import { checkOpeningHours, pageParams, parseSettingsPatch } from "./validate.ts";
+import { alignOffset, lastPageOffset, pageWindow } from "../paging.ts";
+import { crc16, readTlv, transferReference, validBankAccount, vietQrPayload } from "../vietqr.ts";
+import { DEFAULT_VENUE, hhmm, hoursOf, venueFrom } from "../venue.ts";
 import {
   absentStreak,
   attendanceLocked,
@@ -406,3 +409,126 @@ describe("desk subscription queuing & class schedule window", () => {
   });
 });
 
+describe("paging", () => {
+  it("draws first, last, the current page and its neighbours, with gaps between", () => {
+    assert.deepEqual(pageWindow(1, 1), [1]);
+    assert.deepEqual(pageWindow(1, 5), [1, 2, 3, 4, 5]);
+    assert.deepEqual(pageWindow(5, 20), [1, "gap", 4, 5, 6, "gap", 20]);
+    assert.deepEqual(pageWindow(1, 20), [1, 2, "gap", 20]);
+    assert.deepEqual(pageWindow(20, 20), [1, "gap", 19, 20]);
+  });
+
+  it("never hides a single page behind a gap", () => {
+    // 1 … 3 takes as much room as 1 2 3, so the page itself is drawn.
+    assert.deepEqual(pageWindow(4, 7), [1, 2, 3, 4, 5, 6, 7]);
+    assert.deepEqual(pageWindow(3, 10), [1, 2, 3, 4, "gap", 10]);
+  });
+
+  it("clamps a page outside the range and handles no pages", () => {
+    assert.deepEqual(pageWindow(0, 3), [1, 2, 3]);
+    assert.deepEqual(pageWindow(9, 3), [1, 2, 3]);
+    assert.deepEqual(pageWindow(1, 0), []);
+  });
+
+  it("keeps the top row on screen when the page size changes", () => {
+    assert.equal(alignOffset(30, 25), 25);
+    assert.equal(alignOffset(30, 50), 0);
+    assert.equal(alignOffset(125, 100), 100);
+    assert.equal(alignOffset(-5, 10), 0);
+  });
+
+  it("finds the last page of a list that shrank", () => {
+    assert.equal(lastPageOffset(51, 25), 50);
+    assert.equal(lastPageOffset(50, 25), 25);
+    assert.equal(lastPageOffset(0, 25), 0);
+  });
+
+  it("reads limit and offset, falling back for callers that never asked", () => {
+    const req = (q: string) => new Request(`http://x/v1/list${q}`);
+    assert.deepEqual(pageParams(req(""), { def: 100, max: 100 }), { limit: 100, offset: 0 });
+    assert.deepEqual(pageParams(req("?limit=25&offset=50"), { def: 100, max: 100 }), { limit: 25, offset: 50 });
+    // One endpoint can page a second list under its own names.
+    assert.deepEqual(pageParams(req("?limit=5&receipt_limit=10&receipt_offset=20"), { def: 25, max: 100, prefix: "receipt_" }), { limit: 10, offset: 20 });
+    assert.throws(() => pageParams(req("?limit=0"), { def: 25, max: 100 }));
+    assert.throws(() => pageParams(req("?limit=101"), { def: 25, max: 100 }));
+    assert.throws(() => pageParams(req("?offset=-1"), { def: 25, max: 100 }));
+    assert.throws(() => pageParams(req("?limit=abc"), { def: 25, max: 100 }));
+  });
+});
+
+describe("vietqr", () => {
+  const mb = { bin: "970422", accountNo: "0123456789" };
+
+  it("uses CRC16-CCITT-FALSE (check value of 123456789 is 29B1)", () => {
+    assert.equal(crc16("123456789"), "29B1");
+  });
+
+  it("ends with a checksum over everything before it, 6304 included", () => {
+    const p = vietQrPayload(mb, 80000, "ARENA3 CRT-20261014-U0306");
+    assert.match(p, /6304[0-9A-F]{4}$/);
+    assert.equal(p.slice(-4), crc16(p.slice(0, -4)));
+  });
+
+  it("carries the NAPAS account, the amount, VND, VN and the reference", () => {
+    const f = readTlv(vietQrPayload(mb, 80000, "ARENA3 CRT-1"));
+    assert.equal(f["00"], "01");
+    assert.equal(f["01"], "12");
+    const merchant = readTlv(f["38"]!);
+    assert.equal(merchant["00"], "A000000727");
+    assert.deepEqual(readTlv(merchant["01"]!), { "00": "970422", "01": "0123456789" });
+    assert.equal(merchant["02"], "QRIBFTTA");
+    assert.equal(f["53"], "704");
+    assert.equal(f["54"], "80000");
+    assert.equal(f["58"], "VN");
+    assert.equal(readTlv(f["62"]!)["08"], "ARENA3 CRT 1");
+  });
+
+  it("leaves the amount out and marks the code static when there is none", () => {
+    const f = readTlv(vietQrPayload(mb));
+    assert.equal(f["01"], "11");
+    assert.equal(f["54"], undefined);
+    assert.equal(f["62"], undefined);
+  });
+
+  it("keeps the reference to bank-safe ASCII, 25 characters at most", () => {
+    assert.equal(transferReference("Đặt sân CL-07 · tối nay"), "DAT SAN CL 07 TOI NAY");
+    assert.equal(transferReference("ARENA3 CRT-20261014-U0306-EXTRA").length <= 25, true);
+  });
+
+  it("refuses an account it cannot encode", () => {
+    assert.equal(validBankAccount({ bin: "97042", accountNo: "0123" }), false);
+    assert.equal(validBankAccount({ bin: "970422", accountNo: "" }), false);
+    assert.equal(validBankAccount(mb), true);
+    assert.throws(() => vietQrPayload({ bin: "x", accountNo: "1" }, 1000));
+  });
+});
+
+describe("venue hours", () => {
+  it("reads the settings, and falls back when they are missing", () => {
+    assert.deepEqual(venueFrom({ open_time: "07:00:00", close_time: "21:00:00", hold_minutes: 10 }), { open: 7, close: 21, holdMinutes: 10 });
+    assert.deepEqual(venueFrom(null), DEFAULT_VENUE);
+    assert.deepEqual(venueFrom({}), DEFAULT_VENUE);
+  });
+
+  it("sells the hour a part-hour close falls in, as the server's availability does", () => {
+    assert.equal(venueFrom({ open_time: "06:00", close_time: "21:30" }).close, 22);
+  });
+
+  it("refuses a close that is not after the open, as a pair", () => {
+    const v = venueFrom({ open_time: "22:00", close_time: "06:00", hold_minutes: 5 });
+    assert.equal(v.open, DEFAULT_VENUE.open);
+    assert.equal(v.close, DEFAULT_VENUE.close);
+  });
+
+  it("ignores a hold length that is not a positive whole number", () => {
+    assert.equal(venueFrom({ hold_minutes: 0 }).holdMinutes, 5);
+    assert.equal(venueFrom({ hold_minutes: 7 }).holdMinutes, 7);
+  });
+
+  it("lists the bookable hours and formats them", () => {
+    assert.deepEqual(hoursOf({ open: 6, close: 9, holdMinutes: 5 }), [6, 7, 8]);
+    assert.equal(hoursOf(DEFAULT_VENUE).length, 16);
+    assert.equal(hhmm(6), "06:00");
+    assert.equal(hhmm(22), "22:00");
+  });
+});

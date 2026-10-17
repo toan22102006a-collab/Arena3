@@ -1,7 +1,7 @@
 import type { Sql } from "@/lib/db";
 import { err } from "../errors";
 import { addDays, ictDateString } from "../time";
-import { audit, bool, num, readJson, str } from "../helpers";
+import { audit, bool, readJson, str } from "../helpers";
 import { quotePromo } from "../promos";
 import { limit, RULES } from "../ratelimit";
 import { requireRole, type PublicUser } from "../session";
@@ -141,14 +141,22 @@ export async function plansPatch(sql: Sql, id: string, request: Request, user: P
 }
 
 export async function subscriptionsCreate(sql: Sql, request: Request, user: PublicUser) {
+  requireRole(user, ["member", "receptionist", "manager"]);
   const b = await readJson(request);
   const planId = str(b.plan_id);
   if (!planId) throw err.validation("plan_id is required.");
   let userId = user.id;
   if (user.role === "receptionist" || user.role === "manager") {
     userId = str(b.user_id) ?? user.id;
-  } else if (user.role !== "member") {
-    throw err.forbidden();
+    const targetUser = await one<{ role: string; status: string }>(
+      sql,
+      `select role, status from users where id = $1`,
+      [userId],
+    );
+    if (!targetUser) throw err.field("user_id", "That user does not exist.");
+    if (targetUser.role !== "member") {
+      throw err.forbidden("Subscriptions can only be issued to members.");
+    }
   }
   // Members only. Staff raise these on behalf of somebody standing at the desk,
   // and a queue of walk-ins legitimately looks like a burst.
@@ -208,9 +216,10 @@ export async function subscriptionsCreate(sql: Sql, request: Request, user: Publ
   if (pending) {
     await sql.query(
       `update subscriptions set plan_id = $2, start_on = $3, end_on = $4,
-              court_hours_left = $5, session_left = $6, promo_id = $7, promo_discount_vnd = $8
+              court_hours_left = $5, session_left = $6, promo_id = $7, promo_discount_vnd = $8,
+              price_vnd = $9
         where id = $1`,
-      [pending.id, plan.id, start, end, plan.court_hours, plan.session_quota, promo?.promo_id ?? null, promo?.discount_vnd ?? 0],
+      [pending.id, plan.id, start, end, plan.court_hours, plan.session_quota, promo?.promo_id ?? null, promo?.discount_vnd ?? 0, plan.price_vnd],
     );
     const row = await one(sql, `select * from subscriptions where id = $1`, [pending.id]);
     return { status: 201, body: { subscription: row, preview_end: end, amount_due_vnd: amountDue, promo } };
@@ -218,10 +227,10 @@ export async function subscriptionsCreate(sql: Sql, request: Request, user: Publ
   const row = await one(
     sql,
     `insert into subscriptions
-       (user_id, plan_id, sport_scope, start_on, end_on, status, court_hours_left, session_left, promo_id, promo_discount_vnd)
-     values ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9)
+       (user_id, plan_id, sport_scope, start_on, end_on, status, court_hours_left, session_left, promo_id, promo_discount_vnd, price_vnd)
+     values ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10)
      returning *`,
-    [userId, plan.id, plan.sport_scope, start, end, plan.court_hours, plan.session_quota, promo?.promo_id ?? null, promo?.discount_vnd ?? 0],
+    [userId, plan.id, plan.sport_scope, start, end, plan.court_hours, plan.session_quota, promo?.promo_id ?? null, promo?.discount_vnd ?? 0, plan.price_vnd],
   );
   return { status: 201, body: { subscription: row, preview_end: end, amount_due_vnd: amountDue, promo } };
 }

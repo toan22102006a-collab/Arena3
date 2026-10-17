@@ -2,11 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { SectionTitle } from "@/components/section";
 import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Input, LoadError, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, DateField, EmptyState, Input, LoadError, Pagination, Skeleton } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/motion";
 import { roleLabel } from "@/lib/arena3/labels";
 import { cn } from "@/lib/cn";
 import { locale, t, tk } from "@/lib/i18n";
+import { usePageState } from "@/lib/use-page-state";
 import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/manager/audit")({
@@ -27,9 +28,8 @@ type Entry = {
 };
 
 type Actor = { id: string; full_name: string; role: string };
-type AuditPage = { items: Entry[]; more: boolean; actions: string[]; entities: string[]; actors: Actor[] };
+type AuditPage = { items: Entry[]; more: boolean; total: number; actions: string[]; entities: string[]; actors: Actor[] };
 
-const PAGE_SIZE = 50;
 const HIDDEN_KEY = "arena3.audit.hidden";
 const selectCls = "h-11 rounded-[var(--radius-sm)] border border-line bg-surface px-3 text-sm sm:h-10";
 
@@ -156,11 +156,18 @@ const ENTITY_LABEL: Record<string, string> = {
   ticket: tk("ticket"),
   user: tk("user"),
   work_order: tk("work order"),
+  // Older rows (and the seeded history) were written with the table's own name.
+  price_rule: tk("price rules"),
+  cashier_shift: tk("shift"),
+  equipment_loan: tk("equipment loan"),
+  court_booking: tk("booking"),
+  membership_plan: tk("plan"),
 };
 
+/** A word a manager would use, never a table name: unknown ones lose their underscores. */
 function entityLabel(e: string): string {
   const known = ENTITY_LABEL[e];
-  return known ? t(known) : e;
+  return known ? t(known) : e.replace(/_/g, " ");
 }
 
 /**
@@ -190,7 +197,7 @@ function when(iso: string): string {
 }
 
 function Page() {
-  const [limit, setLimit] = useState(PAGE_SIZE);
+  const { offset, setOffset, pageSize, setPageSize, reset } = usePageState("manager.audit", 50);
   const [action, setAction] = useState("");
   const [actor, setActor] = useState("");
   const [entity, setEntity] = useState("");
@@ -210,13 +217,22 @@ function Page() {
 
   useEffect(() => setHidden(readHidden()), []);
 
-  const qs = new URLSearchParams({ limit: String(limit) });
+  // Typing waits a beat so one search is one request; any search or filter starts at page one.
+  const [term, setTerm] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setTerm(q.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [q]);
+  useEffect(reset, [term, reset]);
+
+  const qs = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
+  if (term) qs.set("q", term);
   if (action) qs.set("action", action);
   if (actor) qs.set("actor", actor);
   if (entity) qs.set("entity", entity);
   if (from) qs.set("from", from);
   if (to) qs.set("to", to);
-  // The entries already on screen stay (dimmed) while a filter or "Show more" loads; a refused or
+  // The entries already on screen stay (dimmed) while a filter or another page loads; a refused or
   // failed answer replaces them with the reason, never with a list that does not match the filters.
   const read = useRead<AuditPage>(`/audit?${qs}`, { keepPrevious: true });
   const data = useMemo(
@@ -232,7 +248,7 @@ function Page() {
 
   function pick(set: (v: string) => void) {
     return (v: string) => {
-      setLimit(PAGE_SIZE);
+      reset();
       setOpen(null);
       set(v);
     };
@@ -259,14 +275,11 @@ function Page() {
     }
   }
 
-  const rows = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return (data?.items ?? []).filter((e) => {
-      if (!showHidden && hidden.includes(e.id)) return false;
-      if (!needle) return true;
-      return `${e.actor_name ?? ""} ${e.action} ${e.entity} ${e.entity_id ?? ""}`.toLowerCase().includes(needle);
-    });
-  }, [data, q, hidden, showHidden]);
+  // The search runs on the server across every page; only hidden entries are tucked away here.
+  const rows = useMemo(
+    () => (data?.items ?? []).filter((e) => showHidden || !hidden.includes(e.id)),
+    [data, hidden, showHidden],
+  );
 
   const hiddenHere = (data?.items ?? []).filter((e) => hidden.includes(e.id)).length;
   const filtered = !!(q || action || actor || entity || from || to);
@@ -319,23 +332,11 @@ function Page() {
         </select>
         <label className="grid gap-0.5 text-2xs text-muted">
           {t("From")}
-          <input
-            type="date"
-            value={from}
-            max={to || undefined}
-            onChange={(e) => pick(setFrom)(e.target.value)}
-            className={selectCls}
-          />
+          <DateField value={from} max={to || undefined} onChange={(v) => pick(setFrom)(v)} aria-label={t("From")} className="sm:h-10" />
         </label>
         <label className="grid gap-0.5 text-2xs text-muted">
           {t("To")}
-          <input
-            type="date"
-            value={to}
-            min={from || undefined}
-            onChange={(e) => pick(setTo)(e.target.value)}
-            className={selectCls}
-          />
+          <DateField value={to} min={from || undefined} onChange={(v) => pick(setTo)(v)} aria-label={t("To")} className="sm:h-10" />
         </label>
         <Input
           value={q}
@@ -349,7 +350,7 @@ function Page() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              setLimit(PAGE_SIZE);
+              reset();
               setAction("");
               setActor("");
               setEntity("");
@@ -362,7 +363,7 @@ function Page() {
           </Button>
         ) : null}
         <span className="ml-auto text-2xs text-muted">
-          {read.error ? "" : data && !read.stale ? t("{n} shown", { n: rows.length }) : t("Loading")}
+          {read.error ? "" : data && !read.stale ? t("{n} entries", { n: data.total.toLocaleString(locale()) }) : t("Loading")}
         </span>
       </div>
       {hiddenHere ? (
@@ -409,14 +410,16 @@ function Page() {
                     {e.actor_role ? (
                       <span className="text-2xs text-muted">{roleLabel(e.actor_role)}</span>
                     ) : null}
-                    <span className="text-sm text-muted">
-                      {entityLabel(e.entity)}
-                      {e.entity_id ? <span className="tabular-nums"> · {e.entity_id.slice(0, 8)}</span> : null}
-                    </span>
+                    <span className="text-sm text-muted">{entityLabel(e.entity)}</span>
                     <span className="ml-auto text-xs tabular-nums text-muted">{when(e.at)}</span>
                   </button>
                   {isOpen ? (
                     <div className="grid gap-2 border-t border-line px-3 py-2 text-xs">
+                      {e.entity_id ? (
+                        <p className="text-muted">
+                          {t("Record")}: <span className="font-mono">{e.entity_id}</span>
+                        </p>
+                      ) : null}
                       {before || after ? (
                         <div className="grid gap-2 md:grid-cols-2">
                           {before ? (
@@ -459,16 +462,18 @@ function Page() {
           }
         />
       )}
-      {!read.error && data?.more ? (
-        <div className="mt-4 flex justify-center">
-          <Button
-            variant="outline"
-            onClick={() => setLimit((n) => Math.min(n + PAGE_SIZE, 200))}
-            disabled={limit >= 200 || read.stale}
-          >
-            {limit >= 200 ? t("Narrow the filters to see older entries") : t("Show more")}
-          </Button>
-        </div>
+      {!read.error ? (
+        <Pagination
+          offset={offset}
+          total={data?.total ?? 0}
+          pageSize={pageSize}
+          onChange={(o) => {
+            setOpen(null);
+            setOffset(o);
+          }}
+          onPageSizeChange={setPageSize}
+          label={t("Audit pages")}
+        />
       ) : null}
       </div>
     </Shell>

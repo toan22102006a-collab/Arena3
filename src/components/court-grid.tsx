@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronDown, Plus } from "lucide-react";
 import { availLabel, type AvailMap } from "@/components/availability-calendar";
 import { cn } from "@/lib/cn";
 import { locale, t } from "@/lib/i18n";
@@ -67,24 +68,21 @@ export type SlotState =
 /**
  * How each state is painted. The legend is built from this, so they cannot drift.
  *
- * On the desktop grid a cell is nine pixels tall with no room for a word, so
- * colour is the whole message and two states that merely differ in opacity are
- * the same state. Hence one family per idea: beige for free, green for sold,
- * black for a class, amber and dashed for the temporary one, hatching for
- * anything the building has taken off the market.
+ * The thing people come to the grid for is a free hour, so free is the loudest state: an outlined
+ * cell with a plus, in the colour of everything else you can press. Sold hours step back to a pale
+ * tint, a court in use right now is the one solid fill, a class is ink, a hold is amber and dashed
+ * (the one state that undoes itself), and anything the building has taken off the market is
+ * hatched. Finished hours are nearly invisible.
  */
 const STATE_CLASS: Record<SlotState, string> = {
-  free: "bg-wood/70 text-muted",
-  // Dashed, because a hold is the one state that undoes itself.
-  hold: "stripes border-2 border-dashed border-hold bg-hold/40 text-hold",
-  // Mid green, solid: clearly sold, and unmistakably not the amber of a hold.
-  booked: "bg-accent/90 text-accent-fg",
-  // The darkest green: the only state where someone is on the court as you read this.
-  in_use: "bg-accent-2 text-accent-fg ring-2 ring-accent-2/40",
-  class: "bg-fg text-bg",
+  free: "bg-surface text-accent-text ring-1 ring-inset ring-accent/45",
+  hold: "stripes border border-dashed border-hold bg-hold/15 text-hold",
+  booked: "bg-accent/15 text-accent-2",
+  in_use: "bg-accent-strong text-accent-fg",
+  class: "bg-slot-class text-on-media",
   maintenance: "stripes bg-wood text-muted",
   closed: "stripes bg-line-strong/45 text-subtle",
-  past: "bg-wood/30 text-subtle line-through decoration-subtle/40",
+  past: "bg-wood/50 text-subtle/70",
 };
 
 /**
@@ -126,8 +124,10 @@ function hourStart(date: string, hour: number) {
  * is still live at 14:30, and the desk can still sell the tail of it as a
  * walk-in.
  */
-function isPast(date: string, hour: number, now: number) {
-  return hourStart(date, hour) + 3_600_000 <= now;
+function isPast(date: string, hour: number, now: number, startedIsPast = false) {
+  // A member or a guest cannot hold an hour that has started (BR-07), so on their grids the hour
+  // is gone the moment it begins; the desk's grid keeps it until it ends, to sell the tail.
+  return hourStart(date, hour) + (startedIsPast ? 0 : 3_600_000) <= now;
 }
 
 /** Is this the hour the clock is in right now? */
@@ -143,8 +143,9 @@ export function slotState(
   date: string,
   hour: number,
   now: number,
+  startedIsPast = false,
 ): SlotState {
-  if (isPast(date, hour, now)) return "past";
+  if (isPast(date, hour, now, startedIsPast)) return "past";
   // A court out of service is out of service for the whole day, whatever the
   // occupancy table says — the row for a booking taken before it broke is
   // history reception has to ring about, not an hour anyone can buy.
@@ -163,11 +164,13 @@ export function freeHours(
   slots: OccSlot[],
   date: string,
   now: number,
+  startedIsPast = false,
+  hours: readonly number[] = HOURS,
 ): { court: Court; hour: number }[] {
   const out: { court: Court; hour: number }[] = [];
-  for (const h of HOURS) {
+  for (const h of hours) {
     for (const c of courts) {
-      if (slotState(c, occAt(slots, c.id, date, h), date, h, now) === "free") {
+      if (slotState(c, occAt(slots, c.id, date, h), date, h, now, startedIsPast) === "free") {
         out.push({ court: c, hour: h });
       }
     }
@@ -228,7 +231,7 @@ export function DateStrip({
                 : "bg-surface text-fg shadow-[var(--shadow-border)] hover:-translate-y-0.5 hover:bg-wood",
             )}
           >
-            <span className="text-2xs font-medium opacity-90">
+            <span className="text-2xs font-medium opacity-90 dark:opacity-100">
               {it.isToday ? t("Today") : it.wd}
             </span>
             <span className="font-display text-xl tabular-nums leading-none">{it.day}</span>
@@ -252,7 +255,7 @@ export function CourtLegend({ compact = false }: { compact?: boolean }) {
     ? ["free", "hold", "booked", "in_use", "class", "past"]
     : ["free", "hold", "booked", "in_use", "class", "maintenance", "closed", "past"];
   return (
-    <ul className="flex flex-wrap gap-x-4 gap-y-1 text-2xs text-muted">
+    <ul className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-2xs text-muted">
       {order.map((s) => (
         <li key={s} className="inline-flex items-center gap-1.5">
           <span className={cn("size-2.5 rounded-[2px]", STATE_CLASS[s])} />
@@ -305,7 +308,7 @@ function NoFreeSlots({
       <p className="mt-1 text-sm text-muted">
         {dayOver
           ? `${t("The hall opens again at 06:00.")}${offers ? ` ${t("Pick the next day below.")}` : ""}`
-          : `${t("Nothing has gone wrong — this is a full day.")}${offers ? ` ${t("Here is what is still open.")}` : ""}`}
+          : `${t("Nothing has gone wrong. This is a full day.")}${offers ? ` ${t("Here is what is still open.")}` : ""}`}
       </p>
       {offers ? (
         <div className="mt-3 flex flex-wrap gap-2">
@@ -347,6 +350,10 @@ export function CourtGrid({
   onPickDate,
   legendCompact = false,
   selected,
+  startedIsPast = false,
+  freeCount,
+  defaultShowPast = false,
+  hours: dayHours = HOURS,
 }: {
   date: string;
   courts: Court[];
@@ -360,12 +367,32 @@ export function CourtGrid({
   /** Offered when the whole day is sold out. */
   onPickDate?: (date: string) => void;
   legendCompact?: boolean;
+  /** Member and guest grids: an hour that has started can no longer be held (BR-07). */
+  startedIsPast?: boolean;
+  /**
+   * The free count from the server's availability for this day, so the header says the same
+   * number as the day strip above it (B-3). Falls back to counting the cells.
+   */
+  freeCount?: number;
+  /** Staff grids open with the finished hours showing: the morning's bookings are still work. */
+  defaultShowPast?: boolean;
+  /** The hours the centre is open, from its settings (src/lib/venue.ts). */
+  hours?: readonly number[];
   /** The hour the caller is currently asking about, marked on the grid. */
   selected?: { courtId: string; hour: number } | null;
 }) {
   const now = useNowMinute();
+  const [showPast, setShowPast] = useState(defaultShowPast);
   const list = sport ? courts.filter((c) => c.sport === sport) : courts;
-  const free = freeHours(list, slots, date, now).length;
+  const freeList = freeHours(list, slots, date, now, startedIsPast, dayHours);
+  const free = freeCount ?? freeList.length;
+  // Finished hours fold away, so the first row on screen is an hour you can still play.
+  const pastHours = dayHours.filter((h) => isPast(date, h, now, startedIsPast));
+  const hours = showPast ? [...dayHours] : dayHours.filter((h) => !isPast(date, h, now, startedIsPast));
+  // Time first: most people want "a court at seven", not "court nine".
+  const byHour = dayHours.map((h) => ({ hour: h, open: freeList.filter((f) => f.hour === h).map((f) => f.court) })).filter(
+    (x) => x.open.length > 0,
+  );
   const hasClass = slots.some((s) => s.kind === "session" && list.some((c) => c.id === s.court_id));
 
   // Only worth computing when the answer above was zero.
@@ -375,7 +402,7 @@ export function CourtGrid({
           .filter((s) => s !== sport)
           .map((s) => ({
             sport: s,
-            count: freeHours(courts.filter((c) => c.sport === s), slots, date, now).length,
+            count: freeHours(courts.filter((c) => c.sport === s), slots, date, now, startedIsPast, dayHours).length,
           }))
           .filter((a) => a.count > 0)
           .sort((a, b) => b.count - a.count)
@@ -393,7 +420,9 @@ export function CourtGrid({
   }
 
   return (
-    <div className="grid gap-3">
+    // One shrinkable column: the sideways strips below scroll inside it instead of widening the
+    // page (a phone at 390px used to scroll the whole screen sideways by 138px).
+    <div className="grid min-w-0 grid-cols-1 gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <CourtLegend compact={legendCompact} />
         <p className="text-xs tabular-nums text-muted">{t("{n} free slots left", { n: free })}</p>
@@ -402,14 +431,35 @@ export function CourtGrid({
         <NoFreeSlots
           date={date}
           sport={sport}
-          dayOver={HOURS.every((h) => isPast(date, h, now))}
+          dayOver={dayHours.every((h) => isPast(date, h, now, startedIsPast))}
           alternatives={alternatives}
           onPickSport={onPickSport}
           onPickDate={onPickDate}
         />
       ) : null}
       {!hasClass ? (
-        <p className="text-sm text-muted">{t("No classes scheduled on court today — you are seeing member bookings only.")}</p>
+        <p className="text-sm text-muted">{t("No classes on court today, so you are seeing member bookings only.")}</p>
+      ) : null}
+
+      {onPick && byHour.length ? (
+        <div className="min-w-0 md:hidden">
+          <p className="mb-2 text-sm font-medium">{t("Free hours")}</p>
+          <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+            {byHour.map(({ hour, open }) => (
+              <button
+                key={hour}
+                type="button"
+                onClick={() => onPick(open[0]!, hour)}
+                aria-label={t("Book {court} at {time}", { court: open[0]!.court_code, time: `${String(hour).padStart(2, "0")}:00` })}
+                className="flex min-h-14 min-w-[4.75rem] shrink-0 flex-col items-center justify-center rounded-[var(--radius-lg)] bg-surface px-3 text-accent-text ring-1 ring-inset ring-accent/45 transition-[background-color,color,transform] duration-150 hover:bg-accent hover:text-accent-fg active:scale-95"
+              >
+                <span className="text-base font-semibold tabular-nums leading-tight">{String(hour).padStart(2, "0")}:00</span>
+                <span className="text-2xs text-muted">{t("{n} courts", { n: open.length })}</span>
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-sm font-medium">{t("By court")}</p>
+        </div>
       ) : null}
 
       <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 md:hidden" role="region" aria-label={t("Courts, scrolls sideways")} tabIndex={0}>
@@ -420,14 +470,17 @@ export function CourtGrid({
           >
             <div className="mb-2 flex items-baseline justify-between gap-2">
               <p className="font-medium">{c.court_code}</p>
-              <p className="text-2xs text-muted">
+              <p
+                className="text-2xs font-medium"
+                style={{ color: c.status === "ready" ? `var(--color-sport-${c.sport})` : "var(--color-hold)" }}
+              >
                 {c.status === "ready" ? sportLabel(c.sport) : slotStateLabel(c.status === "closed" ? "closed" : "maintenance")}
               </p>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
-              {HOURS.map((h) => {
+              {hours.map((h) => {
                 const occ = occAt(slots, c.id, date, h);
-                const state = slotState(c, occ, date, h, now);
+                const state = slotState(c, occ, date, h, now, startedIsPast);
                 const label = String(h).padStart(2, "0");
                 const title = cellTitle(state, occ);
                 // Past hours are shown, never offered — seeing the whole day is
@@ -448,7 +501,7 @@ export function CourtGrid({
                       key={h}
                       type="button"
                       title={title}
-                      aria-label={t("{state} · {court} at {time} — show details", { state: slotStateLabel(state), court: c.court_code, time: `${label}:00` })}
+                      aria-label={t("{state} · {court} at {time}, show details", { state: slotStateLabel(state), court: c.court_code, time: `${label}:00` })}
                       onClick={() => onInspect!(c, h, inspect)}
                       className={cn(cls, "transition-transform duration-150 active:scale-95")}
                     >
@@ -510,14 +563,17 @@ export function CourtGrid({
               </div>
               {/* A court out of service says so in its own heading — otherwise
                   the only clue is a column of stripes with nothing naming it. */}
-              <div className={cn("text-2xs", c.status === "ready" ? "text-subtle" : "text-hold")}>
+              <div
+                className="text-2xs font-medium"
+                style={{ color: c.status === "ready" ? `var(--color-sport-${c.sport})` : "var(--color-hold)" }}
+              >
                 {c.status === "ready"
                   ? sportLabel(c.sport)
                   : slotStateLabel(c.status === "closed" ? "closed" : "maintenance")}
               </div>
             </div>
           ))}
-          {HOURS.map((h) => (
+          {hours.map((h) => (
             <HourRow
               key={h}
               hour={h}
@@ -528,10 +584,23 @@ export function CourtGrid({
               onInspect={onInspect}
               selected={selected}
               now={now}
+              startedIsPast={startedIsPast}
             />
           ))}
         </div>
       </div>
+
+      {pastHours.length ? (
+        <button
+          type="button"
+          onClick={() => setShowPast((v) => !v)}
+          aria-expanded={showPast}
+          className="inline-flex min-h-11 w-fit items-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-sm text-muted transition-colors duration-150 hover:bg-wood hover:text-fg sm:min-h-9"
+        >
+          <ChevronDown aria-hidden className={cn("size-4 transition-transform duration-200", showPast && "rotate-180")} />
+          {showPast ? t("Hide finished hours") : t("Show {n} finished hours", { n: pastHours.length })}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -540,7 +609,7 @@ export function CourtGrid({
 function cellTitle(state: SlotState, occ: OccSlot | undefined) {
   if (state === "past") return occ ? t("{kind} · finished", { kind: kindLabel(occ.kind) }) : t("This hour has passed");
   if (!occ) return slotStateLabel(state);
-  return `${slotStateLabel(state)} · ${kindLabel(occ.kind)} ${hhmm(occ.start)}–${hhmm(occ.end)}`;
+  return `${slotStateLabel(state)} · ${kindLabel(occ.kind)} ${hhmm(occ.start)}-${hhmm(occ.end)}`;
 }
 
 function HourRow({
@@ -552,6 +621,7 @@ function HourRow({
   onInspect,
   selected,
   now,
+  startedIsPast = false,
 }: {
   hour: number;
   list: Court[];
@@ -561,15 +631,16 @@ function HourRow({
   onInspect?: (court: Court, hour: number, occ: OccSlot & { ref: string }) => void;
   selected?: { courtId: string; hour: number } | null;
   now: number;
+  startedIsPast?: boolean;
 }) {
-  const past = isPast(date, hour, now);
+  const past = isPast(date, hour, now, startedIsPast);
   const live = isNow(date, hour, now);
   return (
     <>
       <div
         className={cn(
           "sticky left-0 z-10 flex items-center gap-1 border-t border-line/70 bg-surface px-2 py-1 text-xs tabular-nums",
-          past ? "text-subtle line-through" : live ? "font-medium text-accent-2" : "text-muted",
+          past ? "text-subtle/70" : live ? "font-semibold text-accent-2" : "text-muted",
         )}
       >
         {live ? <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-accent" /> : null}
@@ -577,7 +648,7 @@ function HourRow({
       </div>
       {list.map((c) => {
         const occ = occAt(slots, c.id, date, hour);
-        const state = slotState(c, occ, date, hour, now);
+        const state = slotState(c, occ, date, hour, now, startedIsPast);
         const title = cellTitle(state, occ);
         const clickable = onPick && (isBookable(state));
         const cls = cn(
@@ -595,7 +666,7 @@ function HourRow({
               <button
                 type="button"
                 title={title}
-                aria-label={t("{state} · {court} at {time} — show details", {
+                aria-label={t("{state} · {court} at {time}, show details", {
                   state: slotStateLabel(state),
                   court: c.court_code,
                   time: `${String(hour).padStart(2, "0")}:00`,
@@ -630,9 +701,11 @@ function HourRow({
               className={cn(
                 cls,
                 isBookable(state) &&
-                  "block transition-[background-color,transform] duration-150 hover:bg-accent active:scale-95",
+                  "grid place-items-center transition-[background-color,color,transform] duration-150 hover:bg-accent hover:text-accent-fg active:scale-95",
               )}
-            />
+            >
+              {isBookable(state) ? <Plus aria-hidden className="size-3.5" strokeWidth={2.25} /> : null}
+            </button>
           </div>
         );
       })}

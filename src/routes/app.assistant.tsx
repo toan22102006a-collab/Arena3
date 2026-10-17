@@ -104,7 +104,7 @@ function Page() {
         variant="dotgrid"
         position="fixed"
         className="-z-[1]"
-        color="#1e4fd8"
+        color="#3f7d20"
         gap={30}
         dot={1.6}
         radius={140}

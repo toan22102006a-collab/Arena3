@@ -1,12 +1,11 @@
-import { media } from "./media";
-
 export type CoachCard = {
   name: string;
   sport: string;
   title: string;
   blurb: string;
   creds: string[];
-  photo: string;
+  userId?: string;
+  slot?: string;
 };
 
 /** Presentation copy for the seeded coaches — not a new table. */
@@ -16,9 +15,10 @@ export const COACHES: CoachCard[] = [
     sport: "badminton",
     title: "Head badminton coach",
     blurb:
-      "Runs the beginner and advanced ladders. Footwork first, controlled smashes second — no shoulders burned out in week one.",
-    creds: ["Beginner Mon/Wed/Fri 18:00", "Advanced Sat 08:00", "Courts CL-01 · CL-05"],
-    photo: media.coachKhoa,
+      "Runs the beginner and advanced ladders. Footwork first, controlled smashes second. No shoulders burned out in week one.",
+    creds: ["Beginner Mon/Wed/Fri 18:00", "Advanced Sat 08:00"],
+    userId: "00000000-0000-0000-0000-000000000011",
+    slot: "coach.00000000-0000-0000-0000-000000000011",
   },
   {
     name: "Trần Thị Lan",
@@ -26,25 +26,28 @@ export const COACHES: CoachCard[] = [
     title: "Intermediate badminton coach",
     blurb:
       "Assists the beginner ladder, owns intermediate. Patient with players moving from casual rallies to a real training plan.",
-    creds: ["Intermediate Tue/Thu 19:00", "Beginner assistant", "Court CL-03"],
-    photo: media.coachLan,
+    creds: ["Intermediate Tue/Thu 19:00", "Beginner assistant"],
+    userId: "00000000-0000-0000-0000-000000000012",
+    slot: "coach.00000000-0000-0000-0000-000000000012",
   },
   {
     name: "Phạm Đức Anh",
     sport: "basketball",
     title: "Head basketball coach",
     blurb:
-      "Beginner program on BR-01: footwork, release, reading the floor. Classes never sit on a sold slot.",
-    creds: ["Beginner Mon/Wed 17:00", "Court BR-01", "Vertical · coordination"],
-    photo: media.coachAnh,
+      "Beginner basketball program: footwork, release, reading the floor. Classes never sit on a sold slot.",
+    creds: ["Beginner Mon/Wed 17:00", "Vertical · coordination"],
+    userId: "00000000-0000-0000-0000-000000000013",
+    slot: "coach.00000000-0000-0000-0000-000000000013",
   },
   {
     name: "Lê Quốc Việt",
     sport: "volleyball",
     title: "Head volleyball coach",
     blurb:
-      "Intermediate on BC-01. Digs, serves and team reading — built for players moving off the sand into a structured side.",
-    creds: ["Intermediate Sat 16:00", "Court BC-01", "Rotations · reflexes"],
-    photo: media.coachViet,
+      "Intermediate volleyball: digs, serves and team reading, built for players moving off the sand into a structured side.",
+    creds: ["Intermediate Sat 16:00", "Rotations · reflexes"],
+    userId: "00000000-0000-0000-0000-000000000014",
+    slot: "coach.00000000-0000-0000-0000-000000000014",
   },
 ];

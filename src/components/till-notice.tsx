@@ -30,7 +30,7 @@ export function useTillOpen(isReceptionist: boolean): boolean {
 export function TillNotice() {
   return (
     <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-hold/30 bg-hold/5 p-4">
-      <p className="text-sm">{t("Open your cash shift first — payments can’t be taken without one.")}</p>
+      <p className="text-sm">{t("Open your cash shift first. Payments can’t be taken without one.")}</p>
       <ButtonLink to="/desk" variant="outline" size="sm">
         {t("Open shift at the front desk")}
       </ButtonLink>

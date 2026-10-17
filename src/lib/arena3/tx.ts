@@ -34,16 +34,58 @@ async function neonPool(): Promise<Pool> {
   return globalRef.__arena3NeonPool__;
 }
 
+/**
+ * Throw this when the writes made so far must survive the error — a wrong
+ * password still has to count toward the lockout. `withTx` commits, then
+ * rethrows `inner`.
+ */
+export class KeepWrites extends Error {
+  readonly inner: unknown;
+  constructor(inner: unknown) {
+    super("keep writes");
+    this.inner = inner;
+  }
+}
+
+/**
+ * @internal test-only
+ * Overrides the PGlite instance used by `withTx` for isolated unit tests.
+ */
+let overridePglite: import("@electric-sql/pglite").PGlite | null = null;
+
+/**
+ * @internal test-only
+ * Sets or clears the test PGlite override instance.
+ */
+export function setOverridePglite(pg: import("@electric-sql/pglite").PGlite | null): void {
+  overridePglite = pg;
+}
+
 export async function withTx<T>(fn: (sql: Sql) => Promise<T>): Promise<T> {
-  if (dbSource === "pglite") {
-    const pg = await getPglite();
-    return pg.transaction(async (tx) => {
+  if (overridePglite || dbSource === "pglite") {
+    const pg = overridePglite ?? (await getPglite());
+    let keptError: unknown = undefined;
+    let hasKeptError = false;
+    const out = await pg.transaction(async (tx) => {
       const run: Run = async <R>(text: string, params: unknown[]) => {
         const result = await tx.query<R>(text, params ?? []);
         return result.rows;
       };
-      return fn(wrap(run));
+      try {
+        return await fn(wrap(run));
+      } catch (e) {
+        if (e instanceof KeepWrites) {
+          keptError = e.inner;
+          hasKeptError = true;
+          return undefined as unknown as T;
+        }
+        throw e;
+      }
     });
+    if (hasKeptError) {
+      throw keptError;
+    }
+    return out;
   }
   const pool = await neonPool();
   const client: PoolClient = await pool.connect();
@@ -62,6 +104,21 @@ export async function withTx<T>(fn: (sql: Sql) => Promise<T>): Promise<T> {
     await client.query("COMMIT");
     return out;
   } catch (e) {
+    if (e instanceof KeepWrites) {
+      try {
+        await client.query("COMMIT");
+        hasError = false;
+      } catch (commitErr) {
+        hasError = true;
+        try {
+          await client.query("ROLLBACK");
+        } catch {
+          /* ignore */
+        }
+        throw commitErr;
+      }
+      throw e.inner;
+    }
     hasError = true;
     try {
       await client.query("ROLLBACK");

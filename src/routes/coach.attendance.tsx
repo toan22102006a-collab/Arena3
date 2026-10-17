@@ -77,9 +77,9 @@ const RESULTS = [
     v: "excused",
     l: tk("Excused"),
     Icon: FileCheck2,
-    on: "border-blue-700 bg-blue-600 text-white",
-    off: "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100",
-    dot: "bg-blue-600",
+    on: "border-earth bg-earth text-earth-fg",
+    off: "border-earth/40 bg-wood text-earth hover:bg-wood/80",
+    dot: "bg-earth",
   },
 ];
 
@@ -157,7 +157,7 @@ function Page() {
                   <p className="text-sm text-muted">{sessionDay(open.start_at)}</p>
                   <p className="figure text-3xl tabular-nums">
                     {hhmm(open.start_at)}
-                    <span className="text-muted">–{hhmm(open.end_at)}</span>
+                    <span className="text-muted">-{hhmm(open.end_at)}</span>
                   </p>
                 </div>
                 <div className="grid gap-1 text-sm sm:justify-items-end">
@@ -326,7 +326,7 @@ function RegisterPanel({
               })
             : t("This register closed after the session.")}{" "}
           {isManager
-            ? t("You can still correct it — say why below.")
+            ? t("You can still correct it: say why below.")
             : t("Ask a manager to correct it.")}
         </p>
       ) : null}

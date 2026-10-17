@@ -37,7 +37,7 @@ PARTS = [
       "equipment_items", "equipment_loans"]),
     ("33-erd-logical-3-payments", "Payments, Plans and Promotions", 3,
      ["cashier_shifts", "payments", "invoices", "invoice_lines", "promotions", "promotion_redemptions",
-      "membership_plans", "subscriptions", "day_passes", "loyalty_adjustments"]),
+      "membership_plans", "subscriptions", "loyalty_adjustments"]),
     ("34-erd-logical-4-classes", "Classes, Attendance and Training", 3,
      ["classes", "sessions", "enrollments", "waitlist_offers", "attendance",
       "session_results", "training_plans", "training_plan_versions", "homework", "homework_recipients"]),
@@ -211,7 +211,8 @@ def draw(name, title, ncols, names, schema, cols, drop=()):
     d = Diagram(name, w=width, h=int(height + MARGIN))
     for t in names:
         x, y, w, h = pos[t]
-        body = ('<div style="padding:2px 10px 0 10px"><b>' + t + "</b></div><hr>"
+        t_label = t
+        body = ('<div style="padding:2px 10px 0 10px"><b>' + t_label + "</b></div><hr>"
                 + '<div style="padding:0 10px">' + "<br>".join(txt for _, txt in rows_of(schema[t])) + "</div>")
         d.vertex(body, BOX, x, y, w, h, id=t)
     edges = [e for e in edges_of(schema, names) if (e["child"], e["col"]) not in drop]

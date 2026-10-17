@@ -205,7 +205,7 @@ function Page() {
       // refund no manager has signed off yet.
       toast.success(
         res.payment?.status === "refund_pending"
-          ? t("Raised — a manager has to sign this off before the money moves")
+          ? t("Raised: a manager has to sign this off before the money moves")
           : t("Refunded {amount}", { amount: money(amount) }),
       );
       setRefunding(null);
@@ -337,7 +337,7 @@ function Page() {
                 onClick={() =>
                   void act(async () => {
                     await apiPost(`/subscriptions/${s.id}/freeze`, { days: 7 });
-                    toast.success(t("Frozen for 7 days — the end date moves out to match"));
+                    toast.success(t("Frozen for 7 days: the end date moves out to match"));
                     reload();
                   }, t("Could not freeze the plan"))
                 }
@@ -386,7 +386,7 @@ function Page() {
               onClick={() =>
                 void act(async () => {
                   await apiPost("/subscriptions", { plan_id: p.id, user_id: id });
-                  toast.success(t("Order created — take payment to activate"));
+                  toast.success(t("Order created: take payment to activate"));
                   reload();
                 }, t("Something went wrong"))
               }
@@ -542,7 +542,7 @@ function Page() {
             </Field>
             {me?.role !== "manager" ? (
               <p className="text-xs text-muted">
-                {t("Above your limit this is parked for a manager instead of paid out — you will be told which happened.")}
+                {t("Above your limit this is parked for a manager instead of paid out. You will be told which happened.")}
               </p>
             ) : null}
             {refundErr ? (
@@ -599,7 +599,7 @@ function Page() {
                 onClick={() =>
                   void act(async () => {
                     await apiPost(`/bookings/${b.id}/check-in`);
-                    toast.success(t("Checked in — on court"));
+                    toast.success(t("Checked in: on court"));
                     reload();
                   }, t("Something went wrong"))
                 }

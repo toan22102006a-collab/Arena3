@@ -7,6 +7,8 @@ import { HoldTimer } from "@/components/media";
 import { PayOnlineButton } from "@/components/pay-online";
 import { TransferQrModal } from "@/components/transfer-qr-modal";
 import { Shell, money, useSessionUser, when } from "@/components/shell";
+import { PageHero } from "@/components/page-hero";
+import { StatStrip } from "@/components/stat-strip";
 import {
   Badge,
   Button,
@@ -26,6 +28,7 @@ import { PromoInput } from "@/components/promo-input";
 import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
 import { refTypeLabel, sportLabel } from "@/lib/arena3/labels";
 import { t, tk, tServer, tData } from "@/lib/i18n";
+import { usePageState } from "@/lib/use-page-state";
 import { useRead } from "@/lib/use-read";
 
 export const Route = createFileRoute("/desk/payments")({
@@ -101,10 +104,10 @@ type Queue = {
   awaiting: Awaiting[];
   orders: Order[];
   refunds: Refund[];
+  /** One page of the receipts in the window, after the method and search filters. */
   receipts: Receipt[];
+  receipts_total: number;
   days: number;
-  /** The receipt list hit its cap and there is more behind it. */
-  capped: boolean;
 };
 
 // `gateway` is one of the five values `pay_method` allows, so a payment taken
@@ -151,7 +154,13 @@ function Page() {
   const [days, setDays] = useState("7");
   const [payMethod, setPayMethod] = useState("all");
   const [receiptQuery, setReceiptQuery] = useState("");
-  const [receiptOffset, setReceiptOffset] = useState(0);
+  const receiptPaging = usePageState("desk.receipts", 25);
+  // Typing waits a beat, so one search is one request.
+  const [receiptTerm, setReceiptTerm] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setReceiptTerm(receiptQuery.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [receiptQuery]);
   // Whether this centre has payOS set up at all. Read once: the button must be
   // absent rather than present-and-broken when it has not been configured.
   const [onlineOn, setOnlineOn] = useState(false);
@@ -162,7 +171,7 @@ function Page() {
   }, []);
   // A manager signs refunds off here and never runs a till, so only the desk asks about one — and
   // only once it is known who is asking.
-  const shiftRead = useRead<{ shift: { id: string } | null }>(me && !isManager ? "/shifts/current?optional=1" : null);
+  const shiftRead = useRead<{ shift: { id: string } | null; totals?: { cash: number } | null }>(me && !isManager ? "/shifts/current?optional=1" : null);
   // undefined = not known (still asking, or the question failed); null = asked, and no till is open.
   const shift = shiftRead.data === null ? undefined : shiftRead.data.shift;
   // Method and busy flag are per-order: the desk works one member at a time,
@@ -174,7 +183,14 @@ function Page() {
   // Every refresh here runs straight after a mutation, and `reload()` never joins a read that was
   // already in flight: two rows actioned in quick succession would otherwise let the second one adopt
   // the first one's older answer and redraw a row that has just been paid for.
-  const read = useRead<Queue>(`/payments/pending?days=${days}`);
+  const receiptParams = new URLSearchParams({
+    days,
+    receipt_limit: String(receiptPaging.pageSize),
+    receipt_offset: String(receiptPaging.offset),
+  });
+  if (payMethod !== "all") receiptParams.set("receipt_method", payMethod);
+  if (receiptTerm) receiptParams.set("receipt_q", receiptTerm);
+  const read = useRead<Queue>(`/payments/pending?${receiptParams}`);
   // Only the receipts depend on the window. The last answer stays on screen while another window is
   // being asked for, so the transfers, orders and refunds do not vanish and come back with each tap.
   const [last, setLast] = useState<Queue | null>(null);
@@ -187,23 +203,14 @@ function Page() {
   const awaiting = data?.awaiting ?? [];
   const orders = data?.orders ?? [];
   const refunds = data?.refunds ?? [];
-  // Filtered here rather than at the server: the cap is applied before the
-  // filter either way, and narrowing a list already on screen should not cost a
-  // round trip while somebody is reading down a statement.
-  const needle = receiptQuery.trim().toLowerCase();
-  const receipts = (read.data?.receipts ?? []).filter(
-    (r) =>
-      (payMethod === "all" || r.method === payMethod) &&
-      (!needle ||
-        [r.member_name, r.member_code, r.buyer_phone, r.code].some((v) => v?.toLowerCase().includes(needle))),
-  );
-  // Fifteen receipts a page: the statement used to be one unbroken column, hundreds of rows tall.
-  const RECEIPT_PAGE = 15;
-  useEffect(() => setReceiptOffset(0), [payMethod, days, receiptQuery]);
-  const receiptPage = receipts.slice(receiptOffset, receiptOffset + RECEIPT_PAGE);
+  // The server filters and pages the receipts across the whole window, so every row in it can be
+  // reached when the list is read back against a bank statement; this is one page of them.
+  const receiptPage = data?.receipts ?? [];
+  const { reset: resetReceipts } = receiptPaging;
+  useEffect(resetReceipts, [payMethod, days, receiptTerm, resetReceipts]);
   // Per-row flooring, not a floor on the total: one over-paid order must not
-  // quietly cancel out what another member still owes.
-  const owed = orders.reduce((sum, o) => sum + Math.max(0, o.price_vnd - o.paid_vnd), 0);
+  // quietly cancel out what another member still has to pay.
+  const toCollect = orders.reduce((sum, o) => sum + Math.max(0, o.price_vnd - o.paid_vnd), 0);
 
   // A receptionist without an open till cannot post anything; saying so once at
   // the top beats a row of buttons that each fail the same way when pressed.
@@ -253,13 +260,17 @@ function Page() {
         },
         true,
       );
-      toast.success(t("Paid — {name} is on {plan}", { name: o.full_name, plan: o.plan_name }));
+      toast.success(t("Paid: {name} is on {plan}", { name: o.full_name, plan: o.plan_name }));
+      // The money is taken the moment that POST returns, so the queue is
+      // refreshed before anything else is attempted. Printing is the step most
+      // likely to fail — a blocked popup is enough — and a failed print must
+      // not leave a paid row sitting here inviting somebody to charge it twice.
       refresh();
       if (res.invoice?.id) {
         try {
           await openInvoice(res.invoice.id);
         } catch {
-          toast.warning(t("Paid — but the receipt did not open. Reprint it from the member's profile."));
+          toast.warning(t("Paid, but the receipt did not open. Reprint it from the member's profile."));
         }
       }
     } catch (e) {
@@ -296,14 +307,14 @@ function Page() {
         `/bookings/${a.id}/${received ? "transfer-confirm" : "transfer-reject"}`,
       );
       toast.success(
-        received ? t("Confirmed — {court} is booked", { court: a.court_code }) : t("Slot released back to the grid"),
+        received ? t("Confirmed: {court} is booked", { court: a.court_code }) : t("Slot released back to the grid"),
       );
       refresh();
       if (received && res.invoice_id) {
         try {
           await openInvoice(res.invoice_id);
         } catch {
-          toast.warning(t("Confirmed — but the receipt did not open. Reprint it from the profile."));
+          toast.warning(t("Confirmed, but the receipt did not open. Reprint it from the profile."));
         }
       }
     } catch (e) {
@@ -326,33 +337,40 @@ function Page() {
     }
   }
 
-  // Managers reach this screen for the refund sign-offs; handing them the desk
-  // nav afterwards would strand them a click away from their own reports.
+  const statItems = [
+    { label: t("Waiting payments"), value: orders.length + awaiting.length },
+    { label: t("Amount to collect"), value: money(toCollect) },
+    { label: t("Current shift"), value: shift ? t("Shift open") : t("No open shift") },
+    { label: t("Cash in till"), value: shiftRead.data?.totals?.cash ? money(shiftRead.data.totals.cash) : "0 đ" },
+  ];
+
   return (
-    <Shell
-      role={isManager ? "manager" : "receptionist"}
-      title={t("Payments")}
-      subtitle={t("Plans ordered in the app and waiting to be paid for, refunds waiting on a manager, and every receipt the centre has issued.")}
-    >
+    <Shell role={isManager ? "manager" : "receptionist"}>
+      <PageHero
+        slot="banner.gate"
+        title={t("Payments & refunds")}
+        subtitle={t("Orders waiting for payment, posted receipts, and audit trail.")}
+      />
+      <StatStrip className="mb-6" items={statItems} />
       <GLBackground
         variant="dotgrid"
         position="fixed"
         className="-z-[1]"
-        color="#1e4fd8"
+        color="#3f7d20"
         gap={32}
         dot={1.5}
         radius={130}
-        opacity={0.12}
+        opacity={0.22}
       />
 
       <Reveal
         className="mb-6 flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] bg-surface p-3 shadow-[var(--shadow-border)]"
         from="down"
       >
-        {/* "0 waiting · 0đ owed" is a claim; until the queue has answered there is nothing to claim. */}
+        {/* "0 waiting · 0đ to collect" is a claim; until the queue has answered there is nothing to claim. */}
         {data ? (
           <Badge tone={orders.length ? "accent" : "muted"}>
-            {t("{n} waiting · {amount} owed", { n: orders.length, amount: money(owed) })}
+            {t("{n} waiting · {amount} to collect", { n: orders.length, amount: money(toCollect) })}
           </Badge>
         ) : read.error ? null : (
           <Skeleton className="h-6 w-40" />
@@ -368,12 +386,12 @@ function Page() {
         */}
         {noTill ? (
           <Link to="/desk" className="hit">
-            <Badge tone="hold">{t("No shift open — open one to take payment")}</Badge>
+            <Badge tone="hold">{t("No shift open. Open one to take payment.")}</Badge>
           </Link>
         ) : null}
         {/* A manager came here from the manager menu, so "back" is their own
             home — `/desk` is the receptionist's counter, with a till they do not run. */}
-        <ButtonLink to={isManager ? "/manager" : "/desk"} variant="ink" className="ml-auto">
+        <ButtonLink to={isManager ? "/manager" : "/desk"} variant="espresso" className="ml-auto">
           {isManager ? t("Back to reports") : t("Back to the desk")}
         </ButtonLink>
       </Reveal>
@@ -399,7 +417,7 @@ function Page() {
         <div className="mb-10">
           <SectionTitle text={t("Transfers to check")} className="font-display text-2xl" />
           <p className="mt-1 text-sm text-muted">
-            {t("A member said they would transfer and the court is being held open for them. Find the money on the statement before you confirm — nothing has been posted yet.")}
+            {t("A member said they would transfer and the court is being held open for them. Find the money on the statement before you confirm. Nothing has been posted yet.")}
           </p>
           <Stagger className="mt-3 grid gap-3" gap={0.05}>
             {awaiting.map((a) => (
@@ -431,7 +449,7 @@ function Page() {
                           </p>
                           {a.deposit_vnd > 0 && a.deposit_vnd < a.price_vnd ? (
                             <p className="text-xs text-muted">
-                              {t("Deposit — of {total}", { total: money(a.price_vnd) })}
+                              {t("Deposit (of {total})", { total: money(a.price_vnd) })}
                             </p>
                           ) : null}
                         </div>
@@ -439,7 +457,7 @@ function Page() {
                       <div className="mt-4 flex flex-wrap items-center gap-2">
                         <StarBorder speed={4}>
                           <Button disabled={busy === a.id} onClick={() => void settleTransfer(a, true)}>
-                            {t("Money received — confirm")}
+                            {t("Money received: confirm")}
                           </Button>
                         </StarBorder>
                         <Button
@@ -447,7 +465,7 @@ function Page() {
                           disabled={busy === a.id}
                           onClick={() => void settleTransfer(a, false)}
                         >
-                          {t("Not found — release")}
+                          {t("Not found: release")}
                         </Button>
                       </div>
                     </Card>
@@ -545,7 +563,7 @@ function Page() {
                             onClick={() => void takePayment(o)}
                           >
                             {settled
-                              ? t("Paid in full — ask a manager")
+                              ? t("Paid in full: ask a manager")
                               : noTill
                                 ? t("Open a shift first")
                                 : (method[o.id] === "transfer"
@@ -584,7 +602,7 @@ function Page() {
         </Stagger>
       ) : (
         <div className="mt-3">
-          <EmptyState title={t("Nothing owed")} hint={t("Every plan ordered in the app has been paid for.")} />
+          <EmptyState title={t("Nothing to collect")} hint={t("Every plan ordered in the app has been paid for.")} />
         </div>
       )}
 
@@ -605,7 +623,7 @@ function Page() {
                       <Badge tone="danger">{money(Math.abs(r.amount_vnd))}</Badge>
                     </div>
                     <p className="mt-1 text-xs tabular-nums text-muted">
-                      {r.code} · {refTypeLabel(r.ref_type)} · {t("raised by {name}", { name: r.raised_by ?? "—" })} · {when(r.created_at)}
+                      {r.code} · {refTypeLabel(r.ref_type)} · {t("raised by {name}", { name: r.raised_by ?? "-" })} · {when(r.created_at)}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -646,7 +664,7 @@ function Page() {
           </div>
         </div>
         <p className="mt-1 text-sm text-muted">
-          {t("Every payment the centre has taken, however it was paid — cash at the counter, a card, a transfer off the statement, or a court settled in the app. Each one has its receipt here.")}
+          {t("Every payment the centre has taken, however it was paid: cash at the counter, a card, a transfer off the statement, or a court settled in the app. Each one has its receipt here.")}
         </p>
         <Input
           className="mt-3 sm:max-w-sm"
@@ -655,10 +673,10 @@ function Page() {
           onChange={(e) => setReceiptQuery(e.target.value)}
           aria-label={t("Search receipts")}
         />
-        {read.error ? null : !read.data ? (
+        {read.error ? null : !data ? (
           <Skeleton className="mt-3 h-24" />
-        ) : receipts.length ? (
-          <Stagger key={receiptOffset} className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2" gap={0.04}>
+        ) : receiptPage.length ? (
+          <Stagger key={receiptPaging.offset} className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2" gap={0.04}>
             {receiptPage.map((rc) => (
               <StaggerItem key={rc.id}>
                 <motion.div
@@ -704,12 +722,14 @@ function Page() {
             />
           </div>
         )}
-        <Pagination offset={receiptOffset} total={receipts.length} pageSize={RECEIPT_PAGE} onChange={setReceiptOffset} />
-        {read.data?.capped ? (
-          <p className="mt-3 text-xs text-muted">
-            {t("Showing the {n} most recent — there are older receipts in this window that this list does not reach. Pull the full period from Reports to reconcile it.", { n: read.data.receipts.length })}
-          </p>
-        ) : null}
+        <Pagination
+          offset={receiptPaging.offset}
+          total={data?.receipts_total ?? 0}
+          pageSize={receiptPaging.pageSize}
+          onChange={receiptPaging.setOffset}
+          onPageSizeChange={receiptPaging.setPageSize}
+          label={t("Receipt pages")}
+        />
       </div>
 
       {transferTarget ? (

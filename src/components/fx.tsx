@@ -1,15 +1,9 @@
-import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import {
   motion,
-  useAnimationFrame,
   useMotionTemplate,
   useMotionValue,
-  useReducedMotion,
-  useScroll,
   useSpring,
   useTransform,
-  useVelocity,
 } from "motion/react";
 import {
   Suspense,
@@ -24,6 +18,7 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "@/lib/cn";
+import { useReducedMotionAfterMount } from "@/components/motion";
 import { isCalm, useCalm } from "@/lib/calm";
 
 /**
@@ -31,15 +26,16 @@ import { isCalm, useCalm } from "@/lib/calm";
  *
  * The vocabulary is borrowed from React Bits, but every piece here is written
  * against our own stack and palette rather than pasted in: the hover and pointer
- * effects run on `motion`, the scroll-linked text effects run on GSAP
- * ScrollTrigger, and the WebGL backgrounds live in `./gl` behind a lazy import
- * so `ogl` never lands in the main bundle.
+ * effects run on `motion`, and the WebGL backgrounds live in `./gl` behind a
+ * lazy import so `ogl` never lands in the main bundle. GSAP lives elsewhere:
+ * `@/lib/gsap`, the landing scenes and the app moments (CLAUDE.md, rule 3).
  *
  * Two rules hold everywhere in this file:
- *   1. `prefers-reduced-motion` collapses the effect to a plain element. Nothing
- *      here is load-bearing for content. The pause button (`@/lib/calm`) goes
- *      further for the things that loop on their own — the shader backgrounds
- *      and the ticker below — and CSS stops the rest.
+ *   1. `prefers-reduced-motion` collapses the effect to a plain element, once
+ *      mounted (`useReducedMotionAfterMount`, so hydration matches the server).
+ *      Nothing here is load-bearing for content. The things that loop on their
+ *      own, the shader backgrounds, also follow `useCalm()` (`@/lib/calm`) live,
+ *      and CSS stops the rest.
  *   2. Pointer effects check `pointerType === "mouse"`. A spotlight that chases
  *      a finger is just a smear, and most of Arena3's traffic is on a phone.
  */
@@ -48,16 +44,6 @@ import { isCalm, useCalm } from "@/lib/calm";
 
 /** `useLayoutEffect` that stays quiet during SSR. */
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
-
-let gsapReady = false;
-/** Register ScrollTrigger once, on the client only. */
-function useScrollTriggerPlugin() {
-  useIsoLayoutEffect(() => {
-    if (gsapReady) return;
-    gsap.registerPlugin(ScrollTrigger);
-    gsapReady = true;
-  }, []);
-}
 
 /** True once the component has mounted in the browser. Gates client-only work. */
 function useMounted() {
@@ -108,7 +94,7 @@ export function SpotlightCard({
   as?: ElementType;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   const [on, setOn] = useState(false);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -174,7 +160,7 @@ export function GlareHover({
   duration?: number;
   opacity?: number;
 }) {
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   const [key, setKey] = useState(0);
   const [playing, setPlaying] = useState(false);
 
@@ -231,7 +217,7 @@ export function Magnet({
   wrapperClassName?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const sx = useSpring(x, { stiffness: 220, damping: 18, mass: 0.35 });
@@ -332,7 +318,7 @@ export function SplitText({
   as?: ElementType;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   const [shown, setShown] = useState(false);
 
   useIsoLayoutEffect(() => {
@@ -424,72 +410,6 @@ export function SplitText({
 }
 
 /**
- * A paragraph that resolves word by word as it scrolls through the viewport —
- * each word rises out of a blur. Scrubbed rather than triggered, so the reader
- * controls the pace with the scroll wheel.
- */
-export function ScrollReveal({
-  children,
-  className,
-  blur = 3,
-  // Unread words stay at 3:1 against the page (large text), so nothing is invisible before it is scrolled to.
-  baseOpacity = 0.5,
-}: {
-  children: string;
-  className?: string;
-  blur?: number;
-  baseOpacity?: number;
-}) {
-  const ref = useRef<HTMLParagraphElement>(null);
-  const reduced = useReducedMotion();
-  useScrollTriggerPlugin();
-
-  useIsoLayoutEffect(() => {
-    const el = ref.current;
-    if (!el || reduced) return;
-    const words = el.querySelectorAll<HTMLElement>("[data-reveal-word]");
-    if (!words.length) return;
-
-    const ctx = gsap.context(() => {
-      gsap.fromTo(
-        words,
-        { opacity: baseOpacity, filter: `blur(${blur}px)`, y: 6 },
-        {
-          opacity: 1,
-          filter: "blur(0px)",
-          y: 0,
-          ease: "none",
-          stagger: 0.12,
-          scrollTrigger: {
-            trigger: el,
-            // Finishes well before the text leaves, so the last words are
-            // readable for a while rather than resolving as they exit.
-            start: "top 82%",
-            end: "bottom 62%",
-            scrub: 0.6,
-          },
-        },
-      );
-    }, el);
-    return () => ctx.revert();
-  }, [children, reduced, blur, baseOpacity]);
-
-  if (reduced) return <p className={className}>{children}</p>;
-
-  return (
-    <p ref={ref} className={className}>
-      <span className="sr-only">{children}</span>
-      {children.split(" ").map((w, i) => (
-        <span key={i} data-reveal-word aria-hidden className="inline-block will-change-[filter,opacity]">
-          {w}
-          {" "}
-        </span>
-      ))}
-    </p>
-  );
-}
-
-/**
  * Scramble-in text: characters cycle through junk before settling.
  *
  * Only ever decorative — the real string is in `aria-label`, and the animation
@@ -508,7 +428,7 @@ export function DecryptedText({
   charset?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   const [shown, setShown] = useState(text);
 
   useEffect(() => {
@@ -557,85 +477,6 @@ export function DecryptedText({
 }
 
 /* ── scroll-linked ───────────────────────────────────────────────── */
-
-function wrap(min: number, max: number, v: number) {
-  const range = max - min;
-  return ((((v - min) % range) + range) % range) + min;
-}
-
-/**
- * Marquee whose speed and direction follow the scroll wheel: scrolling down
- * drives it faster, scrolling up flips it. Idle, it drifts at `baseVelocity`.
- *
- * Replaces the CSS-keyframe `.marquee` wherever the strip is worth noticing.
- */
-export function ScrollVelocity({
-  children,
-  className,
-  baseVelocity = 2.2,
-  copies = 4,
-}: {
-  children: ReactNode;
-  className?: string;
-  /** Percent of the track travelled per second when the page is still. */
-  baseVelocity?: number;
-  copies?: number;
-}) {
-  const reduced = useCalm();
-  const baseX = useMotionValue(0);
-  const { scrollY } = useScroll();
-  const scrollVelocity = useVelocity(scrollY);
-  const smooth = useSpring(scrollVelocity, { damping: 50, stiffness: 400 });
-  // `clamp: false` lets a hard flick overshoot the mapped range, which is what
-  // makes the strip feel physically connected to the wheel.
-  const factor = useTransform(smooth, [0, 1000], [0, 4], { clamp: false });
-  const x = useTransform(baseX, (v) => `${wrap(-50, 0, v)}%`);
-  const direction = useRef(1);
-  const paused = useRef(false);
-
-  useAnimationFrame((_, delta) => {
-    if (reduced || paused.current) return;
-    let moveBy = direction.current * baseVelocity * (delta / 1000);
-    // A flick used to multiply this without a ceiling. Keep the boost to at most double.
-    const f = Math.max(-1, Math.min(1, factor.get()));
-    if (f < 0) direction.current = -1;
-    else if (f > 0) direction.current = 1;
-    moveBy += direction.current * moveBy * Math.abs(f);
-    baseX.set(baseX.get() + moveBy);
-  });
-
-  // A standing strip would clip everything past the first screenful with no way to reach it, so
-  // when nothing moves it wraps onto as many rows as it needs.
-  if (reduced) {
-    return (
-      <div className={cn("mx-auto max-w-6xl px-4", className)}>
-        <div className="flex flex-wrap items-center gap-y-3">{children}</div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={cn("marquee", className)}
-      onMouseEnter={() => {
-        paused.current = true;
-      }}
-      onMouseLeave={() => {
-        paused.current = false;
-      }}
-    >
-      {/* Duplicated `copies` times and wrapped over half the track, so the seam
-          is always off-screen no matter how wide the content is. */}
-      <motion.div className="flex w-max will-change-transform" style={{ x }}>
-        {Array.from({ length: copies }, (_, i) => (
-          <div key={i} className="flex shrink-0 items-center" aria-hidden={i > 0}>
-            {children}
-          </div>
-        ))}
-      </motion.div>
-    </div>
-  );
-}
 
 /**
  * Progressive blur at one edge of a scroll container — the content dissolves
@@ -693,93 +534,6 @@ export function GradualBlur({
 }
 
 /* ── composite widgets ───────────────────────────────────────────── */
-
-/**
- * A deck of cards where the front one cycles to the back on a timer, or when a
- * card behind is clicked. Good for showing three or four short things in the
- * space of one.
- */
-export function CardSwap({
-  items,
-  className,
-  interval = 4200,
-  offset = 26,
-  index,
-  onIndexChange,
-}: {
-  items: { key: string; node: ReactNode }[];
-  className?: string;
-  /** ms between automatic swaps. Pass `0` for a deck that only moves on click. */
-  interval?: number;
-  /** px of x/y displacement between neighbouring cards in the stack. */
-  offset?: number;
-  /** Controlled front index. Omit to let the deck own it. */
-  index?: number;
-  onIndexChange?: (i: number) => void;
-}) {
-  const reduced = useReducedMotion();
-  const [own, setOwn] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const n = items.length;
-  const front = index ?? own;
-
-  const goTo = (i: number) => {
-    setOwn(i);
-    onIndexChange?.(i);
-  };
-
-  useEffect(() => {
-    // `interval <= 0` means the reader drives the deck. Text people are
-    // actually reading — a quote, a testimonial — should not move under them.
-    if (interval <= 0 || paused || reduced || n < 2) return;
-    const id = setTimeout(() => {
-      const next = (front + 1) % n;
-      setOwn(next);
-      onIndexChange?.(next);
-    }, interval);
-    return () => clearTimeout(id);
-    // `onIndexChange` is intentionally out of the deps: callers routinely pass
-    // an inline arrow, which would restart the timer on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [front, paused, reduced, n, interval]);
-
-  return (
-    <div
-      className={cn("relative", className)}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-    >
-      {items.map((it, i) => {
-        // Depth measured forward from the front card, wrapping round the deck.
-        const depth = (i - front + n) % n;
-        const isFront = depth === 0;
-        return (
-          <motion.div
-            key={it.key}
-            className={cn("absolute inset-0", isFront ? "" : "cursor-pointer")}
-            onClick={isFront ? undefined : () => goTo(i)}
-            animate={{
-              x: depth * offset,
-              y: depth * -offset * 0.55,
-              scale: 1 - depth * 0.055,
-              rotate: depth * 1.6,
-              opacity: depth > 2 ? 0 : 1,
-            }}
-            style={{ zIndex: n - depth }}
-            transition={
-              reduced
-                ? { duration: 0 }
-                : { type: "spring", stiffness: 240, damping: 30, mass: 0.7 }
-            }
-            aria-hidden={!isFront}
-          >
-            {it.node}
-          </motion.div>
-        );
-      })}
-    </div>
-  );
-}
 
 /**
  * macOS-style dock: icons swell as the cursor passes over them.
@@ -840,7 +594,7 @@ function DockItem({
   onSelect?: () => void;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
 
   const distance = useTransform(mouseX, (v) => {
     const r = ref.current?.getBoundingClientRect();
@@ -912,7 +666,7 @@ export function StarBorder({
  * Mounted once at the app root.
  */
 export function ClickSpark({
-  color = "#1e4fd8",
+  color = "#3f7d20",
   count = 8,
   length = 13,
   duration = 380,
@@ -923,7 +677,7 @@ export function ClickSpark({
   duration?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotionAfterMount();
   const mounted = useMounted();
 
   useEffect(() => {
