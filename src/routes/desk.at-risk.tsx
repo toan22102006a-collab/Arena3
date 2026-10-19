@@ -11,7 +11,7 @@ function Page() {
     <Shell
       role={user?.role === "manager" ? "manager" : "receptionist"}
       title={t("At risk")}
-      subtitle={t("Members who may be drifting away. A friendly call now is cheaper than a lapsed plan.")}
+      subtitle={t("Members who have stopped coming. Call them before their plan lapses.")}
     >
       <AtRiskPanel />
     </Shell>

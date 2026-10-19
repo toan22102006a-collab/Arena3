@@ -5,6 +5,7 @@ import { Button, Modal } from "./ui";
 import { money } from "./shell";
 import { apiPost } from "@/lib/arena3/client";
 import { t, tServer } from "@/lib/i18n";
+import { useLive } from "@/lib/use-live";
 
 /**
  * Take an online payment through payOS.
@@ -96,30 +97,41 @@ export function PayOnlineButton({
     }
   }
 
-  // Poll while the dialog is open and unpaid.
+  // Verify with payOS and update status
+  const checkPayment = useCallback(async () => {
+    if (!raised) return;
+    try {
+      const r = await apiPost<{ status: string; detail?: string }>(
+        `/payments/online/${raised.payment_id}/verify`,
+      );
+      if (r.status === "posted") {
+        stopPolling();
+        setPhase("paid");
+        onPaid?.();
+      } else if (r.status === "expired" || r.status === "failed") {
+        stopPolling();
+        setPhase("failed");
+        setNote(r.status === "expired" ? t("The link expired.") : t("The customer cancelled."));
+      } else if (r.status === "underpaid") {
+        setNote(t("Not the full amount yet: {detail}", { detail: tServer(r.detail ?? "") }));
+      }
+    } catch {
+      // A poll that fails is not a payment that failed; keep asking.
+    }
+  }, [raised, onPaid, stopPolling]);
+
+  // Realtime SSE push triggers immediate verification
+  useLive(phase === "waiting" && raised ? `payment:${raised.payment_id}` : null, () => {
+    void checkPayment();
+  });
+
+  // Poll as fallback while the dialog is open and unpaid.
   useEffect(() => {
     if (phase !== "waiting" || !raised) return;
     let stopped = false;
     const tick = async () => {
-      try {
-        const r = await apiPost<{ status: string; detail?: string }>(
-          `/payments/online/${raised.payment_id}/verify`,
-        );
-        if (stopped) return;
-        if (r.status === "posted") {
-          stopPolling();
-          setPhase("paid");
-          onPaid?.();
-        } else if (r.status === "expired" || r.status === "failed") {
-          stopPolling();
-          setPhase("failed");
-          setNote(r.status === "expired" ? t("The link expired.") : t("The customer cancelled."));
-        } else if (r.status === "underpaid") {
-          setNote(t("Not the full amount yet: {detail}", { detail: tServer(r.detail ?? "") }));
-        }
-      } catch {
-        // A poll that fails is not a payment that failed; keep asking.
-      }
+      if (stopped) return;
+      await checkPayment();
     };
     timer.current = window.setInterval(() => void tick(), POLL_MS);
     void tick();
@@ -127,7 +139,7 @@ export function PayOnlineButton({
       stopped = true;
       stopPolling();
     };
-  }, [phase, raised, onPaid, stopPolling]);
+  }, [phase, raised, checkPayment, stopPolling]);
 
   function close() {
     stopPolling();

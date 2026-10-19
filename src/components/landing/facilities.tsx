@@ -4,7 +4,8 @@ import { GlareHover } from "@/components/fx";
 import { cn } from "@/lib/cn";
 import { gsap, useScene } from "@/lib/gsap";
 import { useCalm } from "@/lib/calm";
-import { t } from "@/lib/i18n";
+import { t, useLang } from "@/lib/i18n";
+import { useSports } from "@/components/sports-ui";
 import type { CatalogCourt } from "@/lib/arena3/catalog";
 import { rise } from "./tweens";
 
@@ -12,13 +13,15 @@ import { rise } from "./tweens";
  * The building, walked through sideways.
  *
  * On a computer with motion on, the section holds and the scroll carries you along the hall:
- * the main hall first, then each area the schedule can sell (badminton bays, basketball,
- * volleyball, the desk), each caption arriving as its photo reaches the middle. On a phone, and
+ * the main hall first, then each area the schedule can sell,
+ * each caption arriving as its photo reaches the middle. On a phone, and
  * with motion off, it is a plain grid: the page itself never scrolls sideways (DESIGN.md, Layout).
  */
 export function FacilitiesScene({ courts }: { courts?: CatalogCourt[] } = {}) {
   const root = useRef<HTMLElement>(null);
   const still = useCalm();
+  const { sports } = useSports();
+  const lang = useLang();
 
   const getCode = (sport: string) => {
     if (!courts) return "";
@@ -35,24 +38,17 @@ export function FacilitiesScene({ courts }: { courts?: CatalogCourt[] } = {}) {
   // Named against the court codes and gear the schedule actually uses, so the page and the grid
   // describe the same building.
   const facilities = [
-    {
-      code: getCode("badminton"),
-      name: t("Badminton courts"),
-      slot: "landing.facilities.badminton",
-      note: t("Twelve bays on sprung wood. Feather-grade shuttles are issued at the counter, not sold from a machine."),
-    },
-    { code: getCode("basketball"), name: t("Basketball courts"), slot: "landing.facilities.basketball", note: t("Full-size hardwood with breakaway rims.") },
-    {
-      code: getCode("volleyball"),
-      name: t("Volleyball courts"),
-      slot: "landing.facilities.volleyball",
-      note: t("Competition net height with a referee stand on the side and a ten-second reset between sets."),
-    },
+    ...sports.map((s) => ({
+      code: getCode(s.code),
+      name: lang === "vi" ? `Sân ${s.name_vi}` : `${s.name_en} courts`,
+      slot: `sport.${s.code}`,
+      note: t("Indoor hall with air conditioning and court lighting."),
+    })),
     {
       code: t("Reception"),
       name: t("Front desk"),
       slot: "landing.facilities.reception",
-      note: t("Staffed the whole time we are open. Rackets, shuttle tubes and match balls go out on your tab and settle with the court."),
+      note: t("Open during all opening hours. You can rent rackets, shuttlecocks and balls and pay for them with the court."),
     },
   ];
 
@@ -95,10 +91,10 @@ export function FacilitiesScene({ courts }: { courts?: CatalogCourt[] } = {}) {
         {t("The building")}
       </p>
       <h2 data-rise className="mt-2 max-w-xl font-display text-4xl sm:text-5xl">
-        {t("One roof, sixteen surfaces, one desk.")}
+        {t("The hall and the front desk")}
       </h2>
       <p data-rise className="mt-3 max-w-lg text-muted">
-        {t("Everything the schedule can sell you sits in the same hall, so a court, a class and a racket all close out on one tab at reception.")}
+        {t("Courts, classes and equipment hire are in one building. You pay for them together at reception.")}
       </p>
 
       {/* On md+ with motion, a viewport onto one long row; otherwise a grid. */}
@@ -118,7 +114,7 @@ export function FacilitiesScene({ courts }: { courts?: CatalogCourt[] } = {}) {
             <GlareHover className="h-full rounded-[var(--radius-xl)]" duration={1.1}>
               <Cover
                 slot="landing.facilities.hall"
-                alt={t("The main hall at Arena3")}
+                alt={t("The main hall at Lê Long Sport")}
                 className={cn(
                   "group rounded-[var(--radius-xl)] shadow-[var(--shadow-border)]",
                   still ? "aspect-[16/9] sm:aspect-[16/7]" : "aspect-[16/9] md:aspect-auto md:h-[26rem]",
@@ -132,7 +128,7 @@ export function FacilitiesScene({ courts }: { courts?: CatalogCourt[] } = {}) {
                       {totalCourts === 16 ? t("Sixteen playing surfaces") : t("{count} playing surfaces", { count: totalCourts })}
                     </p>
                     <p className="mt-2 max-w-md text-sm text-on-media-muted">
-                      {t("A nine-metre ceiling, sprung wood underfoot and lighting rated for evening play right through to close.")}
+                      {t("Nine-metre ceiling, sprung wooden floor and lighting for evening play.")}
                     </p>
                   </div>
                 </MediaCaption>

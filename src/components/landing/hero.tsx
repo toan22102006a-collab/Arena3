@@ -9,7 +9,8 @@ import { GLBackground, ShinyText } from "@/components/fx";
 import { money } from "@/components/shell";
 import { ScrollTrigger, gsap, registerGsap, useScene } from "@/lib/gsap";
 import { useCalm } from "@/lib/calm";
-import { t } from "@/lib/i18n";
+import { t, useLang } from "@/lib/i18n";
+import { useSports } from "@/components/sports-ui";
 import { CountTo } from "./kit";
 import { mark, rich, useVenue } from "./util";
 import { hhmm } from "@/lib/venue";
@@ -162,18 +163,18 @@ export function Hero({
 
           {/* One headline, two lines: the setup in white, the payoff tinted. */}
           <h1 data-enter className="mt-4">
-            <span key={t("Courts, classes, plans:")} data-line1 className="block font-display text-4xl font-bold leading-[1.05] sm:text-6xl">
-              {t("Courts, classes, plans:")}
+            <span key={t("Book courts and classes")} data-line1 className="block font-display text-4xl font-bold leading-[1.05] sm:text-6xl">
+              {t("Book courts and classes")}
             </span>
             <span className="media-glow block font-display text-4xl font-bold leading-[1.05] sm:text-6xl">
               <span data-line2 className="text-gradient-media inline-block py-[0.3em] -my-[0.3em]">
-                {t("one calendar.")}
+                {t("at Lê Long Sport.")}
               </span>
             </span>
           </h1>
 
           <p data-enter data-sub className="mt-5 max-w-lg text-on-media-muted">
-            {t("Badminton, basketball, volleyball. Open {open}-{close}, every day. Book a court in five minutes; the desk closes you out in three taps.", {
+            {t("Indoor sports centre. Open {open}-{close}, every day. Book a court online or at the front desk.", {
               open: hhmm(venue.open),
               close: hhmm(venue.close),
             })}
@@ -203,7 +204,7 @@ export function Hero({
           {/* The live number is the argument for the button above. */}
           <p data-enter data-free className="mt-4 text-sm text-on-media-muted">
             {rich(
-              t("{n} court hours still free {day} · from {price}/hr · held {hold} minutes while you decide.", {
+              t("{n} court hours free {day} · from {price}/hr · a slot you pick is held for {hold} minutes.", {
                 hold: venue.holdMinutes,
                 n: mark("n"),
                 day,
@@ -338,18 +339,23 @@ export function StatsBand({ freeHours, day, courts }: { freeHours: number; day: 
       scrollTrigger: { trigger: root.current, start: "top 85%", once: true },
     });
   });
+  const { sports } = useSports();
+  const lang = useLang();
   const liveCourts = courts ? courts.filter((c) => c.status !== "retired") : [];
   const totalCourts = liveCourts.length || 16;
-  const badm = liveCourts.length ? liveCourts.filter((c) => c.sport === "badminton").length : 12;
-  const bball = liveCourts.length ? liveCourts.filter((c) => c.sport === "basketball").length : 2;
-  const vball = liveCourts.length ? liveCourts.filter((c) => c.sport === "volleyball").length : 2;
-  const courtsNote = t("{b} badminton · {k} basketball · {v} volleyball", { b: badm, k: bball, v: vball });
+  const sportsSummary = sports
+    .map((s) => {
+      const cnt = liveCourts.filter((c) => c.sport === s.code).length;
+      return `${cnt} ${lang === "vi" ? s.name_vi : s.name_en}`;
+    })
+    .join(" · ");
+  const courtsNote = sportsSummary || t("All active courts and halls");
 
   const stats = [
     { to: freeHours, suffix: "", label: t("Court hours free"), note: t("Live from the booking grid · {day}", { day }), href: "#schedule" },
     { to: totalCourts, suffix: "", label: t("Courts & bays"), note: courtsNote, href: "#courts" },
-    { to: venue.close - venue.open, suffix: "h", label: t("Open every day"), note: t("{open}-{close}, no closing day", { open: hhmm(venue.open), close: hhmm(venue.close) }), href: "#schedule" },
-    { to: 4, suffix: "", label: t("Head coaches"), note: t("One per sport, classes on the same calendar"), href: "#coaches" },
+    { to: venue.close - venue.open, suffix: "h", label: t("Open every day"), note: t("{open}-{close}, every day", { open: hhmm(venue.open), close: hhmm(venue.close) }), href: "#schedule" },
+    { to: 4, suffix: "", label: t("Head coaches"), note: t("One head coach per sport"), href: "#coaches" },
   ];
   return (
     <section ref={root} className="grain relative overflow-hidden bg-night text-on-media">

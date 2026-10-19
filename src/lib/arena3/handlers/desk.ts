@@ -466,18 +466,6 @@ export async function paymentsRefund(sql: Sql, id: string, request: Request, use
     throw err.validation(`The refund is larger than the ${refundable.toLocaleString("en-US")}đ still refundable.`);
   }
 
-  const needMgr = Math.abs(signed) >= settings.refund_manager_vnd;
-  if (needMgr && user.role !== "manager") {
-    const payCode = await nextCode(sql, "PAY");
-    const row = await one(
-      sql,
-      `insert into payments (code, user_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by)
-       values ($1,$2,'cash',$3,$4,'refund_pending',$5,$6,$7) returning *`,
-      [payCode, orig.user_id, signed, orig.vat_rate, orig.ref_type, orig.ref_id, user.id],
-    );
-    await audit(sql, user.id, "refund_pending", "payment", (row as { id: string }).id, null, { reason });
-    return { status: 201, body: { payment: row } };
-  }
   let shiftId: string | null = null;
   if (user.role === "receptionist") {
     const sh = await one<{ id: string }>(
@@ -487,6 +475,19 @@ export async function paymentsRefund(sql: Sql, id: string, request: Request, use
     );
     if (!sh) throw err.br("BR-44", "The front desk needs an open shift.");
     shiftId = sh.id;
+  }
+
+  const needMgr = Math.abs(signed) >= settings.refund_manager_vnd;
+  if (needMgr && user.role !== "manager") {
+    const payCode = await nextCode(sql, "PAY");
+    const row = await one(
+      sql,
+      `insert into payments (code, user_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by, shift_id)
+       values ($1,$2,'cash',$3,$4,'refund_pending',$5,$6,$7,$8) returning *`,
+      [payCode, orig.user_id, signed, orig.vat_rate, orig.ref_type, orig.ref_id, user.id, shiftId],
+    );
+    await audit(sql, user.id, "refund_pending", "payment", (row as { id: string }).id, null, { reason });
+    return { status: 201, body: { payment: row } };
   }
   const payCode = await nextCode(sql, "PAY");
   const row = await one(
@@ -507,6 +508,7 @@ type PendingRefund = {
   amount_vnd: number;
   status: string;
   created_by: string | null;
+  shift_id: string | null;
 };
 
 /**
@@ -520,7 +522,7 @@ async function lockPendingRefund(sql: Sql, id: string, user: PublicUser): Promis
   requireRole(user, ["manager"]);
   const p = await one<PendingRefund>(
     sql,
-    `select id, code, user_id, amount_vnd, status, created_by from payments where id = $1 for update`,
+    `select id, code, user_id, amount_vnd, status, created_by, shift_id from payments where id = $1 for update`,
     [id],
   );
   if (!p) throw err.notFound("That refund does not exist.");
@@ -554,7 +556,37 @@ async function decideRefund(
   const note = str(b.reason);
   if (note && note.length > 500) throw err.field("reason", "The note must be at most 500 characters.");
   const next = approve ? "posted" : "refund_rejected";
-  await sql.query(`update payments set status = $2 where id = $1`, [id, next]);
+
+  let shiftId: string | null = p.shift_id;
+  if (approve) {
+    const open = shiftId
+      ? await one<{ id: string }>(
+          sql,
+          `select id from cashier_shifts where id = $1 and closed_at is null for update`,
+          [shiftId],
+        )
+      : undefined;
+    if (!open) {
+      const cur = p.created_by
+        ? await one<{ id: string }>(
+            sql,
+            `select id from cashier_shifts where receptionist_id = $1 and closed_at is null for update`,
+            [p.created_by],
+          )
+        : undefined;
+      if (!cur) {
+        throw err.conflictState(
+          "The cashier who raised this refund has no open till shift. Ask them to open one, then approve again.",
+        );
+      }
+      shiftId = cur.id;
+    }
+  }
+
+  await sql.query(
+    `update payments set status = $2, shift_id = coalesce($3, shift_id) where id = $1`,
+    [id, next, approve ? shiftId : null],
+  );
   if (approve) {
     const ref = await one<{ ref_type: string; ref_id: string }>(
       sql,
@@ -570,7 +602,7 @@ async function decideRefund(
     "payment",
     id,
     { status: "refund_pending", amount_vnd: p.amount_vnd },
-    { status: next, ...(note ? { note } : {}) },
+    { status: next, ...(note ? { note } : {}), ...(approve && shiftId ? { shift_id: shiftId } : {}) },
   );
   if (p.user_id) {
     await enqueue(
@@ -867,7 +899,7 @@ export async function invoicePdf(sql: Sql, id: string, request: Request, user: P
       serial_no: inv.serial_no,
       issued_at: inv.issued_at,
       seller: {
-        legal_name: inv.seller_legal_name ?? settings.legal_name ?? "Arena3 Sports Center",
+        legal_name: inv.seller_legal_name ?? settings.legal_name ?? "Lê Long Sport",
         tax_code: inv.seller_tax_code ?? settings.tax_code,
         address: inv.seller_address ?? settings.address,
       },
@@ -1133,7 +1165,9 @@ export async function priceRulesPut(sql: Sql, request: Request, user: PublicUser
   // The one thing standing between a fat-fingered (or malicious) PUT and a
   // court quoted at 99,999,999đ. Validate the whole table before touching a
   // row — `delete from price_rules` is not the place to discover row 9 was bad.
-  const checked = validatePriceRules(items);
+  const sportsRes = await sql.query<{ code: string }>(`select code from sports where retired_at is null`);
+  const validSports = sportsRes.map((r) => r.code);
+  const checked = validatePriceRules(items, validSports);
   if (!checked.ok) throw err.validation(checked.message, { index: checked.index });
   const before = await priceRulesGet(sql);
   await sql.query(`delete from price_rules`);

@@ -15,6 +15,7 @@ import {
   LayoutGrid,
   LogOut,
   Map,
+  MessageSquare,
   QrCode,
   Repeat,
   Star,
@@ -23,6 +24,7 @@ import {
   Tag,
   Coins,
   Ticket,
+  Trophy,
   UserCog,
   UserMinus,
   Users,
@@ -34,7 +36,9 @@ import { ArenaMark, AssistantMark } from "./mark";
 import { AnimatePresence, PageIn, motion } from "./motion";
 import { GradualBlur } from "./fx";
 import { Spot, spotForPath } from "./illustrations";
+import { UserAvatar } from "./user-avatar";
 import { cn } from "@/lib/cn";
+import { useLive } from "@/lib/use-live";
 import {
   apiGet,
   apiPost,
@@ -83,6 +87,7 @@ const NAV: Record<string, NavItem[]> = {
     { to: "/app/train", label: tk("Progress"), icon: Activity, dock: false },
     { to: "/app/plans", label: tk("Plans"), icon: Wallet, dock: false },
     { to: "/app/points", label: tk("Points"), icon: Star, dock: false },
+    { to: "/chat", label: tk("Messages"), icon: MessageSquare, dock: false },
     { to: "/app/pass", label: tk("Pass"), icon: QrCode },
   ],
   receptionist: [
@@ -96,6 +101,7 @@ const NAV: Record<string, NavItem[]> = {
     // it comes before the retention list. The row shows as many tabs as fit, in this order.
     { to: "/desk/series", label: tk("Fixed bookings"), icon: Repeat, dock: false },
     { to: "/desk/at-risk", label: tk("At risk"), icon: UserMinus, dock: false },
+    { to: "/chat", label: tk("Messages"), icon: MessageSquare, more: true, dock: false },
     // `/desk/gear` is a complete equipment-hire screen that nothing linked to,
     // so reception could only reach it by typing the URL.
     { to: "/desk/gear", label: tk("Gear"), icon: Dumbbell, more: true, dock: false },
@@ -107,6 +113,7 @@ const NAV: Record<string, NavItem[]> = {
     { to: "/coach", label: tk("Schedule"), icon: CalendarDays },
     { to: "/coach/classes", label: tk("Classes"), icon: Ticket },
     { to: "/coach/attendance", label: tk("Attendance"), icon: ClipboardList },
+    { to: "/chat", label: tk("Messages"), icon: MessageSquare },
     { to: "/coach/earnings", label: tk("Earnings"), icon: HandCoins },
     { to: "/account", label: tk("Profile"), icon: UserCog },
   ],
@@ -121,12 +128,14 @@ const NAV: Record<string, NavItem[]> = {
     // manager — nothing in this menu pointed at it (B-02).
     { to: "/desk/payments", label: tk("Payments"), icon: Wallet },
     { to: "/manager/staff", label: tk("Staff"), icon: UserCog, dock: false, group: G_SYSTEM },
+    { to: "/chat", label: tk("Messages"), icon: MessageSquare, more: true, dock: false, group: G_OPS },
     { to: "/manager/prices", label: tk("Pricing"), icon: Coins, more: true, dock: false, group: G_BUSINESS },
     { to: "/manager/commission", label: tk("Commission"), icon: HandCoins, more: true, dock: false, group: G_BUSINESS },
     { to: "/manager/invoices", label: tk("E-invoices"), icon: FileText, more: true, dock: false, group: G_BUSINESS },
     { to: "/desk/series", label: tk("Fixed bookings"), icon: Repeat, more: true, dock: false, group: G_OPS },
     { to: "/desk/maintenance", label: tk("Maintenance"), icon: Wrench, more: true, dock: false, group: G_OPS },
     { to: "/manager/courts", label: tk("Courts"), icon: LandPlot, more: true, dock: false, group: G_OPS },
+    { to: "/manager/sports", label: tk("Sports"), icon: Trophy, more: true, dock: false, group: G_OPS },
     { to: "/manager/media", label: tk("Media"), icon: Image, more: true, dock: false, group: G_SYSTEM },
     { to: "/manager/audit", label: tk("Audit"), icon: ScrollText, more: true, dock: false, group: G_SYSTEM },
     { to: "/manager/settings", label: tk("Settings"), icon: Settings, more: true, dock: false, group: G_SYSTEM },
@@ -138,7 +147,7 @@ function navActive(pathname: string, to: string, items: { to: string }[]) {
   // A student's profile is reached from the register, so that is the tab it belongs to.
   if (pathname.startsWith("/coach/student/")) pathname = "/coach/attendance";
   // These have their own header buttons, not tabs; "/app" must not claim them as Schedule.
-  if (/^\/(app\/(assistant|notifications)|alerts)(\/|$)/.test(pathname)) return false;
+  if (/^\/(app\/(assistant|notifications)|alerts|chat)(\/|$)/.test(pathname) && to === "/app") return false;
   const matches = list.filter((it) => pathname === it.to || pathname.startsWith(`${it.to}/`));
   const best = [...matches].sort((a, b) => b.to.length - a.to.length)[0];
   return best?.to === to;
@@ -163,18 +172,19 @@ export function initials(name: string | undefined) {
 function NotificationBell({ active, to }: { active: boolean; to: string }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [unread, setUnread] = useState(0);
-  useEffect(() => {
-    let live = true;
-    // The bell needs the count, not the messages: one row is enough to get it.
+
+  const fetchUnread = () => {
     void apiGet<{ unread: number }>("/me/notifications?limit=1", { background: true })
-      .then((r) => live && setUnread(r.unread))
-      .catch(() => {
-        // The bell is a convenience; a failed count must not break the header.
-      });
-    return () => {
-      live = false;
-    };
+      .then((r) => setUnread(r.unread))
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchUnread();
   }, [pathname]);
+
+  useLive("notifications", fetchUnread);
+
   return (
     <Link
       to={to}
@@ -186,7 +196,47 @@ function NotificationBell({ active, to }: { active: boolean; to: string }) {
     >
       <Bell className="size-4" strokeWidth={1.9} />
       {unread ? (
-        <span className="absolute right-0 top-0 grid min-w-5 place-items-center rounded-full bg-danger px-1 text-xs font-bold leading-5 text-on-media tabular-nums">
+        <span className="absolute right-0 top-0 grid min-w-5 place-items-center rounded-full bg-danger px-1 text-xs font-bold leading-5 text-on-media tabular-nums motion-safe:animate-pulse">
+          {unread > 9 ? "9+" : unread}
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
+function ChatBell({ active }: { active: boolean }) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [unread, setUnread] = useState(0);
+
+  const fetchUnread = () => {
+    void apiGet<{ conversations: Array<{ unread_count: number }> }>("/conversations", { background: true })
+      .then((r) => {
+        const total = (r.conversations ?? []).reduce((acc, c) => acc + (Number(c.unread_count) || 0), 0);
+        setUnread(total);
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchUnread();
+  }, [pathname]);
+
+  useLive("chat", fetchUnread);
+  useLive("notifications", fetchUnread);
+
+  return (
+    <Link
+      to="/chat"
+      search={{}}
+      aria-label={unread ? t("Messages, {n} unread", { n: unread }) : t("Messages")}
+      className={cn(
+        "relative grid size-11 place-items-center rounded-[var(--radius-pill)] transition-colors duration-150",
+        active ? "bg-accent text-accent-fg shadow-[var(--shadow-accent)]" : "text-fg hover:bg-wood",
+      )}
+    >
+      <MessageSquare className="size-4" strokeWidth={1.9} />
+      {unread ? (
+        <span className="absolute right-0 top-0 grid min-w-5 place-items-center rounded-full bg-danger px-1 text-xs font-bold leading-5 text-on-media tabular-nums motion-safe:animate-pulse">
           {unread > 9 ? "9+" : unread}
         </span>
       ) : null}
@@ -258,7 +308,12 @@ function AccountMenu({
         aria-label={t("Account menu: {name}", { name: user?.full_name ?? "" })}
       >
         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-xs font-bold tracking-wide text-accent-fg">
-          {initials(user?.full_name)}
+          <UserAvatar
+            url={user?.avatar_url}
+            name={user?.full_name}
+            className="size-full bg-accent"
+            initialsClassName="text-xs font-bold tracking-wide text-accent-fg"
+          />
         </span>
         <span className={cn("hidden text-left", compact ? "" : "xl:block")}>
           <span className="block max-w-[10rem] truncate text-sm font-medium leading-tight">{user?.full_name ?? "-"}</span>
@@ -534,13 +589,13 @@ export function Shell({
   // Moving to another page closes the sheet.
   useEffect(() => setSheet(false), [pathname]);
 
-  // The browser tab and history say which screen this is, not just "Arena3" on every one.
+  // The browser tab and history say which screen this is, not just "Lê Long Sport" on every one.
   const navLabel = [...items]
     .filter((it) => pathname === it.to || pathname.startsWith(`${it.to}/`))
     .sort((a, b) => b.to.length - a.to.length)[0]?.label;
   const pageName = title ?? (navLabel ? t(navLabel) : undefined);
   useEffect(() => {
-    document.title = pageName ? `${pageName} · Arena3` : "Arena3";
+    document.title = pageName ? `${pageName} · Lê Long Sport` : "Lê Long Sport";
   }, [pageName]);
 
   async function logout() {
@@ -561,10 +616,10 @@ export function Shell({
     <div className="isolate min-h-dvh text-fg">
       <header className="sticky top-0 z-20 border-b border-line/80 bg-surface/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
-          <Link to={home} aria-label={t("Arena3 home")} className="-ml-1.5 flex min-h-11 min-w-11 items-center justify-center gap-2 sm:ml-0 sm:justify-start">
+          <Link to={home} aria-label={t("Lê Long Sport home")} className="-ml-1.5 flex min-h-11 min-w-11 items-center justify-center gap-2 sm:ml-0 sm:justify-start">
             <ArenaMark className="size-8" />
             {/* The header is the same width on every wide screen, so a long row never gets the wordmark back. */}
-            <span className={cn("hidden font-display text-xl font-bold tracking-tight", dense ? "" : "sm:inline")}>Arena3</span>
+            <span className={cn("hidden font-display text-xl font-bold tracking-tight", dense ? "" : "sm:inline")}>Lê Long Sport</span>
           </Link>
           {/* Laptop and wider. A tablet gets the bottom bar, like a phone: it is the thumb-friendly one. */}
           <nav
@@ -620,6 +675,7 @@ export function Shell({
           </nav>
           <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
             <LangSwitch />
+            <ChatBell active={pathname.startsWith("/chat")} />
             <NotificationBell
               to={role === "member" ? "/app/notifications" : "/alerts"}
               active={pathname.startsWith("/app/notifications") || pathname.startsWith("/alerts")}
@@ -781,7 +837,7 @@ export function Guard({
           >
             <ArenaMark />
           </motion.span>
-          <p className="font-display text-lg">Arena3</p>
+          <p className="font-display text-lg">Lê Long Sport</p>
         </div>
       </div>
     );

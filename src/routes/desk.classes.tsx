@@ -7,6 +7,7 @@ import { Stagger, StaggerItem } from "@/components/motion";
 import { t } from "@/lib/i18n";
 import { levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
 import { useRead } from "@/lib/use-read";
+import { HighlightBadge, useLive } from "@/lib/use-live";
 
 export const Route = createFileRoute("/desk/classes")({
   component: Page,
@@ -29,6 +30,7 @@ type Row = {
 /** The same classes the manager sees, so the desk can answer "who is in it, and when?" (D-07). */
 function Page() {
   const read = useRead<{ items: Row[] }>("/classes");
+  useLive("classes", read.reload);
   const items = read.data?.items ?? null;
   const [detail, setDetail] = useState<string | null>(null);
   const [limit, setLimit] = useState(8);
@@ -56,7 +58,7 @@ function Page() {
                 <p className="text-sm text-muted">
                   {c.coach_name} · {c.court_code} ·{" "}
                   <span className="tabular-nums">
-                    {c.enrolled_count}/{c.capacity}
+                    <HighlightBadge value={c.enrolled_count}>{c.enrolled_count}</HighlightBadge>/{c.capacity}
                   </span>
                 </p>
                 {c.rrule ? <p className="text-sm">{rruleLabel(c.rrule, c.duration_min)}</p> : null}

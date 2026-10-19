@@ -13,7 +13,9 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as ChatRouteImport } from './routes/chat'
 import { Route as CoachRouteImport } from './routes/coach'
+import { Route as CreditsRouteImport } from './routes/credits'
 import { Route as DeskRouteImport } from './routes/desk'
 import { Route as ForgotRouteImport } from './routes/forgot'
 import { Route as LoginRouteImport } from './routes/login'
@@ -21,6 +23,7 @@ import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppAssistantRouteImport } from './routes/app.assistant'
 import { Route as AppBookRouteImport } from './routes/app.book'
@@ -56,6 +59,7 @@ import { Route as ManagerPlansRouteImport } from './routes/manager.plans'
 import { Route as ManagerPricesRouteImport } from './routes/manager.prices'
 import { Route as ManagerPromosRouteImport } from './routes/manager.promos'
 import { Route as ManagerSettingsRouteImport } from './routes/manager.settings'
+import { Route as ManagerSportsRouteImport } from './routes/manager.sports'
 import { Route as ManagerStaffRouteImport } from './routes/manager.staff'
 import { Route as PayReturnRouteImport } from './routes/pay.return'
 import { Route as V1SplatRouteImport } from './routes/v1.$'
@@ -82,9 +86,19 @@ const AppRoute = AppRouteImport.update({
   path: '/app',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChatRoute = ChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CoachRoute = CoachRouteImport.update({
   id: '/coach',
   path: '/coach',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreditsRoute = CreditsRouteImport.update({
+  id: '/credits',
+  path: '/credits',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DeskRoute = DeskRouteImport.update({
@@ -120,6 +134,11 @@ const RegisterRoute = RegisterRouteImport.update({
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSplatRoute = ApiSplatRouteImport.update({
+  id: '/api/$',
+  path: '/api/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -297,6 +316,11 @@ const ManagerSettingsRoute = ManagerSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => ManagerRoute,
 } as any)
+const ManagerSportsRoute = ManagerSportsRouteImport.update({
+  id: '/sports',
+  path: '/sports',
+  getParentRoute: () => ManagerRoute,
+} as any)
 const ManagerStaffRoute = ManagerStaffRouteImport.update({
   id: '/staff',
   path: '/staff',
@@ -328,7 +352,9 @@ export interface FileRoutesByFullPath {
   '/account': typeof AccountRoute
   '/alerts': typeof AlertsRoute
   '/app': typeof AppRouteWithChildren
+  '/chat': typeof ChatRoute
   '/coach': typeof CoachRouteWithChildren
+  '/credits': typeof CreditsRoute
   '/desk': typeof DeskRouteWithChildren
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
@@ -336,6 +362,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
   '/terms': typeof TermsRoute
+  '/api/$': typeof ApiSplatRoute
   '/app/assistant': typeof AppAssistantRoute
   '/app/book': typeof AppBookRoute
   '/app/classes': typeof AppClassesRoute
@@ -367,6 +394,7 @@ export interface FileRoutesByFullPath {
   '/manager/prices': typeof ManagerPricesRoute
   '/manager/promos': typeof ManagerPromosRoute
   '/manager/settings': typeof ManagerSettingsRoute
+  '/manager/sports': typeof ManagerSportsRoute
   '/manager/staff': typeof ManagerStaffRoute
   '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
@@ -381,11 +409,14 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/alerts': typeof AlertsRoute
+  '/chat': typeof ChatRoute
+  '/credits': typeof CreditsRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
   '/terms': typeof TermsRoute
+  '/api/$': typeof ApiSplatRoute
   '/app/assistant': typeof AppAssistantRoute
   '/app/book': typeof AppBookRoute
   '/app/classes': typeof AppClassesRoute
@@ -417,6 +448,7 @@ export interface FileRoutesByTo {
   '/manager/prices': typeof ManagerPricesRoute
   '/manager/promos': typeof ManagerPromosRoute
   '/manager/settings': typeof ManagerSettingsRoute
+  '/manager/sports': typeof ManagerSportsRoute
   '/manager/staff': typeof ManagerStaffRoute
   '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
@@ -433,7 +465,9 @@ export interface FileRoutesById {
   '/account': typeof AccountRoute
   '/alerts': typeof AlertsRoute
   '/app': typeof AppRouteWithChildren
+  '/chat': typeof ChatRoute
   '/coach': typeof CoachRouteWithChildren
+  '/credits': typeof CreditsRoute
   '/desk': typeof DeskRouteWithChildren
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
@@ -441,6 +475,7 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
   '/terms': typeof TermsRoute
+  '/api/$': typeof ApiSplatRoute
   '/app/assistant': typeof AppAssistantRoute
   '/app/book': typeof AppBookRoute
   '/app/classes': typeof AppClassesRoute
@@ -472,6 +507,7 @@ export interface FileRoutesById {
   '/manager/prices': typeof ManagerPricesRoute
   '/manager/promos': typeof ManagerPromosRoute
   '/manager/settings': typeof ManagerSettingsRoute
+  '/manager/sports': typeof ManagerSportsRoute
   '/manager/staff': typeof ManagerStaffRoute
   '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
@@ -489,7 +525,9 @@ export interface FileRouteTypes {
     | '/account'
     | '/alerts'
     | '/app'
+    | '/chat'
     | '/coach'
+    | '/credits'
     | '/desk'
     | '/forgot'
     | '/login'
@@ -497,6 +535,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/register'
     | '/terms'
+    | '/api/$'
     | '/app/assistant'
     | '/app/book'
     | '/app/classes'
@@ -528,6 +567,7 @@ export interface FileRouteTypes {
     | '/manager/prices'
     | '/manager/promos'
     | '/manager/settings'
+    | '/manager/sports'
     | '/manager/staff'
     | '/pay/return'
     | '/v1/$'
@@ -542,11 +582,14 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/alerts'
+    | '/chat'
+    | '/credits'
     | '/forgot'
     | '/login'
     | '/privacy'
     | '/register'
     | '/terms'
+    | '/api/$'
     | '/app/assistant'
     | '/app/book'
     | '/app/classes'
@@ -578,6 +621,7 @@ export interface FileRouteTypes {
     | '/manager/prices'
     | '/manager/promos'
     | '/manager/settings'
+    | '/manager/sports'
     | '/manager/staff'
     | '/pay/return'
     | '/v1/$'
@@ -593,7 +637,9 @@ export interface FileRouteTypes {
     | '/account'
     | '/alerts'
     | '/app'
+    | '/chat'
     | '/coach'
+    | '/credits'
     | '/desk'
     | '/forgot'
     | '/login'
@@ -601,6 +647,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/register'
     | '/terms'
+    | '/api/$'
     | '/app/assistant'
     | '/app/book'
     | '/app/classes'
@@ -632,6 +679,7 @@ export interface FileRouteTypes {
     | '/manager/prices'
     | '/manager/promos'
     | '/manager/settings'
+    | '/manager/sports'
     | '/manager/staff'
     | '/pay/return'
     | '/v1/$'
@@ -648,7 +696,9 @@ export interface RootRouteChildren {
   AccountRoute: typeof AccountRoute
   AlertsRoute: typeof AlertsRoute
   AppRoute: typeof AppRouteWithChildren
+  ChatRoute: typeof ChatRoute
   CoachRoute: typeof CoachRouteWithChildren
+  CreditsRoute: typeof CreditsRoute
   DeskRoute: typeof DeskRouteWithChildren
   ForgotRoute: typeof ForgotRoute
   LoginRoute: typeof LoginRoute
@@ -656,6 +706,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   RegisterRoute: typeof RegisterRoute
   TermsRoute: typeof TermsRoute
+  ApiSplatRoute: typeof ApiSplatRoute
   PayReturnRoute: typeof PayReturnRoute
   V1SplatRoute: typeof V1SplatRoute
 }
@@ -690,11 +741,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chat': {
+      id: '/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof ChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/coach': {
       id: '/coach'
       path: '/coach'
       fullPath: '/coach'
       preLoaderRoute: typeof CoachRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/credits': {
+      id: '/credits'
+      path: '/credits'
+      fullPath: '/credits'
+      preLoaderRoute: typeof CreditsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/desk': {
@@ -744,6 +809,13 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/$': {
+      id: '/api/$'
+      path: '/api/$'
+      fullPath: '/api/$'
+      preLoaderRoute: typeof ApiSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app/': {
@@ -991,6 +1063,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagerSettingsRouteImport
       parentRoute: typeof ManagerRoute
     }
+    '/manager/sports': {
+      id: '/manager/sports'
+      path: '/sports'
+      fullPath: '/manager/sports'
+      preLoaderRoute: typeof ManagerSportsRouteImport
+      parentRoute: typeof ManagerRoute
+    }
     '/manager/staff': {
       id: '/manager/staff'
       path: '/staff'
@@ -1114,6 +1193,7 @@ interface ManagerRouteChildren {
   ManagerPricesRoute: typeof ManagerPricesRoute
   ManagerPromosRoute: typeof ManagerPromosRoute
   ManagerSettingsRoute: typeof ManagerSettingsRoute
+  ManagerSportsRoute: typeof ManagerSportsRoute
   ManagerStaffRoute: typeof ManagerStaffRoute
   ManagerIndexRoute: typeof ManagerIndexRoute
 }
@@ -1131,6 +1211,7 @@ const ManagerRouteChildren: ManagerRouteChildren = {
   ManagerPricesRoute: ManagerPricesRoute,
   ManagerPromosRoute: ManagerPromosRoute,
   ManagerSettingsRoute: ManagerSettingsRoute,
+  ManagerSportsRoute: ManagerSportsRoute,
   ManagerStaffRoute: ManagerStaffRoute,
   ManagerIndexRoute: ManagerIndexRoute,
 }
@@ -1143,7 +1224,9 @@ const rootRouteChildren: RootRouteChildren = {
   AccountRoute: AccountRoute,
   AlertsRoute: AlertsRoute,
   AppRoute: AppRouteWithChildren,
+  ChatRoute: ChatRoute,
   CoachRoute: CoachRouteWithChildren,
+  CreditsRoute: CreditsRoute,
   DeskRoute: DeskRouteWithChildren,
   ForgotRoute: ForgotRoute,
   LoginRoute: LoginRoute,
@@ -1151,6 +1234,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   RegisterRoute: RegisterRoute,
   TermsRoute: TermsRoute,
+  ApiSplatRoute: ApiSplatRoute,
   PayReturnRoute: PayReturnRoute,
   V1SplatRoute: V1SplatRoute,
 }

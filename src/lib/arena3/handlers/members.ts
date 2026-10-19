@@ -6,6 +6,7 @@ import { isValidVnPhone, normalizePhone, phoneLast9, unaccentVi } from "../phone
 import { requireRole, toPublic, type PublicUser } from "../session";
 import { one } from "../tx";
 import { revoke, tempPassword } from "./staff";
+import { getActiveSportCodes } from "./sports";
 
 export async function membersSearch(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["manager", "receptionist", "coach"]);
@@ -320,7 +321,7 @@ export async function membersDirectory(sql: Sql, request: Request, user: PublicU
   const status = sp.get("status");
   if (status && !["active", "locked", "disabled"].includes(status)) throw err.field("status", "Unknown status.");
   const sport = sp.get("sport");
-  if (sport && !["badminton", "basketball", "volleyball"].includes(sport)) throw err.field("sport", "Unknown sport.");
+  if (sport && !(await getActiveSportCodes(sql)).includes(sport)) throw err.field("sport", "Unknown sport.");
   const plan = sp.get("plan");
   if (plan && !(PLAN_STATES as readonly string[]).includes(plan)) throw err.field("plan", "Unknown plan state.");
   const intParam = (name: string, fallback: number, min: number, max: number) => {

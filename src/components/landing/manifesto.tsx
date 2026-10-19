@@ -13,7 +13,7 @@ registerGsap(ScrollTrigger, SplitText);
 export function Manifesto() {
   const root = useRef<HTMLElement>(null);
   const text = t(
-    "A court should not need a phone call. Pick the hour you want, hold it while you think, and settle the whole thing (court, class, racket) on one tab at the desk.",
+    "Pick a free hour online and it is held for you. Then pay for the court, any class and any equipment together at the front desk.",
   );
   useScene(
     root,
@@ -42,7 +42,7 @@ export function Manifesto() {
     [text],
   );
   return (
-    <section ref={root} aria-label={t("What Arena3 is for")} className="mx-auto max-w-4xl px-4 py-24">
+    <section ref={root} aria-label={t("What Lê Long Sport is for")} className="mx-auto max-w-4xl px-4 py-24">
       <p key={text} className="font-display text-3xl leading-snug sm:text-[2.6rem] sm:leading-[1.25]">
         {text}
       </p>

@@ -3,6 +3,6 @@ import { LegalPage } from "@/components/legal-page";
 import { TERMS } from "@/lib/legal";
 
 export const Route = createFileRoute("/terms")({
-  head: () => ({ meta: [{ title: "Terms of use · Arena3" }] }),
+  head: () => ({ meta: [{ title: "Terms of use · Lê Long Sport" }] }),
   component: () => <LegalPage doc={TERMS} other="privacy" />,
 });

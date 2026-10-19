@@ -19,11 +19,13 @@ import { addDaysISO, todayISO, sportLabel } from "@/lib/arena3/labels";
 import { locale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { useRead } from "@/lib/use-read";
+import { useLive } from "@/lib/use-live";
+import { useSports } from "@/components/sports-ui";
 import { DEFAULT_VENUE, hoursOf, venueFrom, type Venue, type VenueRaw } from "@/lib/venue";
 
 export const Route = createFileRoute("/app/book")({
   validateSearch: (s: Record<string, unknown>): { sport?: string } => ({
-    sport: s.sport === "badminton" || s.sport === "basketball" || s.sport === "volleyball" ? s.sport : undefined,
+    sport: typeof s.sport === "string" && s.sport.trim() ? s.sport.trim() : undefined,
   }),
   component: Page,
 });
@@ -87,8 +89,15 @@ type Taken = {
 };
 
 function Page() {
+  const { sports } = useSports();
+  const searchSport = Route.useSearch().sport;
   const [date, setDate] = useState(todayISO);
-  const [sport, setSport] = useState(Route.useSearch().sport ?? "badminton");
+  const [sport, setSport] = useState(searchSport ?? "");
+  useEffect(() => {
+    if (!sport && sports.length > 0) {
+      setSport(sports[0].code);
+    }
+  }, [sport, sports]);
   // The day on screen. A day the server will not show comes back as `error` (not a grid of grey
   // blocks behind a toast), and a late reply for an earlier date never lands on a later one.
   const { data, error, reload } = useRead<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${date}`);
@@ -170,6 +179,8 @@ function Page() {
     setRefresh((n) => n + 1);
     void loadMine();
   }
+
+  useLive("courts", load);
 
   async function moveTo(court: Court, hour: number, confirmOverlap = false) {
     if (!moving) return;
@@ -442,7 +453,7 @@ function Page() {
               )}
             >
               <div className="flex items-center gap-2">
-                <SportThumbnail sport={sport || "badminton"} className="size-7 rounded" />
+                <SportThumbnail sport={sport || sports[0]?.code || "all"} className="size-7 rounded" />
                 <div>
                   <span className="font-semibold text-fg capitalize">{dayName}</span>
                   <span className="block text-2xs text-muted">{sportLabel(sport || "all")}</span>
@@ -535,9 +546,9 @@ function Page() {
                 onChange={setSport}
                 options={[
                   { value: "", label: t("All") },
-                  ...["badminton", "basketball", "volleyball"]
-                    .filter((s) => !data?.courts || data.courts.some((c) => c.sport === s))
-                    .map((s) => ({ value: s, label: sportLabel(s) })),
+                  ...sports
+                    .filter((s) => !data?.courts || data.courts.some((c) => c.sport === s.code))
+                    .map((s) => ({ value: s.code, label: sportLabel(s.code) })),
                 ]}
               />
               <Seg
@@ -915,6 +926,7 @@ function Page() {
                 startedIsPast
                 freeCount={avail?.[date]?.free}
                 hours={hoursOf(venue)}
+                onRefresh={load}
                 // A sold-out sport hands back the two controls at the top of this page.
                 onPickSport={setSport}
                 onPickDate={setDate}

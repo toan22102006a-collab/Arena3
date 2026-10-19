@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { CalendarDays, Flame, Gauge, LayoutGrid, TrendingUp, UserPlus, Users } from "lucide-react";
 import { CardTitle, SectionTitle } from "@/components/section";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { money } from "@/components/shell";
 import { Badge, Button, Card, EmptyState, LoadError, Select, Skeleton, Stat } from "@/components/ui";
+import { SportDot, useSports } from "@/components/sports-ui";
 import { downloadReport } from "@/lib/arena3/client";
 import { levelLabel, sportLabel } from "@/lib/arena3/labels";
 import { t, tk, tServer } from "@/lib/i18n";
@@ -33,7 +34,7 @@ export function ExportButtons({
     try {
       const q = new URLSearchParams({ from, to, format });
       for (const [k, v] of Object.entries(extra)) if (v) q.set(k, v);
-      const name = await downloadReport(`/reports/${kind}/export?${q}`, `arena3-${kind}-${from}_${to}.${format}`);
+      const name = await downloadReport(`/reports/${kind}/export?${q}`, `lelong-${kind}-${from}_${to}.${format}`);
       toast.success(t("Saved {name}", { name }));
     } catch (e) {
       toast.error(tServer((e as Error).message));
@@ -53,18 +54,18 @@ export function ExportButtons({
   );
 }
 
-const SPORTS = ["badminton", "basketball", "volleyball"];
 const hours = (min: number) => Math.round((min / 60) * 10) / 10;
 const pctText = (v: number | null | undefined) => (v == null ? "-" : `${v}%`);
 
 function SportSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { sports } = useSports();
   return (
     <div className="w-44">
       <Select aria-label={t("Sport")} value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">{t("All sports")}</option>
-        {SPORTS.map((s) => (
-          <option key={s} value={s}>
-            {sportLabel(s)}
+        {sports.map((s) => (
+          <option key={s.code} value={s.code}>
+            {sportLabel(s.code)}
           </option>
         ))}
       </Select>
@@ -88,22 +89,38 @@ type Capacity = {
   }>;
   by_hour: Array<{ hour: number; pct: number }>;
   hours: number[];
-  courts: Array<{ court_id: string; court_code: string; sport: string; pct: number; cells: number[] }>;
+  courts: Array<{
+    court_id: string;
+    court_code: string;
+    sport: string;
+    pct: number;
+    cells: number[];
+    cell_details?: Array<{ hr: number; pct: number; days_booked: number; days_total: number }>;
+  }>;
   revenue_by_source: { court_vnd: number; class_vnd: number };
 };
 
-function heat(pct: number): React.CSSProperties {
+function heat(pct: number, isSingleDay: boolean): React.CSSProperties {
+  if (isSingleDay) {
+    if (pct > 0) {
+      return { background: "var(--color-heat-5)", color: "#ffffff" };
+    }
+    return { background: "var(--color-heat-0)", color: "var(--color-fg)" };
+  }
   let bg = "var(--color-heat-0)";
   let fg = "var(--color-fg)";
-  if (pct > 85) {
+  if (pct > 75) {
+    bg = "var(--color-heat-5)";
+    fg = "#ffffff";
+  } else if (pct > 50) {
     bg = "var(--color-heat-4)";
     fg = "#ffffff";
-  } else if (pct > 60) {
+  } else if (pct > 25) {
     bg = "var(--color-heat-3)";
-    fg = "#ffffff";
-  } else if (pct > 30) {
+    fg = "var(--color-fg)";
+  } else if (pct > 10) {
     bg = "var(--color-heat-2)";
-    fg = "var(--color-night)";
+    fg = "var(--color-fg)";
   } else if (pct > 0) {
     bg = "var(--color-heat-1)";
     fg = "var(--color-fg)";
@@ -119,6 +136,38 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
   const q = new URLSearchParams({ from, to });
   if (sport) q.set("sport", sport);
   const { data, error, reload } = useRead<Capacity>(`/reports/capacity?${q}`);
+
+  const isSingleDay = from === to;
+  const courtsBySport = useMemo(() => {
+    if (!data?.courts) return [];
+    const map = new Map<string, typeof data.courts>();
+    for (const c of data.courts) {
+      const list = map.get(c.sport) ?? [];
+      list.push(c);
+      map.set(c.sport, list);
+    }
+    return Array.from(map.entries()).map(([s, list]) => ({
+      sport: s,
+      courts: list,
+    }));
+  }, [data]);
+
+  const busiestSummary = useMemo(() => {
+    if (!data?.by_hour?.length) return "";
+    const sorted = [...data.by_hour]
+      .filter((h) => h.pct > 0)
+      .sort((a, b) => b.pct - a.pct);
+    if (sorted.length === 0) return t("No bookings in this window");
+    const top3 = sorted.slice(0, 3);
+    const text = top3
+      .map((h, idx) =>
+        idx === 0
+          ? `${String(h.hour).padStart(2, "0")}:00 (${Math.round(h.pct)}%)`
+          : `${String(h.hour).padStart(2, "0")}:00`
+      )
+      .join(", ");
+    return t("Busiest: {hours}", { hours: text });
+  }, [data]);
 
   return (
     <section className="mt-10" aria-labelledby="cap-h">
@@ -187,8 +236,44 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
           </Card>
 
           <Card className="mt-3 p-0">
-            <CardTitle className="px-4 pt-4" icon={Flame} title={t("Busiest hours")} hint={t("Darker means a bigger share of that court-hour was used.")} />
-            <div className="overflow-x-auto px-2 pb-3 pt-2" role="region" aria-label={t("Busiest hours table, scrolls sideways")} tabIndex={0}>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
+              <CardTitle
+                icon={Flame}
+                title={t("When courts are busy ({from} – {to})", { from, to })}
+                hint={
+                  isSingleDay
+                    ? t("Booked or free, hour by hour.")
+                    : t("Each square shows how often that court was booked at that hour, {from} – {to}.", { from, to })
+                }
+              />
+              {busiestSummary && (
+                <div className="text-right">
+                  <span className="inline-block rounded-full bg-surface px-3 py-1 text-xs font-medium text-fg border border-line">
+                    {busiestSummary}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Mini bar chart of all courts by hour */}
+            <div className="px-4 pt-3 pb-1">
+              <div className="flex items-end gap-1 h-8 w-full max-w-xl">
+                {data.by_hour.map((h) => (
+                  <div
+                    key={h.hour}
+                    className="group relative flex-1 flex flex-col items-center justify-end h-full"
+                    title={`${String(h.hour).padStart(2, "0")}:00 · ${Math.round(h.pct)}%`}
+                  >
+                    <div
+                      className="w-full rounded-t-[2px] transition-all bg-[var(--color-accent)] opacity-75 group-hover:opacity-100"
+                      style={{ height: `${Math.max(4, Math.round(h.pct))}%` }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto px-2 pb-3 pt-2" role="region" aria-label={t("When courts are busy table, scrolls sideways")} tabIndex={0}>
               <table className="w-full min-w-[640px] border-separate border-spacing-0.5 text-center text-xs">
                 <thead className="text-2xs text-muted">
                   <tr>
@@ -201,59 +286,106 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.courts.map((c) => (
-                    <tr key={c.court_id}>
-                      <th scope="row" className="sticky left-0 bg-surface px-2 py-1 text-left font-medium">
-                        {c.court_code}
-                      </th>
-                      {c.cells.map((p, i) => (
+                  {courtsBySport.map((group) => (
+                    <Fragment key={`sport-group-${group.sport}`}>
+                      <tr className="bg-surface/80">
                         <td
-                          key={i}
-                          className="rounded-[4px] px-1 py-1.5 tabular-nums"
-                          style={heat(p)}
-                          title={`${c.court_code} · ${String(data.hours[i]).padStart(2, "0")}:00 · ${p}%`}
+                          colSpan={data.hours.length + 1}
+                          className="sticky left-0 bg-surface px-2 py-1 text-left text-xs font-semibold text-fg"
                         >
-                          {Math.round(p)}
+                          <div className="flex items-center gap-1.5">
+                            <SportDot sport={group.sport} />
+                            <span>{sportLabel(group.sport)}</span>
+                          </div>
                         </td>
+                      </tr>
+                      {group.courts.map((c) => (
+                        <tr key={c.court_id}>
+                          <th scope="row" className="sticky left-0 bg-surface px-2 py-1 text-left font-medium">
+                            {c.court_code}
+                          </th>
+                          {c.cells.map((p, i) => {
+                            const detail = c.cell_details?.[i];
+                            const booked = detail?.days_booked ?? (p > 0 ? 1 : 0);
+                            const total = detail?.days_total ?? 1;
+                            const title = isSingleDay
+                              ? `${c.court_code} · ${String(data.hours[i]).padStart(2, "0")}:00 · ${p > 0 ? t("Booked") : t("Free")}`
+                              : `${c.court_code} · ${String(data.hours[i]).padStart(2, "0")}:00 · ${t("booked {booked} of {total} days ({pct}%)", {
+                                  booked,
+                                  total,
+                                  pct: Math.round(p),
+                                })}`;
+                            return (
+                              <td
+                                key={i}
+                                className="h-7 min-w-[1.75rem] rounded-[4px] border border-transparent transition-colors hover:ring-2 hover:ring-primary focus-visible:ring-2 focus-visible:ring-primary outline-none cursor-default"
+                                style={heat(p, isSingleDay)}
+                                tabIndex={0}
+                                role="gridcell"
+                                aria-label={title}
+                                title={title}
+                              />
+                            );
+                          })}
+                        </tr>
                       ))}
-                    </tr>
+                    </Fragment>
                   ))}
                   <tr>
                     <th scope="row" className="sticky left-0 bg-surface px-2 py-1 text-left font-semibold">
                       {t("All courts")}
                     </th>
                     {data.by_hour.map((h) => (
-                      <td key={h.hour} className="px-1 py-1.5 font-semibold tabular-nums">
-                        {Math.round(h.pct)}
+                      <td key={h.hour} className="px-1 py-1.5 font-semibold tabular-nums text-2xs">
+                        {Math.round(h.pct)}%
                       </td>
                     ))}
                   </tr>
                 </tbody>
               </table>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-line/50 px-4 py-2.5 text-2xs text-muted">
-              <span className="font-medium">{t("Occupancy:")}</span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-3 rounded-[2px] border border-line" style={{ background: "var(--color-heat-0)" }} />
-                0%
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-1)" }} />
-                1–30%
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-2)" }} />
-                31–60%
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-3)" }} />
-                61–85%
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-4)" }} />
-                86–100%
-              </span>
-            </div>
+
+            {isSingleDay ? (
+              <div className="flex flex-wrap items-center justify-end gap-3 border-t border-line/50 px-4 py-2.5 text-2xs text-muted">
+                <span className="font-medium">{t("Status:")}</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-3.5 rounded-[2px] border border-line" style={{ background: "var(--color-heat-0)" }} />
+                  {t("Free")}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-3.5 rounded-[2px]" style={{ background: "var(--color-heat-5)" }} />
+                  {t("Booked")}
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-end gap-3 border-t border-line/50 px-4 py-2.5 text-2xs text-muted">
+                <span className="font-medium">{t("Occupancy:")}</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-3 rounded-[2px] border border-line" style={{ background: "var(--color-heat-0)" }} />
+                  0%
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-1)" }} />
+                  1–10%
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-2)" }} />
+                  11–25%
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-3)" }} />
+                  26–50%
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-4)" }} />
+                  51–75%
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-3 rounded-[2px]" style={{ background: "var(--color-heat-5)" }} />
+                  76–100%
+                </span>
+              </div>
+            )}
           </Card>
         </>
       )}

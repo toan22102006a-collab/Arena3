@@ -8,12 +8,12 @@ import { addDays, ictDateString } from "../time";
 import { one } from "../tx";
 import { atRiskBody, attendanceReportBody } from "./attendance";
 import { previousWindow, reportDay, revenueBody, revenueParams } from "./desk";
+import { getActiveSportCodes } from "./sports";
 
 /** Longest window a report will scan. A quarter, plus slack; a year is a trend, not a report. */
 const MAX_DAYS = 93;
-const SPORTS = ["badminton", "basketball", "volleyball"];
 
-function windowParams(request: Request) {
+async function windowParams(sql: Sql, request: Request) {
   const sp = new URL(request.url).searchParams;
   const to = reportDay(sp, "to", ictDateString());
   const from = reportDay(sp, "from", addDays(to, -6));
@@ -22,7 +22,7 @@ function windowParams(request: Request) {
     throw err.field("from", `Pick a period of at most ${MAX_DAYS} days.`);
   }
   const sport = sp.get("sport") || null;
-  if (sport && !SPORTS.includes(sport)) throw err.field("sport", "Unknown sport.");
+  if (sport && !(await getActiveSportCodes(sql)).includes(sport)) throw err.field("sport", "Unknown sport.");
   return { from, to, sport };
 }
 
@@ -30,32 +30,69 @@ const pct1 = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 1
 
 // ---- court capacity (FR-CRT-09) ----------------------------------------------
 
-type CapacityCell = { court_id: string; court_code: string; sport: string; hr: number; slots: number; sold_min: number };
+type CapacityCell = {
+  court_id: string;
+  court_code: string;
+  sport: string;
+  hr: number;
+  slots: number;
+  sold_min: number;
+  days_booked: number;
+  days_total: number;
+};
 
 export async function capacityBody(sql: Sql, from: string, to: string, sport: string | null) {
   const settings = await getSettings(sql);
   const openHour = Math.max(0, parseInt(String(settings.open_time).slice(0, 2), 10) || 6);
   const closeHour = Math.min(24, parseInt(String(settings.close_time).slice(0, 2), 10) || 22);
-  // "Sold" is a booking or a class session. A hold is unpaid, maintenance is not
-  // a sale.
+  const daysTotal = Math.max(1, Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1);
+
+  // "Sold" is a booking or a class session. A hold is unpaid, maintenance is not a sale.
+  // Retired courts are hidden unless they have bookings/sessions in the requested window.
   const cells = await sql.query<CapacityCell>(
-    `with slots as (
-       select c.id as court_id, c.court_code, c.sport::text as sport, h.hr,
-              (d.day::timestamp + make_interval(hours => h.hr)) at time zone 'Asia/Ho_Chi_Minh' as s_at
+    `with active_courts as (
+       select c.id as court_id, c.court_code, c.sport::text as sport, c.sort_order
          from courts c
-        cross join generate_series($1::date, $2::date, interval '1 day') as d(day)
-        cross join generate_series($4::int, $5::int - 1) as h(hr)
-        where c.status = 'ready' and c.retired_at is null and ($3::text is null or c.sport::text = $3)
-     )
-     select s.court_id, s.court_code, s.sport, s.hr, count(*)::int as slots,
-            coalesce(sum((
-              select coalesce(sum(extract(epoch from (least(o.end_at, s.s_at + interval '1 hour') - greatest(o.start_at, s.s_at))) / 60), 0)
-                from occupancies o
-               where o.court_id = s.court_id
+        where ($3::text is null or c.sport::text = $3)
+          and (
+            (c.status = 'ready' and c.retired_at is null)
+            or exists (
+              select 1 from occupancies o
+               where o.court_id = c.id
                  and o.kind in ('booking','session')
-                 and o.start_at < s.s_at + interval '1 hour' and o.end_at > s.s_at
-            )), 0)::int as sold_min
-       from slots s
+                 and o.start_at < ($2::date + interval '1 day') at time zone 'Asia/Ho_Chi_Minh'
+                 and o.end_at > $1::date at time zone 'Asia/Ho_Chi_Minh'
+            )
+          )
+     ),
+     days as (
+       select d.day::date as day
+         from generate_series($1::date, $2::date, interval '1 day') as d(day)
+     ),
+     slots as (
+       select c.court_id, c.court_code, c.sport, h.hr, d.day,
+              (d.day::timestamp + make_interval(hours => h.hr)) at time zone 'Asia/Ho_Chi_Minh' as s_at
+         from active_courts c
+        cross join days d
+        cross join generate_series($4::int, $5::int - 1) as h(hr)
+     ),
+     slot_occupancy as (
+       select s.court_id, s.court_code, s.sport, s.hr, s.day,
+              coalesce((
+                select coalesce(sum(extract(epoch from (least(o.end_at, s.s_at + interval '1 hour') - greatest(o.start_at, s.s_at))) / 60), 0)
+                  from occupancies o
+                 where o.court_id = s.court_id
+                   and o.kind in ('booking','session')
+                   and o.start_at < s.s_at + interval '1 hour' and o.end_at > s.s_at
+              ), 0)::int as sold_min
+         from slots s
+     )
+     select s.court_id, s.court_code, s.sport, s.hr,
+            count(*)::int as slots,
+            sum(s.sold_min)::int as sold_min,
+            count(*) filter (where s.sold_min > 0)::int as days_booked,
+            count(*)::int as days_total
+       from slot_occupancy s
       group by s.court_id, s.court_code, s.sport, s.hr
       order by s.court_code, s.hr`,
     [from, to, sport, openHour, closeHour],
@@ -67,15 +104,33 @@ export async function capacityBody(sql: Sql, from: string, to: string, sport: st
     rules.some((r) => r.sport === sp && r.start_min <= hr * 60 && r.end_min > hr * 60);
 
   const hours = Array.from({ length: Math.max(0, closeHour - openHour) }, (_, i) => openHour + i);
-  const byCourt = new Map<string, { court_code: string; sport: string; sold: number; open: number; cells: Map<number, number> }>();
+  const byCourt = new Map<
+    string,
+    {
+      court_code: string;
+      sport: string;
+      sold: number;
+      open: number;
+      cells: Map<number, number>;
+      days_booked: Map<number, number>;
+    }
+  >();
   const bySport = new Map<string, { sold: number; open: number; peakSold: number; peakOpen: number; offSold: number; offOpen: number }>();
   const byHour = new Map<number, { sold: number; open: number }>();
   for (const c of cells) {
     const open = c.slots * 60;
-    const court = byCourt.get(c.court_id) ?? { court_code: c.court_code, sport: c.sport, sold: 0, open: 0, cells: new Map() };
+    const court = byCourt.get(c.court_id) ?? {
+      court_code: c.court_code,
+      sport: c.sport,
+      sold: 0,
+      open: 0,
+      cells: new Map(),
+      days_booked: new Map(),
+    };
     court.sold += c.sold_min;
     court.open += open;
     court.cells.set(c.hr, pct1(c.sold_min, open));
+    court.days_booked.set(c.hr, c.days_booked);
     byCourt.set(c.court_id, court);
     const sp = bySport.get(c.sport) ?? { sold: 0, open: 0, peakSold: 0, peakOpen: 0, offSold: 0, offOpen: 0 };
     sp.sold += c.sold_min;
@@ -101,6 +156,14 @@ export async function capacityBody(sql: Sql, from: string, to: string, sport: st
     open_min: c.open,
     pct: pct1(c.sold, c.open),
     cells: hours.map((h) => c.cells.get(h) ?? 0),
+    days_booked: hours.map((h) => c.days_booked.get(h) ?? 0),
+    days_total: daysTotal,
+    cell_details: hours.map((h) => ({
+      hr: h,
+      pct: c.cells.get(h) ?? 0,
+      days_booked: c.days_booked.get(h) ?? 0,
+      days_total: daysTotal,
+    })),
   }));
   const all = courts.reduce((a, c) => ({ sold: a.sold + c.sold_min, open: a.open + c.open_min }), { sold: 0, open: 0 });
   // Court rental against class tuition — the report is asked to keep them apart.
@@ -109,6 +172,7 @@ export async function capacityBody(sql: Sql, from: string, to: string, sport: st
     from,
     to,
     sport,
+    days_total: daysTotal,
     open_hour: openHour,
     close_hour: closeHour,
     totals: { sold_min: all.sold, open_min: all.open, pct: pct1(all.sold, all.open) },
@@ -129,7 +193,7 @@ export async function capacityBody(sql: Sql, from: string, to: string, sport: st
 
 export async function reportsCapacity(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["manager"]);
-  const { from, to, sport } = windowParams(request);
+  const { from, to, sport } = await windowParams(sql, request);
   return { status: 200, body: await capacityBody(sql, from, to, sport) };
 }
 
@@ -236,7 +300,7 @@ export async function membersReportBody(sql: Sql, from: string, to: string, spor
 
 export async function reportsMembers(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["manager"]);
-  const { from, to, sport } = windowParams(request);
+  const { from, to, sport } = await windowParams(sql, request);
   return { status: 200, body: await membersReportBody(sql, from, to, sport) };
 }
 
@@ -381,7 +445,7 @@ export async function reportDoc(sql: Sql, request: Request, kind: string): Promi
       },
     };
   }
-  const { from, to, sport } = windowParams(request);
+  const { from, to, sport } = await windowParams(sql, request);
   const sportFilter: [string, string] = ["Sport", sport ? sportLabel(sport) : "All"];
   if (kind === "capacity") {
     const d = await capacityBody(sql, from, to, sport);

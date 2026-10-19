@@ -13,6 +13,7 @@ import {
   Settings,
   Tag,
   TrendingUp,
+  Trophy,
   Undo2,
   UserCog,
   UserPlus,
@@ -218,16 +219,32 @@ function Page() {
         ]}
       />
       <section aria-label={t("Quick actions")} className="mb-6">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Link
             to="/manager/courts"
             className="group relative overflow-hidden rounded-[var(--radius-xl)] border border-line bg-surface p-4 shadow-[var(--shadow-border)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
           >
             <div className="flex items-center gap-3">
-              <SportThumbnail sport="badminton" className="size-12 shrink-0 rounded-[var(--radius-lg)]" />
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-surface-2 text-fg border border-line">
+                <LandPlot className="size-6 text-accent" />
+              </div>
               <div className="min-w-0">
                 <p className="font-semibold text-fg transition-colors group-hover:text-accent-2">{t("Courts & map")}</p>
-                <p className="truncate text-xs text-muted">{t("Inspect courts & sports")}</p>
+                <p className="truncate text-xs text-muted">{t("Inspect courts & status")}</p>
+              </div>
+            </div>
+          </Link>
+          <Link
+            to="/manager/sports"
+            className="group relative overflow-hidden rounded-[var(--radius-xl)] border border-line bg-surface p-4 shadow-[var(--shadow-border)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-surface-2 text-fg border border-line">
+                <Trophy className="size-6 text-accent" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-fg transition-colors group-hover:text-accent-2">{t("Sports")}</p>
+                <p className="truncate text-xs text-muted">{t("Prefixes, rules & colors")}</p>
               </div>
             </div>
           </Link>
@@ -236,7 +253,9 @@ function Page() {
             className="group relative overflow-hidden rounded-[var(--radius-xl)] border border-line bg-surface p-4 shadow-[var(--shadow-border)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
           >
             <div className="flex items-center gap-3">
-              <SportThumbnail sport="volleyball" className="size-12 shrink-0 rounded-[var(--radius-lg)]" />
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-surface-2 text-fg border border-line">
+                <UserCog className="size-6 text-accent" />
+              </div>
               <div className="min-w-0">
                 <p className="font-semibold text-fg transition-colors group-hover:text-accent-2">{t("Staff management")}</p>
                 <p className="truncate text-xs text-muted">{t("Coaches & receptionists")}</p>
@@ -248,7 +267,9 @@ function Page() {
             className="group relative overflow-hidden rounded-[var(--radius-xl)] border border-line bg-surface p-4 shadow-[var(--shadow-border)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
           >
             <div className="flex items-center gap-3">
-              <SportThumbnail sport="basketball" className="size-12 shrink-0 rounded-[var(--radius-lg)]" />
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-surface-2 text-fg border border-line">
+                <Image className="size-6 text-accent" />
+              </div>
               <div className="min-w-0">
                 <p className="font-semibold text-fg transition-colors group-hover:text-accent-2">{t("Media & banners")}</p>
                 <p className="truncate text-xs text-muted">{t("Site photos & slots")}</p>
@@ -398,7 +419,7 @@ function Page() {
           disabled={!rev}
           onClick={() => {
             if (!rev) return;
-            downloadCsv(`arena3-report-${from}_${to}.csv`, [
+            downloadCsv(`lelong-report-${from}_${to}.csv`, [
               [t("From"), formatDate(from), t("To"), formatDate(to)],
               [
                 t("Revenue"),

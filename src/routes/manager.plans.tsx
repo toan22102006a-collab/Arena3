@@ -33,7 +33,7 @@ type Plan = {
 
 const emptyForm = {
   name: "",
-  sport_scope: "badminton",
+  sport_scope: "all",
   price_vnd: "800000",
   duration_days: "30",
   session_quota: "",
@@ -217,7 +217,7 @@ function Page() {
               value={form.sport_scope}
               onChange={(e) => setForm({ ...form, sport_scope: e.target.value })}
             >
-              <option value="all">{t("All three sports")}</option>
+              <option value="all">{t("All sports")}</option>
               {sports.map((s) => (
                 <option key={s.code} value={s.code}>
                   {s.name}

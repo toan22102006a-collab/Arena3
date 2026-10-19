@@ -12,6 +12,7 @@ import { LandingSmoother, useLandingScroll } from "@/components/landing/smoother
 import { Manifesto } from "@/components/landing/manifesto";
 import { PricingScene } from "@/components/landing/pricing";
 import { ScheduleScene, type Picked } from "@/components/landing/schedule";
+import { GalleryScene } from "@/components/landing/gallery";
 import { SiteHeader } from "@/components/landing/header";
 import { StepsScene } from "@/components/landing/steps";
 import { Testimonials } from "@/components/landing/testimonials";
@@ -21,6 +22,7 @@ import { getStoredUser, getToken, homeFor } from "@/lib/arena3/client";
 import { getPublicAvailability, getPublicCatalog } from "@/lib/arena3/catalog";
 import { addDaysISO } from "@/lib/arena3/labels";
 import { BootGate } from "@/components/media";
+import { useSports } from "@/components/sports-ui";
 import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/")({
@@ -68,7 +70,13 @@ function Landing() {
   const isOpen = hour == null ? null : hour >= venue.open && hour < venue.close;
 
   // ── Today's schedule, live on the page ──────────────────────────────
-  const [schedSport, setSchedSport] = useState("badminton");
+  const { sports } = useSports();
+  const [schedSport, setSchedSport] = useState("");
+  useEffect(() => {
+    if (!schedSport && sports.length > 0) {
+      setSchedSport(sports[0].code);
+    }
+  }, [schedSport, sports]);
   const [schedDate, setSchedDate] = useState(availability.date);
   const [sched, setSched] = useState(availability);
   const [schedBusy, setSchedBusy] = useState(false);
@@ -153,6 +161,7 @@ function Landing() {
       <PlansScene plans={plans} />
       <ClassesScene classes={classes} />
       <Testimonials />
+      <GalleryScene />
       <ClosingCta />
       <SiteFooter />
     </VenueProvider>

@@ -15,7 +15,6 @@
  */
 export const MAX_SLOT_PRICE_VND = 5_000_000;
 
-export const SPORTS = ["badminton", "basketball", "volleyball"] as const;
 export const DAY_KINDS = ["weekday", "weekend", "holiday"] as const;
 
 /** A slot price the centre could actually charge: whole đồng, above 0, at most the ceiling. */
@@ -63,6 +62,7 @@ function text(v: unknown): string | null {
  */
 export function validatePriceRules(
   items: unknown[],
+  validSports?: readonly string[],
 ): { ok: true; rules: PriceRuleInput[] } | { ok: false; index: number; message: string } {
   if (!items.length) return { ok: false, index: -1, message: "At least one price rule is required." };
   const rules: PriceRuleInput[] = [];
@@ -73,7 +73,7 @@ export function validatePriceRules(
     const start_local = text(it.start_local);
     const end_local = text(it.end_local);
     const price = typeof it.price_vnd === "string" ? Number(it.price_vnd) : it.price_vnd;
-    if (!sport || !(SPORTS as readonly string[]).includes(sport)) {
+    if (!sport || (validSports ? !validSports.includes(sport) : !/^[a-z0-9_-]+$/.test(sport))) {
       return { ok: false, index: i, message: `Row ${i + 1}: unknown sport.` };
     }
     if (!day_kind || !(DAY_KINDS as readonly string[]).includes(day_kind)) {

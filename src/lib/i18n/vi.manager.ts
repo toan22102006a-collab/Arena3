@@ -107,7 +107,7 @@ export const manager: Record<string, string> = {
   "Waitlist": "Danh sách chờ",
 
   // ---- attendance (manager screen) ---------------------------------------------
-  "How often people actually turn up, and who needs a call before they drift away.": "Mức độ thực sự đến tập, và ai cần được gọi trước khi rời bỏ.",
+  "How often members come, and who has stopped coming.": "Tần suất hội viên đến tập và ai đã ngừng đến.",
 
   // ---- audit: action names -----------------------------------------------------
   "Assistant question": "Câu hỏi cho trợ lý",

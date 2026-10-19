@@ -7,7 +7,7 @@ import { Cover } from "@/components/media";
 import { PageHero } from "@/components/page-hero";
 import { StatStrip } from "@/components/stat-strip";
 import { RowActions } from "@/components/row-actions";
-import { SportBadge } from "@/components/sports-ui";
+import { SportBadge, useSports } from "@/components/sports-ui";
 import { Badge, Button, Card, EmptyState, Field, Input, LoadError, Modal, Select, Skeleton, Pagination } from "@/components/ui";
 import { ApiClientError, apiPost, apiPatch } from "@/lib/arena3/client";
 import { roleLabel, sportLabel } from "@/lib/arena3/labels";
@@ -32,8 +32,6 @@ type Staff = {
   issued_by: string | null;
   issued_at: string | null;
 };
-
-const SPORTS = ["badminton", "basketball", "volleyball", "all"] as const;
 
 type Issued = { name: string; phone: string; password: string; why: string };
 
@@ -345,9 +343,11 @@ function Page() {
 }
 
 function SportPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const { sports } = useSports();
+  const allChoices = [...sports.map((s) => s.code), "all"];
   return (
     <div className="flex flex-wrap gap-2">
-      {SPORTS.map((s) => {
+      {allChoices.map((s) => {
         const on = value.includes(s);
         return (
           <button

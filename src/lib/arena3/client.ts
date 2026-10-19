@@ -21,6 +21,7 @@ export type SessionUser = {
   date_of_birth: string | null;
   health_notes: string | null;
   must_change_password: boolean;
+  avatar_url?: string | null;
 };
 
 export function getToken(): string | null {

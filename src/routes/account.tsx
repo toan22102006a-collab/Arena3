@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Download, Eye, EyeOff, KeyRound, Receipt, UserRound } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Guard, Shell, money, useSessionUser, when } from "@/components/shell";
 import { Badge, Button, Card, EmptyState, Field, Input, Label, LoadError, Pagination, Seg, Skeleton, Textarea } from "@/components/ui";
+import { UserAvatar } from "@/components/user-avatar";
 import { Lift, Stagger, StaggerItem } from "@/components/motion";
 import { SpotlightCard, StarBorder } from "@/components/fx";
 import {
   ApiClientError,
+  api,
   apiGet,
   apiPatch,
   apiPost,
@@ -20,7 +22,7 @@ import {
 import { formatDate } from "@/lib/arena3/labels";
 import { usePageState } from "@/lib/use-page-state";
 import { useRead } from "@/lib/use-read";
-import { t, tk } from "@/lib/i18n";
+import { t, tk, tServer } from "@/lib/i18n";
 
 export const Route = createFileRoute("/account")({ component: Page });
 
@@ -83,6 +85,183 @@ function Page() {
   );
 }
 
+function AvatarEditor({ user }: { user: SessionUser }) {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setError(t("The photo must be 2 MB or smaller."));
+      setSelectedFile(null);
+      setPreviewUrl(null);
+      return;
+    }
+
+    const allowed = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      setError(t("Use a JPEG, PNG or WebP photo."));
+      setSelectedFile(null);
+      setPreviewUrl(null);
+      return;
+    }
+
+    setError(null);
+    setConfirmRemove(false);
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+  }
+
+  function cancelPreview() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setSelectedFile(null);
+    setError(null);
+  }
+
+  async function savePhoto() {
+    if (!selectedFile) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", selectedFile);
+      const res = await api<{ user: SessionUser }>("/me/avatar", { method: "PUT", body: fd });
+      setStoredUser(res.user);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+      setSelectedFile(null);
+      toast.success(t("Photo updated."));
+    } catch (e) {
+      if (e instanceof ApiClientError && e.body?.message) {
+        setError(tServer(e.body.message));
+      } else if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError(t("Could not save your details"));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doRemove() {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await api<{ user: SessionUser }>("/me/avatar", { method: "DELETE" });
+      setStoredUser(res.user);
+      setConfirmRemove(false);
+      toast.success(t("Photo removed."));
+    } catch (e) {
+      if (e instanceof ApiClientError && e.body?.message) {
+        setError(tServer(e.body.message));
+      } else if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError(t("Could not save your details"));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const hasAvatar = Boolean(user.avatar_url);
+
+  return (
+    <div className="mb-6 grid gap-3 border-b border-line pb-6">
+      <div className="flex flex-col gap-1.5">
+        <label className="grid gap-1.5">
+          <Label>{t("Profile photo")}</Label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            onChange={onFileChange}
+          />
+        </label>
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="relative size-20 shrink-0 overflow-hidden rounded-full bg-accent text-accent-fg shadow-sm">
+            {previewUrl ? (
+              <img
+                src={previewUrl}
+                alt={user.full_name}
+                className="size-full rounded-full object-cover"
+              />
+            ) : (
+              <UserAvatar
+                url={user.avatar_url}
+                name={user.full_name}
+                className="size-20 bg-accent text-xl font-bold"
+                initialsClassName="text-xl font-bold tracking-wide text-accent-fg"
+              />
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {previewUrl ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" type="button" disabled={busy} onClick={savePhoto}>
+                  {busy ? t("Saving…") : t("Save photo")}
+                </Button>
+                <Button size="sm" variant="outline" type="button" disabled={busy} onClick={cancelPreview}>
+                  {t("Cancel")}
+                </Button>
+              </div>
+            ) : confirmRemove ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted">{t("Remove your photo?")}</span>
+                <Button size="sm" variant="danger" type="button" disabled={busy} onClick={doRemove}>
+                  {busy ? t("Removing…") : t("Remove photo")}
+                </Button>
+                <Button size="sm" variant="outline" type="button" disabled={busy} onClick={() => setConfirmRemove(false)}>
+                  {t("Cancel")}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="outline" type="button" onClick={() => fileInputRef.current?.click()}>
+                  {t("Change photo")}
+                </Button>
+                {hasAvatar ? (
+                  <Button size="sm" variant="ghost" type="button" onClick={() => setConfirmRemove(true)}>
+                    {t("Remove photo")}
+                  </Button>
+                ) : null}
+              </div>
+            )}
+            <p className="text-xs text-muted">{t("JPEG, PNG or WebP, up to 2 MB.")}</p>
+          </div>
+        </div>
+      </div>
+      {error ? (
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function Profile({ user }: { user: SessionUser | null }) {
   const [form, setForm] = useState({ full_name: "", health_notes: "" });
   const [loaded, setLoaded] = useState(false);
@@ -126,6 +305,7 @@ function Profile({ user }: { user: SessionUser | null }) {
             <UserRound className="size-4 text-accent" strokeWidth={1.75} />
             <h2 className="font-display text-xl">{t("Your details")}</h2>
           </div>
+          <AvatarEditor user={user} />
           <form className="grid gap-4" onSubmit={save}>
             <Field label={t("Full name")}>
               <Input

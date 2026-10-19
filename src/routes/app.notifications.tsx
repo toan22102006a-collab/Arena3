@@ -6,6 +6,7 @@ import { Button, EmptyState, LoadError, Pagination, Skeleton } from "@/component
 import { t } from "@/lib/i18n";
 import { usePageState } from "@/lib/use-page-state";
 import { useRead } from "@/lib/use-read";
+import { useLive } from "@/lib/use-live";
 
 export const Route = createFileRoute("/app/notifications")({
   component: Page,
@@ -22,6 +23,7 @@ function Page() {
     `/me/notifications?${params}`,
     { keepPrevious: true },
   );
+  useLive("notifications", reload);
   // The page is the server's copy, marked read here as the person opens things.
   const [items, setItems] = useState<Notification[] | null>(null);
   useEffect(() => {

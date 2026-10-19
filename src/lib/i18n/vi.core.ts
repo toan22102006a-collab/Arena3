@@ -2,7 +2,7 @@ export const core: Record<string, string> = {
   // header, language, skip link
   "Language": "Ngôn ngữ",
   "Skip to main content": "Chuyển đến nội dung chính",
-  "Opening Arena3": "Đang mở Arena3",
+  "Opening Lê Long Sport": "Đang mở Lê Long Sport",
 
   // shell.tsx
   "Schedule": "Lịch",
@@ -34,7 +34,7 @@ export const core: Record<string, string> = {
   "More": "Thêm",
   "More pages": "Các trang khác",
   "Main menu": "Menu chính",
-  "Arena3 home": "Trang chủ Arena3",
+  "Lê Long Sport home": "Trang chủ Lê Long Sport",
   "Assistant": "Trợ lý",
   "Close": "Đóng",
 
@@ -367,4 +367,40 @@ export const core: Record<string, string> = {
   "An unexpected error occurred. Try reloading the page.": "Đã xảy ra lỗi không mong muốn. Hãy thử tải lại trang.",
   "This page isn’t here": "Không tìm thấy trang này",
   "The address may have changed, or the link that brought you here is out of date.": "Địa chỉ có thể đã đổi, hoặc đường dẫn bạn bấm đã cũ.",
+
+  // ── chat & messaging (Phase 3)
+  "Cannot message this coach": "Không thể nhắn tin cho HLV này",
+  "Message coach": "Nhắn HLV",
+  "Someone": "Ai đó",
+  "New message from {name}": "Tin nhắn mới từ {name}",
+  "You have a new message.": "Bạn có một tin nhắn mới.",
+  "Open chat": "Mở cuộc trò chuyện",
+  "Messages": "Tin nhắn",
+  "Messages, {n} unread": "Tin nhắn, {n} chưa đọc",
+  "Failed to load messages": "Không thể tải tin nhắn",
+  "Failed to send message": "Gửi tin nhắn thất bại",
+  "Real-time two-way messaging": "Nhắn tin hai chiều thời gian thực",
+  "Conversations": "Cuộc trò chuyện",
+  "Search conversations...": "Tìm cuộc trò chuyện...",
+  "No conversations": "Chưa có cuộc trò chuyện",
+  "Your conversations with coaches and members will appear here.": "Các cuộc trò chuyện giữa bạn với HLV và học viên sẽ xuất hiện ở đây.",
+  "No messages yet": "Chưa có tin nhắn nào",
+  "Back to conversations": "Quay lại danh sách",
+  "P2P Direct: Instant encrypted peer-to-peer data channel active": "Kết nối trực tiếp P2P: Kênh dữ liệu ngang hàng mã hóa tức thì đang hoạt động",
+  "Server Relay: Connected via secure realtime server": "Chuyển tiếp qua máy chủ: Đang kết nối qua máy chủ realtime an toàn",
+  "P2P Direct": "P2P Trực tiếp",
+  "Server Relay": "Máy chủ",
+  "Load older messages": "Tải tin nhắn cũ hơn",
+  "Say hello!": "Hãy gửi lời chào!",
+  "Send a message to start chatting with {name}.": "Gửi tin nhắn để bắt đầu trò chuyện cùng {name}.",
+  "Sending...": "Đang gửi...",
+  "Failed to send. Click to retry.": "Gửi không thành công. Bấm để thử lại.",
+  "Retry": "Thử lại",
+  "Sent": "Đã gửi",
+  "{name} is typing...": "{name} đang gõ...",
+  "Type a message...": "Nhập tin nhắn...",
+  "Send message": "Gửi tin nhắn",
+  "Select a conversation": "Chọn một cuộc trò chuyện",
+  "Choose a chat from the left sidebar or click 'Message coach' in any class to start a conversation.": "Chọn một cuộc trò chuyện từ danh sách bên trái hoặc bấm 'Nhắn HLV' trong bất kỳ lớp học nào để bắt đầu trò chuyện.",
 };
+

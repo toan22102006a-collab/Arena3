@@ -106,7 +106,7 @@ function Page() {
       <PageHero
         slot="banner.gate"
         title={t("Gate pass")}
-        subtitle={t("Show this code to the front desk. It changes every minute, so a photo of it is no use to anyone.")}
+        subtitle={t("Show this code to the front desk. It changes every minute.")}
         fallbackSpot="gate"
         stats={[
           {

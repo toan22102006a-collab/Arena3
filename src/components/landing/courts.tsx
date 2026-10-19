@@ -6,13 +6,14 @@ import type { CatalogCourt, CatalogPrice } from "@/lib/arena3/catalog";
 import { sportLabel } from "@/lib/arena3/labels";
 import { useScene } from "@/lib/gsap";
 import { t } from "@/lib/i18n";
+import { useSports } from "@/components/sports-ui";
 import { CountTo, SplitHeading } from "./kit";
 import { moneyCount, rise } from "./tweens";
 
 /**
  * What the hall contains, every number in the open: courts per sport, off-peak and peak price,
  * and how many hours are still free on the day being shown. The prices count up from nothing as
- * the cards arrive, which is the one figure people compare across the three.
+ * the cards arrive, which is the one figure people compare across the sports.
  */
 export function CourtsScene({
   weekday,
@@ -28,30 +29,28 @@ export function CourtsScene({
   courts?: CatalogCourt[];
 }) {
   const root = useRef<HTMLElement>(null);
+  const { sports: liveSports } = useSports();
   useScene(root, ({ motion }) => {
     if (motion && root.current) rise(root.current);
   });
 
-  const sports = [
-    { id: "badminton", slot: "landing.courts.badminton", note: t("Feather-grade shuttles, 9m ceiling, wood sprung floor.") },
-    { id: "basketball", slot: "landing.courts.basketball", note: t("Full-size hardwood with breakaway rims.") },
-    {
-      id: "volleyball",
-      slot: "landing.courts.volleyball",
-      note: t("Competition net height, referee stand, ten-second reset between sets."),
-    },
-  ];
+  const sports = liveSports.map((s) => ({
+    id: s.code,
+    colorKey: s.color_key,
+    slot: `sport.${s.code}`,
+    note: t("Indoor hall with air conditioning and court lighting."),
+  }));
 
   return (
     <section ref={root} id="courts" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20">
       <p data-rise className="kicker text-2xs text-muted">
-        {t("Three sports")}
+        {t("Our sports")}
       </p>
       <h2 className="mt-2 font-display text-4xl sm:text-5xl">
         <SplitHeading text={t("Courts & pricing")} />
       </h2>
       <p data-rise className="mt-3 max-w-md text-muted">
-        {t("One hall, sixteen playing surfaces: badminton, basketball and volleyball under one roof.")}
+        {t("Courts by sport, with hourly prices.")}
       </p>
 
       <div className="mt-8 grid gap-4 md:grid-cols-3">
@@ -71,7 +70,7 @@ export function CourtsScene({
             <div key={s.id} data-rise className="h-full">
               <Card
                 className="lift flex h-full flex-col overflow-hidden p-0"
-                style={{ borderTop: `3px solid var(--color-sport-${s.id})` }}
+                style={{ borderTop: `3px solid var(--color-sport-${s.colorKey || s.id})` }}
               >
                 <GlareHover>
                   <Cover
@@ -84,7 +83,7 @@ export function CourtsScene({
                     <MediaCaption>
                       <span
                         className="mb-1.5 inline-flex items-center rounded-[var(--radius-pill)] px-2.5 py-0.5 text-2xs font-bold text-white shadow-sm"
-                        style={{ backgroundColor: `var(--color-sport-${s.id})` }}
+                        style={{ backgroundColor: `var(--color-sport-${s.colorKey || s.id})` }}
                       >
                         {sportLabel(s.id)}
                       </span>

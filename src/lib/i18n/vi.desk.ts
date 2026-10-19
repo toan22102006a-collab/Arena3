@@ -92,7 +92,7 @@ export const desk: Record<string, string> = {
   "Release the court paired with {court} at {time}": "Nhả sân ghép với {court} lúc {time}",
 
   // ── desk.at-risk ──
-  "Members who may be drifting away. A friendly call now is cheaper than a lapsed plan.": "Những hội viên có thể sắp rời bỏ. Một cuộc gọi thân thiện lúc này rẻ hơn một gói tập hết hạn.",
+  "Members who have stopped coming. Call them before their plan lapses.": "Hội viên đã ngừng đến tập. Hãy gọi cho họ trước khi gói hết hạn.",
 
   // ── desk.classes ──
   "Open a class to see its sessions, court, coach and who is enrolled.": "Mở một lớp để xem các buổi, sân, HLV và danh sách đăng ký.",

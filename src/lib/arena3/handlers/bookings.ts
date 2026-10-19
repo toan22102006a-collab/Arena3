@@ -19,6 +19,7 @@ import { quotePromo, redeemForBooking, restoreIfFullyRefunded } from "../promos"
 import { requireRole, type PublicUser } from "../session";
 import { addDays, ictClock, ictDateString, ictDateTime, ictMinutes, ictStamp, roundVnd } from "../time";
 import { one } from "../tx";
+import { getActiveSportCodes } from "./sports";
 
 async function courtById(sql: Sql, id: string) {
   const c = await one<{
@@ -170,7 +171,7 @@ export async function availabilityGet(sql: Sql, request: Request, user?: PublicU
   const days = Number(params.get("days") ?? 31);
   if (!Number.isInteger(days) || days < 1 || days > 62) throw err.field("days", "days must be 1 to 62.");
   const sport = params.get("sport");
-  if (sport && !["badminton", "basketball", "volleyball"].includes(sport)) {
+  if (sport && !(await getActiveSportCodes(sql)).includes(sport)) {
     throw err.field("sport", "Unknown sport.");
   }
   const first = from < today ? today : from;
@@ -457,13 +458,13 @@ export async function courtsPatch(sql: Sql, id: string, request: Request, user: 
           sql,
           `select count(*)::int as cnt
              from subscriptions s
-             join plans p on p.id = s.plan_id
-            where s.status = 'active' and (p.sport_scope = $1 or p.sport_scope = 'all')`,
+             join membership_plans p on p.id = s.plan_id
+            where s.status = 'active' and (p.sport_scope = $1 or (p.sport_scope = 'all' and $1 in (select code from sports where enabled = true and not is_scope_all and retired_at is null)))`,
           [cur.sport],
         );
         const activeClasses = await one<{ cnt: number }>(
           sql,
-          `select count(*)::int as cnt from classes where sport = $1 and status = 'published'`,
+          `select count(*)::int as cnt from classes where sport = $1 and status = 'open'`,
           [cur.sport],
         );
         if ((activeSubs?.cnt ?? 0) > 0 || (activeClasses?.cnt ?? 0) > 0) {
@@ -523,8 +524,9 @@ export async function courtsPatch(sql: Sql, id: string, request: Request, user: 
   let nextSport = cur.sport;
   if (b.sport !== undefined) {
     const s = str(b.sport);
-    if (!s || !["badminton", "basketball", "volleyball"].includes(s)) {
-      throw err.field("sport", "Sport must be badminton, basketball, or volleyball.");
+    const valid = await getActiveSportCodes(sql);
+    if (!s || !valid.includes(s)) {
+      throw err.field("sport", "Unknown sport.");
     }
     if (s !== cur.sport) {
       const futureOccupancies = await one<{ cnt: number }>(

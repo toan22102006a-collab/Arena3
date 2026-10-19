@@ -1,10 +1,11 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, ArrowLeft, Target } from "lucide-react";
 import { SectionTitle } from "@/components/section";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { StepTabs } from "@/components/coach-ui";
 import { Shell } from "@/components/shell";
+import { useSports } from "@/components/sports-ui";
 import {
   Badge,
   Button,
@@ -30,7 +31,6 @@ const GOALS: Record<string, string> = {
   compete: tk("Compete"),
   fun: tk("Have fun"),
 };
-const SPORTS = ["badminton", "basketball", "volleyball"];
 const LEVELS = ["beginner", "intermediate", "advanced"];
 const METRIC_LABEL: Record<string, string> = {
   smash_count: tk("Smashes"),
@@ -79,10 +79,17 @@ function Page() {
   const { id } = Route.useParams();
   const read = useRead<Profile>(`/students/${id}/profile`);
   const p = read.data;
+  const { sports } = useSports();
   const [tab, setTab] = useState("progress");
   const [note, setNote] = useState("");
-  const [lvl, setLvl] = useState({ sport: "badminton", level: "beginner" });
-  const [rev, setRev] = useState({ sport: "badminton", period_weeks: "4", technique: "3", fitness: "3", attitude: "3", comment: "" });
+  const [lvl, setLvl] = useState({ sport: "", level: "beginner" });
+  const [rev, setRev] = useState({ sport: "", period_weeks: "4", technique: "3", fitness: "3", attitude: "3", comment: "" });
+  useEffect(() => {
+    if (sports.length > 0) {
+      if (!lvl.sport) setLvl((prev) => ({ ...prev, sport: sports[0].code }));
+      if (!rev.sport) setRev((prev) => ({ ...prev, sport: sports[0].code }));
+    }
+  }, [sports]);
   // One save at a time: a second tap on "Save review" used to put the same review on record twice.
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -198,9 +205,9 @@ function Page() {
                   <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-[1fr_1fr_auto]">
                     <Field label={t("Sport")}>
                       <Select value={lvl.sport} onChange={(e) => setLvl({ ...lvl, sport: e.target.value })}>
-                        {SPORTS.map((s) => (
-                          <option key={s} value={s}>
-                            {sportLabel(s)}
+                        {sports.map((s) => (
+                          <option key={s.code} value={s.code}>
+                            {sportLabel(s.code)}
                           </option>
                         ))}
                       </Select>
@@ -230,9 +237,9 @@ function Page() {
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                     <Field label={t("Sport")}>
                       <Select value={rev.sport} onChange={(e) => setRev({ ...rev, sport: e.target.value })}>
-                        {SPORTS.map((s) => (
-                          <option key={s} value={s}>
-                            {sportLabel(s)}
+                        {sports.map((s) => (
+                          <option key={s.code} value={s.code}>
+                            {sportLabel(s.code)}
                           </option>
                         ))}
                       </Select>

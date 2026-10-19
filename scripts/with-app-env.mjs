@@ -135,7 +135,17 @@ function main(argv) {
   }
   loadDotEnv(projectRoot());
   const env = mergeAppEnv(readAppEnv(projectRoot()), process.env);
-  const child = spawn(command, args, { stdio: "inherit", env, shell: true });
+  // When an override like `--port 8090` is appended, remove earlier `--port` arguments
+  // so Vite's CLI parser doesn't turn `port` into an array [8080, 8090].
+  const cleanedArgs = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--port" && args.slice(i + 1).includes("--port")) {
+      i++; // skip the flag and its value
+      continue;
+    }
+    cleanedArgs.push(args[i]);
+  }
+  const child = spawn(command, cleanedArgs, { stdio: "inherit", env, shell: true });
   // The dev server is long-running and is stopped by signalling this wrapper.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => child.kill(signal));

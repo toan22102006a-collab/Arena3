@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Shell, money } from "@/components/shell";
 import { PageHero } from "@/components/page-hero";
 import { StatStrip } from "@/components/stat-strip";
-import { SportBadge } from "@/components/sports-ui";
+import { SportBadge, useSports } from "@/components/sports-ui";
 import { Badge, Button, Card, EmptyState, LoadError, MoneyInput, Skeleton } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/motion";
 import { StarBorder } from "@/components/fx";
@@ -41,8 +41,6 @@ type Plan = {
   court_discount_pct: number;
 };
 
-const SPORT_ORDER = ["badminton", "basketball", "volleyball"];
-
 /**
  * Pricing, in the blocks a manager thinks in: what a court costs by sport and
  * hour, what a membership costs, and the VAT that sits on top. Plans and VAT
@@ -50,6 +48,7 @@ const SPORT_ORDER = ["badminton", "basketball", "volleyball"];
  * changed in one place.
  */
 function Page() {
+  const { sports } = useSports();
   const rulesRead = useRead<{ items: Rule[] }>("/price-rules");
   const plansRead = useRead<{ items: Plan[] }>("/plans");
   const vatRead = useRead<{ vat_rate?: string | number }>("/settings");
@@ -81,11 +80,11 @@ function Page() {
       out.set(rule.sport, g);
     });
     const rank = (sport: string) => {
-      const i = SPORT_ORDER.indexOf(sport);
-      return i < 0 ? SPORT_ORDER.length : i;
+      const idx = sports.findIndex((s) => s.code === sport);
+      return idx < 0 ? sports.length : idx;
     };
     return [...out.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
-  }, [items]);
+  }, [items, sports]);
 
   function edit(index: number, value: string) {
     if (!items) return;

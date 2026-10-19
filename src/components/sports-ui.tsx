@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
-import { SPORT_LABEL } from "@/lib/arena3/labels";
+import { sportLabel } from "@/lib/arena3/labels";
 import { locale } from "@/lib/i18n";
 import { useSportPhoto } from "./media";
 
@@ -9,56 +9,74 @@ export type SportInfo = {
   name?: string;
   name_en: string;
   name_vi: string;
-  color_key: string;
+  court_prefix?: string | null;
+  color_key?: string;
+  glyph_key?: string;
+  photo_url?: string;
 };
 
 function enrichSports(items: SportInfo[]): SportInfo[] {
   const isVi = locale() === "vi";
   return items.map((s) => ({
     ...s,
-    name: s.name ?? (isVi ? s.name_vi : s.name_en),
+    name: isVi ? s.name_vi : s.name_en,
   }));
 }
 
-const DEFAULT_SPORTS: SportInfo[] = [
-  { code: "badminton", name_en: "Badminton", name_vi: "Cầu lông", color_key: "badminton", name: "Badminton" },
-  { code: "basketball", name_en: "Basketball", name_vi: "Bóng rổ", color_key: "basketball", name: "Basketball" },
-  { code: "volleyball", name_en: "Volleyball", name_vi: "Bóng chuyền", color_key: "volleyball", name: "Volleyball" },
-];
+export type UseSportsResult = SportInfo[] & { sports: SportInfo[]; items: SportInfo[] };
 
-// Temporary sports list; will be replaced when AGENT-SPORTS-MEDIA adds GET /v1/sports.
+function toResult(items: SportInfo[]): UseSportsResult {
+  const arr = [...items] as UseSportsResult;
+  arr.sports = arr;
+  arr.items = arr;
+  return arr;
+}
+
 let cachedSports: SportInfo[] | null = null;
-let fetchAttempted = false;
 
-export function useSports(): SportInfo[] {
-  const [sports, setSports] = useState<SportInfo[]>(() => cachedSports ?? enrichSports(DEFAULT_SPORTS));
+export function invalidateSportsCache() {
+  cachedSports = null;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("arena3:sports-changed"));
+  }
+}
+
+export function useSports(): UseSportsResult {
+  const [sports, setSports] = useState<UseSportsResult>(() => toResult(cachedSports ?? []));
 
   useEffect(() => {
-    if (fetchAttempted) {
-      if (cachedSports) setSports(cachedSports);
-      return;
-    }
-    fetchAttempted = true;
     let cancelled = false;
 
-    fetch("/v1/sports")
-      .then((res) => {
-        if (!res.ok) return null;
-        return res.json() as Promise<{ items?: SportInfo[] }>;
-      })
-      .then((data) => {
-        if (data && Array.isArray(data.items) && data.items.length > 0) {
-          const enriched = enrichSports(data.items);
-          cachedSports = enriched;
-          if (!cancelled) setSports(enriched);
-        }
-      })
-      .catch(() => {
-        // Silent catch: endpoint does not exist yet (404/network error), no retry or logging
-      });
+    function load() {
+      fetch("/v1/sports")
+        .then((res) => {
+          if (!res.ok) return null;
+          return res.json() as Promise<{ items?: SportInfo[] }>;
+        })
+        .then((data) => {
+          if (data && Array.isArray(data.items) && data.items.length > 0) {
+            const enriched = enrichSports(data.items);
+            cachedSports = enriched;
+            if (!cancelled) setSports(toResult(enriched));
+          }
+        })
+        .catch(() => {});
+    }
 
+    if (!cachedSports || cachedSports.length === 0) {
+      load();
+    } else {
+      setSports(toResult(cachedSports));
+    }
+
+    const onSportsChanged = () => {
+      load();
+    };
+
+    window.addEventListener("arena3:sports-changed", onSportsChanged);
     return () => {
       cancelled = true;
+      window.removeEventListener("arena3:sports-changed", onSportsChanged);
     };
   }, []);
 
@@ -67,18 +85,21 @@ export function useSports(): SportInfo[] {
 
 export function SportDot({
   sport,
+  colorKey,
   className,
 }: {
   sport?: string | null;
+  colorKey?: string | null;
   className?: string;
 }) {
-  const code = (sport || "badminton").toLowerCase();
+  const code = (sport || "").toLowerCase();
+  const color = colorKey || code;
   return (
     <span
       aria-hidden="true"
       className={cn("inline-block size-2 rounded-full shrink-0", className)}
       style={{
-        backgroundColor: `var(--color-sport-${code}, var(--color-accent))`,
+        backgroundColor: color ? `var(--color-sport-${color}, var(--color-accent))` : "var(--color-accent)",
       }}
     />
   );
@@ -86,15 +107,17 @@ export function SportDot({
 
 export function SportBadge({
   sport,
+  colorKey,
   className,
   showDot = true,
 }: {
   sport?: string | null;
+  colorKey?: string | null;
   className?: string;
   showDot?: boolean;
 }) {
-  const code = (sport || "badminton").toLowerCase();
-  const label = SPORT_LABEL[code] ?? code;
+  const code = (sport || "").toLowerCase();
+  const label = sportLabel(code) || code;
 
   return (
     <span
@@ -103,7 +126,7 @@ export function SportBadge({
         className,
       )}
     >
-      {showDot ? <SportDot sport={code} /> : null}
+      {showDot ? <SportDot sport={code} colorKey={colorKey} /> : null}
       <span>{label}</span>
     </span>
   );
@@ -111,16 +134,19 @@ export function SportBadge({
 
 export function SportThumbnail({
   sport,
+  colorKey,
   className,
   alt,
 }: {
   sport?: string | null;
+  colorKey?: string | null;
   className?: string;
   alt?: string;
 }) {
-  const code = (sport || "badminton").toLowerCase();
+  const code = (sport || "").toLowerCase();
+  const color = colorKey || code;
   const asset = useSportPhoto(code);
-  const label = SPORT_LABEL[code] ?? code;
+  const label = sportLabel(code) || code;
 
   return (
     <div
@@ -139,7 +165,7 @@ export function SportThumbnail({
         <div
           className="flex h-full w-full items-center justify-center font-bold text-2xs uppercase text-white"
           style={{
-            backgroundColor: `var(--color-sport-${code}, var(--color-accent))`,
+            backgroundColor: color ? `var(--color-sport-${color}, var(--color-accent))` : "var(--color-accent)",
           }}
         >
           {code.slice(0, 2)}

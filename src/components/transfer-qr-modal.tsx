@@ -195,7 +195,7 @@ export function TransferQrModal({
     }
   }
 
-  const reference = `ARENA3 ${code}`;
+  const reference = `LELONG ${code}`;
   return (
     <Modal
       open={open}
@@ -292,7 +292,7 @@ export function MemberTransferModal({
         <p className="text-sm text-muted">
           {t("Scan with your banking app, or type the details in by hand. Keep the reference exactly as it is, so reception can find your transfer.")}
         </p>
-        <VietQrPanel bank={bank} amountVnd={amountVnd} reference={`ARENA3 ${bookingCode}`} />
+        <VietQrPanel bank={bank} amountVnd={amountVnd} reference={`LELONG ${bookingCode}`} />
         <p className="text-xs text-muted">
           {t("A transfer is not a payment until reception finds it in the bank. Your court stays held meanwhile.")}
         </p>

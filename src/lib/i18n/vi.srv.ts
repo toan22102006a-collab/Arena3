@@ -25,6 +25,10 @@ export const VI_SERVER_EXACT: Record<string, string> = {
   "That value is not allowed.": "Giá trị này không được phép.",
   "Something went wrong on our side.": "Đã có lỗi phía chúng tôi. Vui lòng thử lại.",
   "Request failed": "Yêu cầu không thành công.",
+  "Choose a photo to upload.": "Hãy chọn một ảnh để tải lên.",
+  "The photo must be 2 MB or smaller.": "Ảnh phải từ 2 MB trở xuống.",
+  "Use a JPEG, PNG or WebP photo.": "Hãy dùng ảnh JPEG, PNG hoặc WebP.",
+  "The photo must be between 64 and 4096 pixels on each side.": "Mỗi cạnh của ảnh phải từ 64 đến 4096 điểm ảnh.",
   // Raised by the browser-side client, not the server: no answer at all, or the host's own error page.
   "Could not reach the server. Check your connection and try again.": "Không kết nối được máy chủ. Hãy kiểm tra mạng rồi thử lại.",
   "The server is busy or restarting. Try again in a moment.": "Máy chủ đang bận hoặc đang khởi động lại. Hãy thử lại sau ít phút.",
@@ -44,6 +48,21 @@ export const VI_SERVER_EXACT: Record<string, string> = {
   "This account is locked.": "Tài khoản này đang bị khóa.",
   "Payments cannot be deleted — issue a refund instead.": "Không thể xóa thanh toán, hãy hoàn tiền.",
   "Unknown report.": "Báo cáo không hợp lệ.",
+
+  // ── chat.ts
+  "Conversation not found.": "Không tìm thấy cuộc trò chuyện.",
+  "Message ID is required.": "Thiếu mã định danh tin nhắn.",
+  "Message body cannot be empty.": "Nội dung tin nhắn không được để trống.",
+  "Message exceeds maximum length of 2000 characters.": "Tin nhắn vượt quá giới hạn 2000 ký tự.",
+  "You can only message coaches of classes you are currently enrolled in.": "Bạn chỉ có thể nhắn tin cho HLV của lớp bạn đang tham gia.",
+  "Coaches can only message members enrolled in their active classes.": "HLV chỉ có thể nhắn tin cho học viên đang tham gia lớp học đang hoạt động.",
+  "Recipient not found.": "Không tìm thấy người nhận.",
+  "Room parameter is required.": "Thiếu tham số phòng.",
+  "Peer parameter is required.": "Thiếu tham số peer.",
+  "Peer ID mismatch.": "Mã peer không khớp.",
+  "Not permitted in this chat room.": "Bạn không có quyền tham gia phòng chat này.",
+  "Missing required signaling fields.": "Thiếu các trường tín hiệu bắt buộc.",
+  "Sender ID mismatch.": "Mã người gửi không khớp.",
 
   // ── promos.ts (pricing of a code) and handlers/promos.ts
   "Enter a promo code.": "Vui lòng nhập mã khuyến mãi.",
@@ -215,6 +234,9 @@ export const VI_SERVER_EXACT: Record<string, string> = {
   "You need an active plan covering this sport.": "Bạn cần có gói tập đang hiệu lực áp dụng cho môn này.",
   "You have no sessions left.": "Bạn đã hết buổi tập.",
   "This clashes with another class you are in.": "Lịch này trùng với một lớp khác của bạn.",
+  "Another class already uses this court on those days and hours.": "Sân này đã có lớp khác vào cùng ngày và giờ đó.",
+  "This coach already teaches another class on those days and hours.": "HLV này đã dạy lớp khác vào cùng ngày và giờ đó.",
+  "Every date of this class clashes with a court booking or the coach's other classes.": "Mọi buổi của lớp này đều trùng với lượt đặt sân hoặc lớp khác của HLV.",
   "You are already enrolled.": "Bạn đã đăng ký rồi.",
   "Cancel at least 4 hours before the next session.": "Vui lòng hủy trước buổi tiếp theo ít nhất 4 giờ.",
   "No such class.": "Không có lớp này.",

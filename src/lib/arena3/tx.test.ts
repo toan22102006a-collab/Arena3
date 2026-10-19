@@ -6,6 +6,7 @@ import { PGlite } from "@electric-sql/pglite";
 
 // Prevent src/lib/db.ts from running bootstrap in test runner
 process.env.DATABASE_URL = "postgres://mock:mock@localhost/mock";
+process.env.PGLITE_DATA_DIR = "memory";
 
 import { register } from "node:module";
 import { pathToFileURL } from "node:url";
@@ -24,7 +25,7 @@ const opsH = await import("./handlers/ops.ts");
 const { classesCreate, enrollmentDelete, classesEnroll, sessionReschedule } = await import("./handlers/classes.ts");
 const { subscriptionsCreate, plansPatch } = await import("./handlers/plans.ts");
 const { bookingGet, bookingsReschedule, walkIn, bookingsHold } = await import("./handlers/bookings.ts");
-const { shiftClose, paymentsCreate, shiftCurrent, paymentsRefund, paymentsApproveRefund } = await import("./handlers/desk.ts");
+const { shiftClose, paymentsCreate, shiftCurrent, paymentsRefund, paymentsApproveRefund, paymentsRejectRefund } = await import("./handlers/desk.ts");
 const { waitlistAccept, inviteWaitlist, subscriptionFreeze, subscriptionUnfreeze, sessionAttendancePost } = await import("./handlers/ops.ts");
 const { findUserByLogin, issueSession, authFromRequest, toPublic } = await import("./session.ts");
 const { hashPassword, hashOtp } = await import("./crypto.ts");
@@ -32,6 +33,9 @@ const { csvCell } = await import("./handlers/extras.ts");
 const { trainingCreate } = await import("./handlers/training.ts");
 const { onlineCreate } = await import("./handlers/online.ts");
 const { setOverridePaymentLinkCreator } = await import("./payos.ts");
+const chatH = await import("./handlers/chat.ts");
+const avatarH = await import("./handlers/avatar.ts");
+const { sniffAvatar, meAvatarPut, meAvatarDelete, userAvatarGet } = avatarH;
 
 let db: PGlite;
 
@@ -885,8 +889,8 @@ describe("Round 5: Money & Cashier Shift unit tests (F-17, F-12, F-13, F-09)", (
     await db.query("update cashier_shifts set closed_at = now() where id = $1", [shift.id]);
   });
 
-  // F-16 (2): Quản lý duyệt hoàn tiền (approve-refund) → tổng ca lễ tân không đổi
-  it("F-16: manager approves refund (approve-refund) -> receptionist shift till totals unchanged", async () => {
+  // F-16 (2): Quản lý duyệt hoàn tiền (approve-refund) → tổng ca lễ tân giảm theo số tiền hoàn
+  it("F-16: manager approves refund (approve-refund) -> receptionist shift till totals reduced by refund", async () => {
     await db.query("update cashier_shifts set closed_at = now() where receptionist_id = $1 and closed_at is null", [receptionistUser.id]);
     const shift = (await db.query<{ id: string }>(
       "insert into cashier_shifts (receptionist_id) values ($1) returning id",
@@ -913,7 +917,7 @@ describe("Round 5: Money & Cashier Shift unit tests (F-17, F-12, F-13, F-09)", (
     const resPending = await withTx(async (sql) => paymentsRefund(sql, pay.id, reqPending, receptionistUser));
     assert.equal(resPending.status, 201);
     assert.equal((resPending.body as any).payment?.status, "refund_pending");
-    assert.equal((resPending.body as any).payment?.shift_id, null);
+    assert.equal((resPending.body as any).payment?.shift_id, shift.id);
     const pendingId = (resPending.body as any).payment.id;
 
     // Manager approves refund
@@ -925,9 +929,9 @@ describe("Round 5: Money & Cashier Shift unit tests (F-17, F-12, F-13, F-09)", (
     const resApprove = await withTx(async (sql) => paymentsApproveRefund(sql, pendingId, reqApprove, managerUser));
     assert.equal(resApprove.status, 200);
 
-    // Shift totals for receptionist MUST be unchanged (the approved refund has shift_id = null)
+    // Shift totals for receptionist MUST drop by refund amount (the approved refund has shift_id = shift.id)
     const curAfter = await withTx(async (sql) => shiftCurrent(sql, receptionistUser, reqCurrentBefore));
-    assert.equal((curAfter.body as any).totals?.cash, cashBefore);
+    assert.equal((curAfter.body as any).totals?.cash, cashBefore - 1200000);
 
     await db.query("update cashier_shifts set closed_at = now() where id = $1", [shift.id]);
   });
@@ -1593,7 +1597,7 @@ describe("Round 7: Group C unit tests (CL-21, CL-22, CL-23, CL-24, SS-18, SS-20,
           level: "cl22-test-ok",
           coach_id: coachUser.id,
           court_id: badmintonCourtId,
-          rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=10",
+          rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=11",
           start_on: "2026-11-01",
           end_on: "2026-11-30",
           capacity: 20,
@@ -1640,7 +1644,7 @@ describe("Round 7: Group C unit tests (CL-21, CL-22, CL-23, CL-24, SS-18, SS-20,
           level: "cl23-test-ok",
           coach_id: coachUser.id,
           court_id: badmintonCourtId,
-          rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=10",
+          rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=12",
           start_on: "2026-11-01",
           end_on: "2026-11-30",
           capacity: 20,
@@ -1695,7 +1699,7 @@ describe("Round 7: Group C unit tests (CL-21, CL-22, CL-23, CL-24, SS-18, SS-20,
           level: "cl24-test-ok",
           coach_id: coachUser.id,
           court_id: badmintonCourtId,
-          rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=10",
+          rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=13",
           start_on: "2026-11-01",
           end_on: "2026-11-30",
           capacity: 20,
@@ -1703,6 +1707,33 @@ describe("Round 7: Group C unit tests (CL-21, CL-22, CL-23, CL-24, SS-18, SS-20,
       });
       const res = await classesCreate(sql, reqGood, managerUser);
       assert.equal(res.status, 201);
+    });
+  });
+
+  it("CL-25: a class on the same court, weekday and hour as an existing one is refused with 409", async () => {
+    await withTx(async (sql) => {
+      // CL-24 left a Monday 13:00 class on this court for November.
+      const reqClash = new Request("http://localhost/v1/classes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sport: "badminton",
+          level: "cl25-clash",
+          coach_id: coachUser.id,
+          court_id: badmintonCourtId,
+          rrule: "FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=13",
+          start_on: "2026-11-10",
+          end_on: "2026-12-20",
+          capacity: 9,
+        }),
+      });
+      await assert.rejects(
+        async () => classesCreate(sql, reqClash, managerUser),
+        (err: any) => {
+          assert.equal(err.status, 409);
+          return true;
+        },
+      );
     });
   });
 
@@ -2375,11 +2406,855 @@ describe("Round 9 unit tests (SB-31 online flow price lock)", () => {
   });
 });
 
+describe("Round 10: Two-way Chat unit tests", () => {
+  it("enforces permissions: member not enrolled in coach class cannot chat, enrolled member can, idempotent send, and mark read", async () => {
+    // 1. Create a coach C1 and a member M1, and an active class taught by C1
+    const coachRes = await db.query<{ id: string; role: string; full_name: string }>(
+      `insert into users (full_name, name_normalized, phone, role, status, password_hash)
+       values ('Coach Chat Test', 'coach chat test', '0901999881', 'coach', 'active', 'test_hash')
+       returning id, role, full_name`,
+    );
+    const coach = {
+      id: coachRes.rows[0]!.id,
+      role: "coach" as const,
+      full_name: coachRes.rows[0]!.full_name,
+      phone: "0901999881",
+      email: null,
+      member_code: null,
+      status: "active",
+      date_of_birth: null,
+      health_notes: null,
+      must_change_password: false,
+      avatar_url: null,
+    };
 
+    const memberRes = await db.query<{ id: string; role: string; full_name: string }>(
+      `insert into users (full_name, name_normalized, phone, role, status, password_hash)
+       values ('Member Chat Test', 'member chat test', '0901999882', 'member', 'active', 'test_hash')
+       returning id, role, full_name`,
+    );
+    const member = {
+      id: memberRes.rows[0]!.id,
+      role: "member" as const,
+      full_name: memberRes.rows[0]!.full_name,
+      phone: "0901999882",
+      email: null,
+      member_code: null,
+      status: "active",
+      date_of_birth: null,
+      health_notes: null,
+      must_change_password: false,
+      avatar_url: null,
+    };
 
+    // Member tries to create conversation with Coach before enrollment -> 403 Forbidden
+    await withTx(async (sql) => {
+      const req = new Request("http://localhost/v1/conversations", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ recipient_id: coach.id }),
+      });
+      await assert.rejects(
+        async () => chatH.createOrGetConversation(sql, member, req),
+        (err: any) => {
+          assert.equal(err.status, 403);
+          return true;
+        },
+      );
+    });
 
+      // Create an active class taught by coach and enroll member
+      const court = await db.query<{ id: string }>(`select id from courts where sport = 'badminton' limit 1`);
+      const clsRes = await db.query<{ id: string }>(
+        `insert into classes (sport, level, coach_id, court_id, capacity, rrule, duration_min, status, start_on, end_on)
+         values ('badminton', 'beginner', $1, $2, 12, 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=10', 60, 'open', current_date, current_date + 30)
+         returning id`,
+        [coach.id, court.rows[0]!.id],
+      );
+      const classId = clsRes.rows[0]!.id;
 
+      await db.query(
+        `insert into enrollments (class_id, user_id, status)
+         values ($1, $2, 'confirmed')`,
+        [classId, member.id],
+      );
 
+      // Now member can create conversation with Coach -> 201 Created
+      let convId = "";
+      await withTx(async (sql) => {
+        const req = new Request("http://localhost/v1/conversations", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ recipient_id: coach.id }),
+        });
+        const res = await chatH.createOrGetConversation(sql, member, req);
+        assert.ok(res.conversation!.id);
+        convId = res.conversation!.id;
+      });
 
+      // 2. Idempotent message sending
+      const clientMsgId = "11111111-2222-3333-4444-555555555555";
+      await withTx(async (sql) => {
+        const req = new Request(`http://localhost/v1/conversations/${convId}/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: clientMsgId, body: "Xin chao HLV!" }),
+        });
+        const res = await chatH.sendMessage(sql, member, convId, req);
+        assert.equal(res.message!.id, clientMsgId);
+        assert.equal(res.message!.body, "Xin chao HLV!");
+        assert.equal(res.message!.read_at, null);
+      });
 
+      // Replay with exact same clientMsgId -> returns same message without duplicate
+      await withTx(async (sql) => {
+        const req = new Request(`http://localhost/v1/conversations/${convId}/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: clientMsgId, body: "Xin chao HLV!" }),
+        });
+        const res = await chatH.sendMessage(sql, member, convId, req);
+        assert.equal(res.message!.id, clientMsgId);
+      });
 
+      const msgCount = await db.query<{ c: number }>(
+        `select count(*)::int as c from messages where conversation_id = $1`,
+        [convId],
+      );
+      assert.equal(msgCount.rows[0]!.c, 1);
+
+      // 3. Mark conversation read
+      await withTx(async (sql) => {
+        const res = await chatH.markConversationRead(sql, coach, convId);
+        assert.equal(res.ok, true);
+      });
+
+      const readCheck = await db.query<{ read_at: string | null }>(
+        `select read_at from messages where id = $1`,
+        [clientMsgId],
+      );
+      assert.ok(readCheck.rows[0]!.read_at !== null);
+    });
+  });
+
+  describe("Task A1: waitlistAccept session deduction", () => {
+    const coachId = "00000000-0000-0000-0000-000000000011";
+    const courtId = "10000000-0000-0000-0000-000000000001"; // badminton court
+    const planId = "20000000-0000-0000-0000-000000000002";
+
+    async function setupTest(opts: {
+      sessionLeft: number | null | "no_sub";
+      sport?: string;
+      classCapacity?: number;
+      classEnrolled?: number;
+    }) {
+      const classId = "40000000-0000-0000-0000-a10000000001";
+      const memberId = "00000000-0000-0000-0000-a10000000002";
+      const member = { id: memberId, phone: "+84999999001", name: "A1 Member", role: "member" } as any;
+
+      await db.query("delete from waitlist_offers where enrollment_id in (select id from enrollments where class_id = $1)", [classId]);
+      await db.query("delete from enrollments where class_id = $1", [classId]);
+      await db.query("delete from classes where id = $1", [classId]);
+      await db.query("delete from subscriptions where user_id = $1", [memberId]);
+      await db.query("delete from users where id = $1 or phone = $2", [memberId, member.phone]);
+
+      await db.query(
+        `insert into users (id, phone, full_name, name_normalized, role, password_hash)
+         values ($1, $2, $3, $4, 'member', 'hash')`,
+        [member.id, member.phone, member.name, member.name.toLowerCase()],
+      );
+
+      let subId: string | null = null;
+      if (opts.sessionLeft !== "no_sub") {
+        subId = "30000000-0000-0000-0000-a10000000003";
+        await db.query(
+          `insert into subscriptions (id, user_id, plan_id, sport_scope, start_on, end_on, status, session_left)
+           values ($1, $2, $3, $4, current_date - 1, current_date + 30, 'active', $5)`,
+          [subId, memberId, planId, opts.sport ?? "badminton", opts.sessionLeft],
+        );
+      }
+
+      await db.query(
+        `insert into classes (id, sport, level, coach_id, court_id, rrule, start_on, end_on, duration_min, capacity, status, enrolled_count)
+         values ($1, 'badminton', 'a1-test', $2, $3, 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=10', current_date + 1, current_date + 14, 60, $4, 'open', $5)`,
+        [classId, coachId, courtId, opts.classCapacity ?? 2, opts.classEnrolled ?? 0],
+      );
+
+      const enrId = "50000000-0000-0000-0000-a10000000004";
+      await db.query(
+        `insert into enrollments (id, class_id, user_id, status, waitlist_pos)
+         values ($1, $2, $3, 'waitlisted', 1)`,
+        [enrId, classId, memberId],
+      );
+
+      const offerId = "60000000-0000-0000-0000-a10000000005";
+      await db.query(
+        `insert into waitlist_offers (id, enrollment_id, status, expires_at)
+         values ($1, $2, 'pending', now() + interval '1 hour')`,
+        [offerId, enrId],
+      );
+
+      return { classId, member, subId, enrId, offerId };
+    }
+
+    it("A1-1: Member accepts offer with 5 sessions left -> enroll succeeds, session_left becomes 4", async () => {
+      const { member, subId, enrId, offerId } = await setupTest({ sessionLeft: 5 });
+      const res = await withTx(async (sql) => waitlistAccept(sql, offerId, member));
+      assert.equal(res.status, 200);
+
+      const enr = (await db.query<{ status: string; waitlist_pos: number | null }>(
+        "select status, waitlist_pos from enrollments where id = $1",
+        [enrId],
+      )).rows[0];
+      assert.equal(enr.status, "confirmed");
+      assert.equal(enr.waitlist_pos, null);
+
+      const sub = (await db.query<{ session_left: number }>(
+        "select session_left from subscriptions where id = $1",
+        [subId!],
+      )).rows[0];
+      assert.equal(sub.session_left, 4);
+
+      const off = (await db.query<{ status: string }>(
+        "select status from waitlist_offers where id = $1",
+        [offerId],
+      )).rows[0];
+      assert.equal(off.status, "accepted");
+    });
+
+    it("A1-2: Member accepts offer with unlimited plan (session_left null) -> enroll succeeds, session_left remains null", async () => {
+      const { member, subId, enrId, offerId } = await setupTest({ sessionLeft: null });
+      const res = await withTx(async (sql) => waitlistAccept(sql, offerId, member));
+      assert.equal(res.status, 200);
+
+      const enr = (await db.query<{ status: string }>("select status from enrollments where id = $1", [enrId])).rows[0];
+      assert.equal(enr.status, "confirmed");
+
+      const sub = (await db.query<{ session_left: number | null }>(
+        "select session_left from subscriptions where id = $1",
+        [subId!],
+      )).rows[0];
+      assert.equal(sub.session_left, null);
+    });
+
+    it("A1-3: Member accepts offer with 0 sessions left -> throws BR-20, enrollment stays waitlisted, offer stays pending", async () => {
+      const { member, subId, enrId, offerId } = await setupTest({ sessionLeft: 0 });
+      await assert.rejects(
+        () => withTx(async (sql) => waitlistAccept(sql, offerId, member)),
+        (e: any) => e.extra?.br === "BR-20",
+      );
+
+      const enr = (await db.query<{ status: string }>("select status from enrollments where id = $1", [enrId])).rows[0];
+      assert.equal(enr.status, "waitlisted");
+
+      const off = (await db.query<{ status: string }>("select status from waitlist_offers where id = $1", [offerId])).rows[0];
+      assert.equal(off.status, "pending");
+
+      const sub = (await db.query<{ session_left: number }>(
+        "select session_left from subscriptions where id = $1",
+        [subId!],
+      )).rows[0];
+      assert.equal(sub.session_left, 0);
+    });
+
+    it("A1-4: Member accepts offer without plan for that sport -> throws BR-19, no session deducted, enrollment unchanged", async () => {
+      const { member, subId, enrId, offerId } = await setupTest({ sessionLeft: 5, sport: "basketball" }); // class is badminton
+      await assert.rejects(
+        () => withTx(async (sql) => waitlistAccept(sql, offerId, member)),
+        (e: any) => e.extra?.br === "BR-19",
+      );
+
+      const enr = (await db.query<{ status: string }>("select status from enrollments where id = $1", [enrId])).rows[0];
+      assert.equal(enr.status, "waitlisted");
+
+      const off = (await db.query<{ status: string }>("select status from waitlist_offers where id = $1", [offerId])).rows[0];
+      assert.equal(off.status, "pending");
+
+      const sub = (await db.query<{ session_left: number }>(
+        "select session_left from subscriptions where id = $1",
+        [subId!],
+      )).rows[0];
+      assert.equal(sub.session_left, 5);
+    });
+
+    it("A1-5: Class filled up right before accept (enrolled_count = capacity) -> throws BR-21, does NOT deduct session", async () => {
+      const { member, subId, enrId, offerId } = await setupTest({
+        sessionLeft: 5,
+        classCapacity: 1,
+        classEnrolled: 1,
+      });
+      await assert.rejects(
+        () => withTx(async (sql) => waitlistAccept(sql, offerId, member)),
+        (e: any) => e.extra?.br === "BR-21",
+      );
+
+      const enr = (await db.query<{ status: string }>("select status from enrollments where id = $1", [enrId])).rows[0];
+      assert.equal(enr.status, "waitlisted");
+
+      const off = (await db.query<{ status: string }>("select status from waitlist_offers where id = $1", [offerId])).rows[0];
+      assert.equal(off.status, "pending");
+
+      const sub = (await db.query<{ session_left: number }>(
+        "select session_left from subscriptions where id = $1",
+        [subId!],
+      )).rows[0];
+      assert.equal(sub.session_left, 5);
+    });
+  });
+
+  describe("Task A2: manager-approved cash refund in till shift (SU-FL05-01)", () => {
+    const receptionistUser = { id: "00000000-0000-0000-0000-a20000000001", role: "receptionist", full_name: "A2 Receptionist" } as any;
+    const managerUser = { id: "00000000-0000-0000-0000-a20000000002", role: "manager", full_name: "A2 Manager" } as any;
+    const bookingId = "30000000-0000-0000-0000-a20000000003";
+
+    async function setupA2() {
+      await db.query("delete from payments where ref_id = $1", [bookingId]);
+      await db.query("delete from cashier_shifts where receptionist_id in ($1, $2)", [receptionistUser.id, managerUser.id]);
+      await db.query("delete from users where id in ($1, $2) or phone in ('+84999999002', '+84999999003')", [receptionistUser.id, managerUser.id]);
+
+      await db.query(
+        `insert into users (id, phone, full_name, name_normalized, role, password_hash)
+         values ($1, '+84999999002', $2, 'a2 receptionist', 'receptionist', 'hash'),
+                ($3, '+84999999003', $4, 'a2 manager', 'manager', 'hash')`,
+        [receptionistUser.id, receptionistUser.full_name, managerUser.id, managerUser.full_name],
+      );
+    }
+
+    async function seedBasePayment(shiftId: string, amount = 1_500_000) {
+      const pay = (await db.query<{ id: string }>(
+        `insert into payments (code, shift_id, method, amount_vnd, vat_rate, status, ref_type, ref_id)
+         values ('PAY-A2-' || substr(gen_random_uuid()::text, 1, 8), $1, 'cash', $2, 8, 'posted', 'booking', $3)
+         returning id`,
+        [shiftId, amount, bookingId],
+      )).rows[0];
+      return pay.id;
+    }
+
+    it("A2-1: receptionist with no open shift, refund >= refund_manager_vnd -> throws BR-44, no payment row inserted", async () => {
+      await setupA2();
+      // Ensure no open shift
+      await db.query("update cashier_shifts set closed_at = now() where receptionist_id = $1", [receptionistUser.id]);
+
+      // Seed an unattached positive payment
+      const payId = (await db.query<{ id: string }>(
+        `insert into payments (code, method, amount_vnd, vat_rate, status, ref_type, ref_id)
+         values ('PAY-A2-NO-SHIFT', 'cash', 1000000, 8, 'posted', 'booking', $1)
+         returning id`,
+        [bookingId],
+      )).rows[0].id;
+
+      const req = new Request("http://localhost/v1/payments/" + payId + "/refund", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount_vnd: 800000, reason: "Refund test" }),
+      });
+
+      await assert.rejects(
+        () => withTx(async (sql) => paymentsRefund(sql, payId, req, receptionistUser)),
+        (e: any) => e.extra?.br === "BR-44",
+      );
+
+      const count = (await db.query<{ c: number }>(
+        `select count(*)::int as c from payments where status = 'refund_pending' and ref_id = $1`,
+        [bookingId],
+      )).rows[0].c;
+      assert.equal(count, 0);
+    });
+
+    it("A2-2: receptionist with an open shift S1, large refund -> refund_pending row has shift_id = S1", async () => {
+      await setupA2();
+      const s1 = (await db.query<{ id: string }>(
+        `insert into cashier_shifts (receptionist_id) values ($1) returning id`,
+        [receptionistUser.id],
+      )).rows[0].id;
+
+      const payId = await seedBasePayment(s1);
+
+      const req = new Request("http://localhost/v1/payments/" + payId + "/refund", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount_vnd: 1000000, reason: "Move out" }),
+      });
+      const res = await withTx(async (sql) => paymentsRefund(sql, payId, req, receptionistUser));
+      assert.equal(res.status, 201);
+      assert.equal((res.body as any).payment?.status, "refund_pending");
+      assert.equal((res.body as any).payment?.shift_id, s1);
+    });
+
+    it("A2-3: manager approves while S1 is still open -> posted, shift_id = S1, cash total drops", async () => {
+      await setupA2();
+      const s1 = (await db.query<{ id: string }>(
+        `insert into cashier_shifts (receptionist_id) values ($1) returning id`,
+        [receptionistUser.id],
+      )).rows[0].id;
+
+      const payId = await seedBasePayment(s1, 1500000);
+
+      const reqCurrent = new Request("http://localhost/v1/shifts/current");
+      const curBefore = await withTx(async (sql) => shiftCurrent(sql, receptionistUser, reqCurrent));
+      const cashBefore = (curBefore.body as any).totals?.cash;
+
+      const reqPending = new Request("http://localhost/v1/payments/" + payId + "/refund", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount_vnd: 1000000, reason: "Refund" }),
+      });
+      const resPending = await withTx(async (sql) => paymentsRefund(sql, payId, reqPending, receptionistUser));
+      const pendingId = (resPending.body as any).payment.id;
+
+      const reqApprove = new Request("http://localhost/v1/payments/" + pendingId + "/approve-refund", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: "Approved" }),
+      });
+      const resApprove = await withTx(async (sql) => paymentsApproveRefund(sql, pendingId, reqApprove, managerUser));
+      assert.equal(resApprove.status, 200);
+
+      const checkRow = (await db.query<{ status: string; shift_id: string }>(
+        `select status, shift_id from payments where id = $1`,
+        [pendingId],
+      )).rows[0];
+      assert.equal(checkRow.status, "posted");
+      assert.equal(checkRow.shift_id, s1);
+
+      const curAfter = await withTx(async (sql) => shiftCurrent(sql, receptionistUser, reqCurrent));
+      assert.equal((curAfter.body as any).totals?.cash, cashBefore - 1000000);
+    });
+
+    it("A2-4: S1 closes -> receptionist opens S2 -> approve -> shift_id = S2; S1's figures unchanged", async () => {
+      await setupA2();
+      const s1 = (await db.query<{ id: string }>(
+        `insert into cashier_shifts (receptionist_id) values ($1) returning id`,
+        [receptionistUser.id],
+      )).rows[0].id;
+
+      const payId = await seedBasePayment(s1, 1500000);
+
+      const reqPending = new Request("http://localhost/v1/payments/" + payId + "/refund", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount_vnd: 1000000, reason: "Refund" }),
+      });
+      const resPending = await withTx(async (sql) => paymentsRefund(sql, payId, reqPending, receptionistUser));
+      const pendingId = (resPending.body as any).payment.id;
+
+      // Close S1
+      await db.query("update cashier_shifts set closed_at = now() where id = $1", [s1]);
+      const s1Totals = (await db.query<{ cash: number }>(
+        `select coalesce(sum(amount_vnd) filter (where method = 'cash' and status = 'posted'), 0)::int as cash from payments where shift_id = $1`,
+        [s1],
+      )).rows[0].cash;
+      assert.equal(s1Totals, 1500000);
+
+      // Receptionist opens S2
+      const s2 = (await db.query<{ id: string }>(
+        `insert into cashier_shifts (receptionist_id) values ($1) returning id`,
+        [receptionistUser.id],
+      )).rows[0].id;
+
+      // Seed some intake in S2
+      await seedBasePayment(s2, 2000000);
+
+      // Manager approves
+      const reqApprove = new Request("http://localhost/v1/payments/" + pendingId + "/approve-refund", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: "Approved in new shift" }),
+      });
+      const resApprove = await withTx(async (sql) => paymentsApproveRefund(sql, pendingId, reqApprove, managerUser));
+      assert.equal(resApprove.status, 200);
+
+      const checkRow = (await db.query<{ status: string; shift_id: string }>(
+        `select status, shift_id from payments where id = $1`,
+        [pendingId],
+      )).rows[0];
+      assert.equal(checkRow.status, "posted");
+      assert.equal(checkRow.shift_id, s2);
+
+      // S1 figures remain 1500000
+      const s1After = (await db.query<{ cash: number }>(
+        `select coalesce(sum(amount_vnd) filter (where method = 'cash' and status = 'posted'), 0)::int as cash from payments where shift_id = $1`,
+        [s1],
+      )).rows[0].cash;
+      assert.equal(s1After, 1500000);
+
+      // S2 cash dropped by 1000000 (2000000 - 1000000 = 1000000)
+      const s2Totals = (await db.query<{ cash: number }>(
+        `select coalesce(sum(amount_vnd) filter (where method = 'cash' and status = 'posted'), 0)::int as cash from payments where shift_id = $1`,
+        [s2],
+      )).rows[0].cash;
+      assert.equal(s2Totals, 1000000);
+    });
+
+    it("A2-5: S1 closes, no new shift -> approve refused; payment still refund_pending", async () => {
+      await setupA2();
+      const s1 = (await db.query<{ id: string }>(
+        `insert into cashier_shifts (receptionist_id) values ($1) returning id`,
+        [receptionistUser.id],
+      )).rows[0].id;
+
+      const payId = await seedBasePayment(s1, 1500000);
+
+      const reqPending = new Request("http://localhost/v1/payments/" + payId + "/refund", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount_vnd: 1000000, reason: "Refund" }),
+      });
+      const resPending = await withTx(async (sql) => paymentsRefund(sql, payId, reqPending, receptionistUser));
+      const pendingId = (resPending.body as any).payment.id;
+
+      // Close S1 and ensure no open shift
+      await db.query("update cashier_shifts set closed_at = now() where receptionist_id = $1", [receptionistUser.id]);
+
+      const reqApprove = new Request("http://localhost/v1/payments/" + pendingId + "/approve-refund", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: "Approved" }),
+      });
+
+      await assert.rejects(
+        () => withTx(async (sql) => paymentsApproveRefund(sql, pendingId, reqApprove, managerUser)),
+        (e: any) => e.code === "CONFLICT_STATE",
+      );
+
+      const checkRow = (await db.query<{ status: string; shift_id: string }>(
+        `select status, shift_id from payments where id = $1`,
+        [pendingId],
+      )).rows[0];
+      assert.equal(checkRow.status, "refund_pending");
+      assert.equal(checkRow.shift_id, s1);
+    });
+
+    it("A2-6: reject (decideRefund approve=false) -> shift_id unchanged, status refund_rejected", async () => {
+      await setupA2();
+      const s1 = (await db.query<{ id: string }>(
+        `insert into cashier_shifts (receptionist_id) values ($1) returning id`,
+        [receptionistUser.id],
+      )).rows[0].id;
+
+      const payId = await seedBasePayment(s1, 1500000);
+
+      const reqPending = new Request("http://localhost/v1/payments/" + payId + "/refund", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount_vnd: 1000000, reason: "Refund" }),
+      });
+      const resPending = await withTx(async (sql) => paymentsRefund(sql, payId, reqPending, receptionistUser));
+      const pendingId = (resPending.body as any).payment.id;
+
+      // Close S1 - reject should still work even if S1 is closed!
+      await db.query("update cashier_shifts set closed_at = now() where receptionist_id = $1", [receptionistUser.id]);
+
+      const reqReject = new Request("http://localhost/v1/payments/" + pendingId + "/reject-refund", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: "Denied by manager" }),
+      });
+      const resReject = await withTx(async (sql) => paymentsRejectRefund(sql, pendingId, reqReject, managerUser));
+      assert.equal(resReject.status, 200);
+
+      const checkRow = (await db.query<{ status: string; shift_id: string }>(
+        `select status, shift_id from payments where id = $1`,
+        [pendingId],
+      )).rows[0];
+      assert.equal(checkRow.status, "refund_rejected");
+      assert.equal(checkRow.shift_id, s1);
+    });
+  });
+
+  describe("Task B: self-service user avatars", () => {
+    function makePng(width = 64, height = 64): Buffer {
+      const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      const ihdr = Buffer.alloc(25);
+      ihdr.writeUInt32BE(13, 0);
+      ihdr.write("IHDR", 4, 4, "ascii");
+      ihdr.writeUInt32BE(width, 8);
+      ihdr.writeUInt32BE(height, 12);
+      ihdr[16] = 8;
+      ihdr[17] = 6;
+      ihdr[18] = 0;
+      ihdr[19] = 0;
+      ihdr[20] = 0;
+      ihdr.writeUInt32BE(0, 21);
+      return Buffer.concat([sig, ihdr]);
+    }
+
+    function makeJpeg(width = 100, height = 100, withApp0 = true): Buffer {
+      const parts: Buffer[] = [];
+      if (withApp0) {
+        const app0 = Buffer.alloc(18);
+        app0[0] = 0xff;
+        app0[1] = 0xe0;
+        app0.writeUInt16BE(16, 2);
+        app0.write("JFIF\0", 4, "ascii");
+        parts.push(Buffer.from([0xff, 0xd8]), app0);
+      } else {
+        parts.push(Buffer.from([0xff, 0xd8]));
+      }
+      const sof0 = Buffer.alloc(19);
+      sof0[0] = 0xff;
+      sof0[1] = 0xc0;
+      sof0.writeUInt16BE(17, 2);
+      sof0[4] = 8;
+      sof0.writeUInt16BE(height, 5);
+      sof0.writeUInt16BE(width, 7);
+      parts.push(sof0);
+      return Buffer.concat(parts);
+    }
+
+    function makeWebpVP8X(width = 120, height = 90): Buffer {
+      const buf = Buffer.alloc(32);
+      buf.write("RIFF", 0, "ascii");
+      buf.writeUInt32LE(24, 4);
+      buf.write("WEBP", 8, "ascii");
+      buf.write("VP8X", 12, "ascii");
+      buf.writeUInt32LE(10, 16);
+      const w = width - 1;
+      buf[24] = w & 0xff;
+      buf[25] = (w >> 8) & 0xff;
+      buf[26] = (w >> 16) & 0xff;
+      const h = height - 1;
+      buf[27] = h & 0xff;
+      buf[28] = (h >> 8) & 0xff;
+      buf[29] = (h >> 16) & 0xff;
+      return buf;
+    }
+
+    it("sniffAvatar: covers PNG, JPEG with APP0, WebP VP8X, truncated, and empty buffer", () => {
+      const png = sniffAvatar(makePng(64, 64));
+      assert.deepEqual(png, { mime: "image/png", width: 64, height: 64 });
+
+      const jpeg = sniffAvatar(makeJpeg(100, 80, true));
+      assert.deepEqual(jpeg, { mime: "image/jpeg", width: 100, height: 80 });
+
+      const webp = sniffAvatar(makeWebpVP8X(120, 90));
+      assert.deepEqual(webp, { mime: "image/webp", width: 120, height: 90 });
+
+      assert.equal(sniffAvatar(Buffer.from([0x89, 0x50, 0x4e])), null);
+      assert.equal(sniffAvatar(Buffer.alloc(0)), null);
+    });
+
+    const memberA = { id: "00000000-0000-0000-0000-b00000000001", role: "member", full_name: "Member A", phone: "+84999999081" } as any;
+    const memberB = { id: "00000000-0000-0000-0000-b00000000002", role: "member", full_name: "Member B", phone: "+84999999082" } as any;
+    const staffCoach = { id: "00000000-0000-0000-0000-b00000000003", role: "coach", full_name: "Coach B", phone: "+84999999083" } as any;
+
+    async function setupTaskB() {
+      await db.query("delete from user_avatars where user_id in ($1, $2, $3)", [memberA.id, memberB.id, staffCoach.id]);
+      await db.query("delete from conversations where id = '00000000-0000-0000-0000-b00000000099'");
+      await db.query("delete from users where id in ($1, $2, $3) or phone in ('+84999999081', '+84999999082', '+84999999083')", [memberA.id, memberB.id, staffCoach.id]);
+      await db.query(
+        `insert into users (id, phone, full_name, name_normalized, role, password_hash)
+         values ($1, $2, $3, 'member a', 'member', 'hash'),
+                ($4, $5, $6, 'member b', 'member', 'hash'),
+                ($7, $8, $9, 'coach b', 'coach', 'hash')`,
+        [memberA.id, memberA.phone, memberA.full_name, memberB.id, memberB.phone, memberB.full_name, staffCoach.id, staffCoach.phone, staffCoach.full_name],
+      );
+    }
+
+    it("B-1: member PUTs a valid 64x64 PNG -> 200, avatar_url ends in ?v=1, audit row created with no bytes", async () => {
+      await setupTaskB();
+      const req = new Request("http://localhost/v1/me/avatar", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data_base64: makePng(64, 64).toString("base64") }),
+      });
+      const res = await withTx(async (sql) => meAvatarPut(sql, req, memberA));
+      assert.equal(res.status, 200);
+      const user = (res.body as any).user;
+      assert.match(user.avatar_url, /\/v1\/users\/00000000-0000-0000-0000-b00000000001\/avatar\?v=1$/);
+
+      const audits = (await db.query<{ action: string; after: string }>(
+        `select action, after from audit_logs where action = 'avatar_set' and actor_id = $1`,
+        [memberA.id],
+      )).rows;
+      assert.equal(audits.length, 1);
+      const after = typeof audits[0].after === "string" ? JSON.parse(audits[0].after) : audits[0].after;
+      assert.equal(after.mime, "image/png");
+      assert.equal(after.width, 64);
+      assert.equal(after.height, 64);
+      assert.equal(after.bytes > 0, true);
+      assert.equal(after.data, undefined);
+    });
+
+    it("B-2: PUT again -> ?v=2", async () => {
+      const req = new Request("http://localhost/v1/me/avatar", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data_base64: makePng(128, 128).toString("base64") }),
+      });
+      const res = await withTx(async (sql) => meAvatarPut(sql, req, memberA));
+      assert.equal(res.status, 200);
+      const user = (res.body as any).user;
+      assert.match(user.avatar_url, /\?v=2$/);
+    });
+
+    it("B-3: 2 MB + 1 byte -> field error file", async () => {
+      const bigBuf = Buffer.alloc(2 * 1024 * 1024 + 1);
+      const req = new Request("http://localhost/v1/me/avatar", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data_base64: bigBuf.toString("base64") }),
+      });
+      await assert.rejects(
+        () => withTx(async (sql) => meAvatarPut(sql, req, memberA)),
+        (err: any) => {
+          assert.equal(err.status, 400);
+          assert.equal(err.extra?.field, "file");
+          assert.match(err.message, /2 MB/);
+          return true;
+        },
+      );
+    });
+
+    it("B-4: SVG (<svg ...>), a renamed .exe (MZ...), random bytes -> field error file", async () => {
+      for (const raw of ["<svg width='100' height='100'></svg>", "MZ9999renamedexe", "randombytes12345678901234567890"]) {
+        const req = new Request("http://localhost/v1/me/avatar", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ data_base64: Buffer.from(raw).toString("base64") }),
+        });
+        await assert.rejects(
+          () => withTx(async (sql) => meAvatarPut(sql, req, memberA)),
+          (err: any) => {
+            assert.equal(err.status, 400);
+            assert.equal(err.extra?.field, "file");
+            return true;
+          },
+        );
+      }
+    });
+
+    it("B-5: 32x32 PNG; PNG with IHDR 5000x10 -> field error file", async () => {
+      for (const [w, h] of [[32, 32], [5000, 10]]) {
+        const req = new Request("http://localhost/v1/me/avatar", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ data_base64: makePng(w, h).toString("base64") }),
+        });
+        await assert.rejects(
+          () => withTx(async (sql) => meAvatarPut(sql, req, memberA)),
+          (err: any) => {
+            assert.equal(err.status, 400);
+            assert.equal(err.extra?.field, "file");
+            assert.match(err.message, /between 64 and 4096 pixels/);
+            return true;
+          },
+        );
+      }
+    });
+
+    it("B-6: GET own avatar -> 200, correct Content-Type, Cache-Control contains private, X-Content-Type-Options: nosniff", async () => {
+      const res = await withTx(async (sql) => userAvatarGet(sql, memberA.id, memberA));
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("content-type"), "image/png");
+      assert.equal(res.headers.get("cache-control")?.includes("private"), true);
+      assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+      assert.equal(res.headers.get("etag"), '"2"');
+    });
+
+    it("B-7: GET without a token -> 401", async () => {
+      await assert.rejects(
+        () => withTx(async (sql) => userAvatarGet(sql, memberA.id, null)),
+        (err: any) => {
+          assert.equal(err.status, 401);
+          return true;
+        },
+      );
+    });
+
+    it("B-8: member A GETs member B (no conversation) -> 404", async () => {
+      await assert.rejects(
+        () => withTx(async (sql) => userAvatarGet(sql, memberB.id, memberA)),
+        (err: any) => {
+          assert.equal(err.status, 404);
+          return true;
+        },
+      );
+    });
+
+    it("B-9: member A GETs a staff member A has a conversation with; staff GETs a member -> 200", async () => {
+      // Upload avatar for staffCoach
+      const reqCoach = new Request("http://localhost/v1/me/avatar", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data_base64: makePng(64, 64).toString("base64") }),
+      });
+      await withTx(async (sql) => meAvatarPut(sql, reqCoach, staffCoach));
+
+      // Create conversation
+      await db.query(
+        `insert into conversations (id, member_id, staff_id) values ('00000000-0000-0000-0000-b00000000099', $1, $2)`,
+        [memberA.id, staffCoach.id],
+      );
+
+      // member A GETs staffCoach
+      const res1 = await withTx(async (sql) => userAvatarGet(sql, staffCoach.id, memberA));
+      assert.equal(res1.status, 200);
+
+      // staffCoach GETs member A
+      const res2 = await withTx(async (sql) => userAvatarGet(sql, memberA.id, staffCoach));
+      assert.equal(res2.status, 200);
+    });
+
+    it("B-10: DELETE -> avatar_url = null; GET -> 404; DELETE again -> still 200", async () => {
+      const resDel = await withTx(async (sql) => meAvatarDelete(sql, memberA));
+      assert.equal(resDel.status, 200);
+      assert.equal((resDel.body as any).user.avatar_url, null);
+
+      await assert.rejects(
+        () => withTx(async (sql) => userAvatarGet(sql, memberA.id, memberA)),
+        (err: any) => {
+          assert.equal(err.status, 404);
+          return true;
+        },
+      );
+
+      const resDelAgain = await withTx(async (sql) => meAvatarDelete(sql, memberA));
+      assert.equal(resDelAgain.status, 200);
+    });
+
+    it("B-11: GET /me after an upload -> user.avatar_url present through authFromRequest", async () => {
+      const req = new Request("http://localhost/v1/me/avatar", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data_base64: makePng(64, 64).toString("base64") }),
+      });
+      await withTx(async (sql) => meAvatarPut(sql, req, memberA));
+
+      const sess = await withTx(async (sql) => issueSession(sql, memberA));
+      const reqMe = new Request("http://localhost/v1/me", {
+        headers: { authorization: `Bearer ${sess.token}` },
+      });
+      const meUser = await withTx(async (sql) => authFromRequest(sql, reqMe));
+      assert.match(meUser.avatar_url ?? "", /\/v1\/users\/00000000-0000-0000-0000-b00000000001\/avatar\?v=\d+$/);
+    });
+
+    it("B-12: user is deleted -> the user_avatars row is gone (cascade)", async () => {
+      const tempUser = { id: "00000000-0000-0000-0000-b00000000089", role: "member", full_name: "Temp", phone: "+84999999089" } as any;
+      await db.query(
+        `insert into users (id, phone, full_name, name_normalized, role, password_hash)
+         values ($1, $2, $3, 'temp', 'member', 'hash')`,
+        [tempUser.id, tempUser.phone, tempUser.full_name],
+      );
+      const req = new Request("http://localhost/v1/me/avatar", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data_base64: makePng(64, 64).toString("base64") }),
+      });
+      await withTx(async (sql) => meAvatarPut(sql, req, tempUser));
+
+      const beforeCount = (await db.query<{ count: number }>(
+        `select count(*)::int as count from user_avatars where user_id = $1`,
+        [tempUser.id],
+      )).rows[0].count;
+      assert.equal(beforeCount, 1);
+
+      await db.query("delete from users where id = $1", [tempUser.id]);
+
+      const afterCount = (await db.query<{ count: number }>(
+        `select count(*)::int as count from user_avatars where user_id = $1`,
+        [tempUser.id],
+      )).rows[0].count;
+      assert.equal(afterCount, 0);
+    });
+  });

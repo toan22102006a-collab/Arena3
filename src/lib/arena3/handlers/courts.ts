@@ -4,7 +4,6 @@ import { audit, num, readJson, str } from "../helpers";
 import { one } from "../tx";
 import { requireRole, type PublicUser } from "../session";
 
-const VALID_SPORTS = ["badminton", "basketball", "volleyball"] as const;
 const COURT_CODE_RE = /^[A-Z]{2}-\d{2,3}$/;
 
 export async function managerCourtsList(sql: Sql, user: PublicUser) {
@@ -50,15 +49,24 @@ export async function managerCourtCreate(sql: Sql, request: Request, user: Publi
   const b = await readJson(request);
 
   const sport = str(b.sport);
-  if (!sport || !(VALID_SPORTS as readonly string[]).includes(sport)) {
-    throw err.field("sport", "Sport must be badminton, basketball, or volleyball.");
+  if (!sport) {
+    throw err.field("sport", "Sport is required.");
+  }
+
+  const spRow = await one<{ court_prefix: string | null; enabled: boolean; retired_at: string | null }>(
+    sql,
+    `select court_prefix, enabled, retired_at from sports where code = $1 and not is_scope_all`,
+    [sport],
+  );
+  if (!spRow || !spRow.enabled || spRow.retired_at) {
+    throw err.field("sport", "Invalid or retired sport.");
   }
 
   let courtCode = str(b.court_code)?.trim().toUpperCase();
 
   if (!courtCode) {
     // Auto-generate code based on sport prefix and lowest unused number
-    const prefix = sport === "badminton" ? "CL-" : sport === "basketball" ? "BR-" : "BC-";
+    const prefix = spRow.court_prefix ? `${spRow.court_prefix}-` : "CT-";
     const existing = await sql.query<{ court_code: string }>(
       `select court_code from courts where court_code like $1`,
       [`${prefix}%`],
@@ -161,13 +169,13 @@ export async function managerCourtRetire(
       sql,
       `select count(*)::int as cnt
          from subscriptions s
-         join plans p on p.id = s.plan_id
-        where s.status = 'active' and (p.sport_scope = $1 or p.sport_scope = 'all')`,
+         join membership_plans p on p.id = s.plan_id
+        where s.status = 'active' and (p.sport_scope = $1 or (p.sport_scope = 'all' and $1 in (select code from sports where enabled = true and not is_scope_all and retired_at is null)))`,
       [cur.sport],
     );
     const activeClasses = await one<{ cnt: number }>(
       sql,
-      `select count(*)::int as cnt from classes where sport = $1 and status = 'published'`,
+      `select count(*)::int as cnt from classes where sport = $1 and status = 'open'`,
       [cur.sport],
     );
 

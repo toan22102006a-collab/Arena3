@@ -128,7 +128,7 @@ function Page() {
               <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={340} strength={isActive ? 0.22 : 0.11}>
               <Card interactive className={cn("relative z-[2] flex h-full flex-col overflow-hidden p-0", isActive && "border-accent/40 shadow-[var(--shadow-accent-lg)]")}>
                 <GlareHover>
-                  <Cover slot={sportPhoto(p.sport_scope)} alt="" scrim="none" className="h-36">
+                  <Cover slot={p.sport_scope === "all" ? "plan.default" : sportPhoto(p.sport_scope)} alt="" scrim="none" className="h-36">
                     <MediaCaption className="flex items-end justify-between">
                       <SportBadge sport={p.sport_scope} className="bg-surface/90 text-fg backdrop-blur-xs" />
                       {isActive ? (

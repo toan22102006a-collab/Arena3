@@ -1,7 +1,7 @@
 import type { Sql } from "@/lib/db";
 import { err, isConflictSlot } from "../errors";
 import { audit, classSubscription, enqueue, getSettings, num, readJson, str } from "../helpers";
-import { classCode } from "../labels";
+import { classCode, parseWeeklyRrule } from "../labels";
 import { expandWeekly } from "../rrule";
 import { requireRole, type PublicUser } from "../session";
 import { addDays, classMinutes, ictDateString, ictDateTime, slotSpan } from "../time";
@@ -18,19 +18,46 @@ export async function classesList(sql: Sql, request: Request, user: PublicUser |
   const items = await sql.query(
     `select cl.id, cl.sport, cl.level, cl.capacity, cl.enrolled_count, cl.rrule, cl.duration_min,
             cl.start_on::text, cl.end_on::text, cl.status, cl.court_id, c.court_code,
-            cl.coach_id, u.full_name as coach_name
+            cl.coach_id, u.full_name as coach_name, made.at as created_at
        from classes cl
        join courts c on c.id = cl.court_id
        join users u on u.id = cl.coach_id
+       left join lateral (
+         select max(a.at) as at from audit_logs a
+          where a.action = 'create_class' and a.entity_id = cl.id
+       ) made on true
       where ($1 or cl.status = 'open')
         and ($2::text is null or cl.sport::text = $2)
-      order by cl.start_on, cl.level`,
+      order by case cl.status when 'open' then 0 when 'closed' then 1 when 'draft' then 2 else 3 end,
+               made.at desc nulls last, cl.start_on desc, cl.level`,
     [manager, sport],
   );
   return {
     status: 200,
     body: { items: items.map((c) => ({ ...c, code: classCode(String(c.sport), String(c.level), String(c.id)) })) },
   };
+}
+
+type ClassPattern = { rrule: string; duration_min: number; start_on: string; end_on: string };
+
+/** True when two weekly classes meet on at least one same date at overlapping hours. */
+export function classPatternsClash(a: ClassPattern, b: ClassPattern) {
+  const from = a.start_on > b.start_on ? a.start_on : b.start_on;
+  const to = a.end_on < b.end_on ? a.end_on : b.end_on;
+  if (from > to) return false;
+  const pa = parseWeeklyRrule(a.rrule);
+  const pb = parseWeeklyRrule(b.rrule);
+  const aStart = pa.hour * 60;
+  const bStart = pb.hour * 60;
+  if (!(aStart < bStart + b.duration_min && bStart < aStart + a.duration_min)) return false;
+  const codes = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+  // Only weekdays that really fall inside the shared date range count.
+  let day = from;
+  for (let i = 0; i < 7 && day <= to; i++, day = addDays(day, 1)) {
+    const code = codes[new Date(`${day}T00:00:00Z`).getUTCDay()]!;
+    if (pa.days.includes(code) && pb.days.includes(code)) return true;
+  }
+  return false;
 }
 
 export async function classesCreate(sql: Sql, request: Request, user: PublicUser) {
@@ -46,6 +73,9 @@ export async function classesCreate(sql: Sql, request: Request, user: PublicUser
   const capacity = num(b.capacity) ?? 12;
   if (capacity > MAX_CLASS_CAPACITY) {
     throw err.field("capacity", `Capacity cannot exceed ${MAX_CLASS_CAPACITY}.`);
+  }
+  if (!Number.isInteger(capacity) || capacity < 1) {
+    throw err.field("capacity", `Capacity must be a whole number from 1 to ${MAX_CLASS_CAPACITY}.`);
   }
   const duration_min = classMinutes(num(b.duration_min));
   if (duration_min == null) {
@@ -94,6 +124,24 @@ export async function classesCreate(sql: Sql, request: Request, user: PublicUser
   if (assistant_id) {
     const asst = await one<{ role: string }>(sql, `select role from users where id = $1`, [assistant_id]);
     if (!asst || asst.role !== "coach") throw err.field("assistant_id", "That assistant coach is not valid.");
+  }
+
+  // A class whose every date sits on another class's court or coach would publish
+  // with no sessions at all, so a clashing timetable is refused up front.
+  const people = [coach_id, assistant_id].filter(Boolean);
+  const rivals = await sql.query(
+    `select court_id, coach_id, assistant_id, rrule, duration_min, start_on::text, end_on::text
+       from classes
+      where status <> 'cancelled'
+        and start_on <= $3::date and end_on >= $2::date
+        and (court_id = $1 or coach_id = any($4::uuid[]) or assistant_id = any($4::uuid[]))`,
+    [court_id, start_on, end_on, people],
+  );
+  const mine = { rrule, duration_min, start_on, end_on };
+  for (const r of rivals as Array<ClassPattern & { court_id: string; coach_id: string; assistant_id: string | null }>) {
+    if (!classPatternsClash(mine, r)) continue;
+    if (r.court_id === court_id) throw err.conflict("Another class already uses this court on those days and hours.");
+    throw err.conflict("This coach already teaches another class on those days and hours.");
   }
 
   const row = await one(
@@ -249,6 +297,10 @@ export async function materializeClassSessions(
 export async function classesPublish(sql: Sql, id: string, user: PublicUser) {
   requireRole(user, ["manager"]);
   const result = await materializeClassSessions(sql, id, user.id);
+  if (!result.created.length && result.skipped.length) {
+    const any = await one(sql, `select 1 from sessions where class_id = $1 and status = 'scheduled' limit 1`, [id]);
+    if (!any) throw err.conflict("Every date of this class clashes with a court booking or the coach's other classes.");
+  }
   await sql.query(`update classes set status = 'open' where id = $1`, [id]);
   return { status: 200, body: { sessions: result.created, skipped: result.skipped } };
 }
@@ -289,6 +341,22 @@ export async function classesEnroll(sql: Sql, id: string, request: Request, user
     [userId, id],
   );
   if (overlap) throw err.br("BR-22", "This clashes with another class you are in.");
+  // Sessions are only laid out two weeks ahead, so the weekly timetables are compared too.
+  const target = await one<ClassPattern>(
+    sql,
+    `select rrule, duration_min, start_on::text, end_on::text from classes where id = $1`,
+    [id],
+  );
+  const others = await sql.query(
+    `select cl.rrule, cl.duration_min, cl.start_on::text, cl.end_on::text
+       from classes cl
+       join enrollments e on e.class_id = cl.id and e.user_id = $1 and e.status = 'confirmed'
+      where cl.id <> $2 and cl.status <> 'cancelled'`,
+    [userId, id],
+  );
+  if (target && (others as ClassPattern[]).some((o) => classPatternsClash(target, o))) {
+    throw err.br("BR-22", "This clashes with another class you are in.");
+  }
   const pendingOffers = await one<{ n: number }>(
     sql,
     `select count(*)::int as n

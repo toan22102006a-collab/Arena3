@@ -334,11 +334,125 @@ export const MEDIA_REGISTRY: MediaSlotDef[] = [
     slot: "coach.00000000-0000-0000-0000-000000000003",
     kind: "image",
     group: "coach",
-    labelEn: "Coach Minh Quan",
-    labelVi: "HLV Minh Quân",
+    labelEn: "Coach Đỗ Minh Quân",
+    labelVi: "HLV Đỗ Minh Quân",
     locationEn: "Coaches section & classes",
     locationVi: "Mục HLV & thông tin lớp học",
     aspect: "1:1",
+  },
+
+  // Brand & default slots
+  {
+    slot: "plan.default",
+    kind: "image",
+    group: "brand",
+    labelEn: "Default membership plan card",
+    labelVi: "Ảnh mặc định thẻ gói tập",
+    locationEn: "Plans & pricing cards",
+    locationVi: "Thẻ gói tập & bảng giá",
+    aspect: "16:9",
+  },
+  {
+    slot: "class.default",
+    kind: "image",
+    group: "brand",
+    labelEn: "Default class session image",
+    labelVi: "Ảnh mặc định lớp học",
+    locationEn: "Classes schedule & list",
+    locationVi: "Lịch và danh sách lớp học",
+    aspect: "16:9",
+  },
+  {
+    slot: "empty.default",
+    kind: "image",
+    group: "brand",
+    labelEn: "Default empty state graphic",
+    labelVi: "Ảnh mặc định trạng thái trống",
+    locationEn: "Empty states across app",
+    locationVi: "Màn hình trống trong ứng dụng",
+    aspect: "16:9",
+  },
+
+  // Landing gallery
+  {
+    slot: "landing.gallery.1",
+    kind: "image",
+    group: "landing",
+    labelEn: "Landing gallery 1",
+    labelVi: "Bộ sưu tập trang chủ 1",
+    locationEn: "Home Gallery section",
+    locationVi: "Mục bộ sưu tập trang chủ",
+    aspect: "16:9",
+  },
+  {
+    slot: "landing.gallery.2",
+    kind: "image",
+    group: "landing",
+    labelEn: "Landing gallery 2",
+    labelVi: "Bộ sưu tập trang chủ 2",
+    locationEn: "Home Gallery section",
+    locationVi: "Mục bộ sưu tập trang chủ",
+    aspect: "16:9",
+  },
+  {
+    slot: "landing.gallery.3",
+    kind: "image",
+    group: "landing",
+    labelEn: "Landing gallery 3",
+    labelVi: "Bộ sưu tập trang chủ 3",
+    locationEn: "Home Gallery section",
+    locationVi: "Mục bộ sưu tập trang chủ",
+    aspect: "16:9",
+  },
+  {
+    slot: "landing.gallery.4",
+    kind: "image",
+    group: "landing",
+    labelEn: "Landing gallery 4",
+    labelVi: "Bộ sưu tập trang chủ 4",
+    locationEn: "Home Gallery section",
+    locationVi: "Mục bộ sưu tập trang chủ",
+    aspect: "16:9",
+  },
+  {
+    slot: "landing.gallery.5",
+    kind: "image",
+    group: "landing",
+    labelEn: "Landing gallery 5",
+    labelVi: "Bộ sưu tập trang chủ 5",
+    locationEn: "Home Gallery section",
+    locationVi: "Mục bộ sưu tập trang chủ",
+    aspect: "16:9",
+  },
+  {
+    slot: "landing.gallery.6",
+    kind: "image",
+    group: "landing",
+    labelEn: "Landing gallery 6",
+    labelVi: "Bộ sưu tập trang chủ 6",
+    locationEn: "Home Gallery section",
+    locationVi: "Mục bộ sưu tập trang chủ",
+    aspect: "16:9",
+  },
+  {
+    slot: "landing.gallery.7",
+    kind: "image",
+    group: "landing",
+    labelEn: "Landing gallery 7",
+    labelVi: "Bộ sưu tập trang chủ 7",
+    locationEn: "Home Gallery section",
+    locationVi: "Mục bộ sưu tập trang chủ",
+    aspect: "16:9",
+  },
+  {
+    slot: "landing.gallery.8",
+    kind: "image",
+    group: "landing",
+    labelEn: "Landing gallery 8",
+    labelVi: "Bộ sưu tập trang chủ 8",
+    locationEn: "Home Gallery section",
+    locationVi: "Mục bộ sưu tập trang chủ",
+    aspect: "16:9",
   },
 ];
 
@@ -361,8 +475,7 @@ export function findSlotDef(slot: string): MediaSlotDef | undefined {
 }
 
 export function sportPhoto(sport: string): string {
-  if (sport === "basketball") return "sport.basketball";
-  if (sport === "volleyball") return "sport.volleyball";
-  if (sport === "all") return "sport.all";
-  return "sport.badminton";
+  const s = (sport || "").trim().toLowerCase();
+  return s ? `sport.${s}` : "sport.all";
 }
+

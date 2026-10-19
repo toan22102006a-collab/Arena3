@@ -12,6 +12,7 @@ import { sportLabel } from "@/lib/arena3/labels";
 import { t, tk, tServer, tData } from "@/lib/i18n";
 import { usePageState } from "@/lib/use-page-state";
 import { readError, useRead } from "@/lib/use-read";
+import { HighlightBadge, useLive } from "@/lib/use-live";
 
 export const Route = createFileRoute("/desk/gate")({ component: Page });
 
@@ -85,6 +86,9 @@ function Page() {
     `/desk/gate-checkins?limit=${gatePage.pageSize}&offset=${gatePage.offset}`,
     { keepPrevious: true },
   );
+  useLive("attendance", () => {
+    todayRead.reload();
+  });
   const today = todayRead.data?.items ?? null;
   const shiftRead = useRead<{ shift: { id: string; opened_at: string } | null; totals?: { cash: number } | null }>("/shifts/current?optional=1");
   const shift = shiftRead.data?.shift ? { shift: shiftRead.data.shift, totals: shiftRead.data.totals ?? undefined } : null;

@@ -1,9 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
   Check,
+  Copy,
   Edit3,
+  ExternalLink,
   FolderOpen,
   RotateCcw,
+  Search,
   Upload,
 } from "lucide-react";
 import { useRef, useState, type DragEvent } from "react";
@@ -11,6 +14,7 @@ import { toast } from "sonner";
 import { Shell } from "@/components/shell";
 import { PageHero } from "@/components/page-hero";
 import { StatStrip } from "@/components/stat-strip";
+import { useSports } from "@/components/sports-ui";
 import {
   Badge,
   Button,
@@ -54,12 +58,22 @@ export type ManagerAsset = {
   aspect: MediaAspectRatio;
 };
 
-type LibraryItem = {
+export type MediaLibraryItem = {
+  id: string;
   path: string;
-  name: string;
   kind: string;
-  width?: number;
-  height?: number;
+  category: string;
+  tags: string[];
+  width: number | null;
+  height: number | null;
+  alt_en: string;
+  alt_vi: string;
+  credit: string | null;
+  source_url: string | null;
+  license: string;
+  created_at: string;
+  url: string;
+  name: string;
 };
 
 function recDim(aspect: MediaAspectRatio): string {
@@ -140,6 +154,7 @@ async function compressImageToWebp(file: File): Promise<{ blob: Blob; width: num
 }
 
 function Page() {
+  const [activeTab, setActiveTab] = useState<"slots" | "library">("slots");
   const { data, error, reload } = useRead<{ items: ManagerAsset[] }>("/manager/site-assets");
   const [selectedGroup, setSelectedGroup] = useState<string>("all");
   const [uploadSlot, setUploadSlot] = useState<ManagerAsset | null>(null);
@@ -158,6 +173,7 @@ function Page() {
     { value: "banner", label: t("Inner banners") },
     { value: "sport", label: t("Sport covers") },
     { value: "coach", label: t("Coaches") },
+    { value: "brand", label: t("Brand & default") },
   ];
 
   const filteredItems = items.filter((it) => {
@@ -191,17 +207,32 @@ function Page() {
         className="mb-6"
       />
 
-      <StatStrip
-        stats={[
-          { label: tk("Total slots"), value: totalSlots },
-          { label: tk("Active slots"), value: enabledSlots },
-          { label: tk("Custom uploads"), value: customSlots },
-          { label: tk("Disabled slots"), value: disabledSlots },
-        ]}
-        className="mb-6"
-      />
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+        <Seg
+          value={activeTab}
+          onChange={(v) => setActiveTab(v as "slots" | "library")}
+          options={[
+            { value: "slots", label: t("Site slots") },
+            { value: "library", label: t("Media library") },
+          ]}
+        />
+      </div>
 
-      <div className="grid gap-6">
+      {activeTab === "library" ? (
+        <MediaLibraryExplorer />
+      ) : (
+        <>
+          <StatStrip
+            stats={[
+              { label: tk("Total slots"), value: totalSlots },
+              { label: tk("Active slots"), value: enabledSlots },
+              { label: tk("Custom uploads"), value: customSlots },
+              { label: tk("Disabled slots"), value: disabledSlots },
+            ]}
+            className="mb-6"
+          />
+
+          <div className="grid gap-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <Seg value={selectedGroup} onChange={setSelectedGroup} options={groups} />
         </div>
@@ -394,6 +425,8 @@ function Page() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Upload Dialog */}
       {uploadSlot && (
@@ -615,18 +648,38 @@ function LibraryDialog({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const { data, error, reload } = useRead<{ items: LibraryItem[] }>("/manager/site-assets/library");
-  const [selectedPath, setSelectedPath] = useState<string>("");
+  const [category, setCategory] = useState<string>("all");
+  const [search, setSearch] = useState<string>("");
+  const query = new URLSearchParams();
+  if (category !== "all") query.set("category", category);
+  if (search.trim()) query.set("search", search.trim());
+  const qs = query.toString();
+  const endpoint = `/manager/media-library${qs ? `?${qs}` : ""}`;
+  const { data, error, reload } = useRead<{ items: MediaLibraryItem[] }>(endpoint);
+  const [selectedItem, setSelectedItem] = useState<MediaLibraryItem | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const { sports } = useSports();
+  const categories = [
+    { value: "all", label: t("All categories") },
+    ...sports.map((s) => ({ value: s.code, label: s.name })),
+    { value: "other-sports", label: t("Other sports") },
+    { value: "facility", label: t("Facility") },
+    { value: "coach", label: t("Coach") },
+    { value: "class", label: t("Class") },
+    { value: "equipment", label: t("Equipment") },
+    { value: "event", label: t("Event") },
+    { value: "uploaded", label: t("Uploaded") },
+    { value: "legacy", label: t("Legacy") },
+  ];
+
   async function handleSelect() {
-    if (!selectedPath) return;
+    if (!selectedItem) return;
     setBusy(true);
     try {
-      const formData = new FormData();
-      formData.append("slot", asset.slot);
-      formData.append("media_path", selectedPath);
-      await apiPost("/manager/site-assets/upload", formData);
+      await apiPatch(`/manager/site-assets/${encodeURIComponent(asset.slot)}`, {
+        library_id: selectedItem.id,
+      });
       toast.success(t("Asset updated"));
       onSuccess();
     } catch (e) {
@@ -641,45 +694,88 @@ function LibraryDialog({
   return (
     <Modal open onClose={onClose} title={t("Select image from library")}>
       <div className="grid gap-4">
+        {/* Category Pills & Search */}
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-1">
+            {categories.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => setCategory(c.value)}
+                className={`rounded-full px-2.5 py-0.5 text-2xs font-medium transition-colors ${
+                  category === c.value
+                    ? "bg-accent text-accent-fg"
+                    : "bg-wood/60 text-muted hover:bg-wood hover:text-fg"
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("Search by keyword or tag...")}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+        </div>
+
         {error ? (
           <LoadError message={error.message} onRetry={reload} />
         ) : !data ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <Skeleton key={i} className="h-28 rounded-[var(--radius-md)]" />
+              <Skeleton key={i} className="h-32 rounded-[var(--radius-md)]" />
             ))}
           </div>
         ) : items.length === 0 ? (
-          <EmptyState title={t("No assets found")} hint="" />
+          <EmptyState
+            title={t("No media items match the selected filter.")}
+            hint=""
+          />
         ) : (
-          <div className="max-h-96 overflow-y-auto">
+          <div className="max-h-96 overflow-y-auto pr-1">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {items.map((item) => {
-                const isSelected = selectedPath === item.path;
+                const isSelected = selectedItem?.id === item.id;
+                const isCoach = item.category === "coach";
+                const aspectStyle = isCoach ? "aspect-[4/5]" : "aspect-video";
                 return (
                   <button
-                    key={item.path}
+                    key={item.id}
                     type="button"
-                    onClick={() => setSelectedPath(item.path)}
-                    className={`relative flex flex-col overflow-hidden rounded-[var(--radius-md)] border text-left transition-all ${
+                    onClick={() => setSelectedItem(item)}
+                    className={`group relative flex flex-col overflow-hidden rounded-[var(--radius-md)] border text-left transition-all ${
                       isSelected
                         ? "border-accent ring-2 ring-accent"
                         : "border-line hover:border-line-strong"
                     }`}
                   >
-                    <div className="aspect-video w-full bg-wood">
+                    <div className={`relative w-full bg-wood ${aspectStyle}`}>
                       <img
-                        src={item.path}
+                        src={item.url}
                         alt={item.name}
                         className="h-full w-full object-cover"
                         loading="lazy"
                       />
+                      <Badge
+                        tone="muted"
+                        className="absolute bottom-1 left-1 bg-black/60 text-3xs text-white uppercase"
+                      >
+                        {item.license}
+                      </Badge>
                     </div>
                     <div className="p-2 text-2xs">
-                      <p className="truncate font-medium">{item.name}</p>
+                      <p className="truncate font-medium text-fg">{item.name}</p>
+                      <p className="mt-0.5 truncate text-muted">
+                        {item.width && item.height ? `${item.width}×${item.height}` : item.category}
+                      </p>
                     </div>
                     {isSelected && (
-                      <div className="absolute right-1.5 top-1.5 rounded-full bg-accent p-1 text-accent-fg">
+                      <div className="absolute right-1.5 top-1.5 rounded-full bg-accent p-1 text-accent-fg shadow">
                         <Check className="size-3" />
                       </div>
                     )}
@@ -690,12 +786,19 @@ function LibraryDialog({
           </div>
         )}
 
+        {selectedItem && (
+          <div className="flex items-center justify-between rounded-[var(--radius-sm)] bg-wood/60 px-3 py-2 text-2xs">
+            <span className="truncate font-medium">{selectedItem.name}</span>
+            <span className="text-muted font-mono">{selectedItem.license}</span>
+          </div>
+        )}
+
         <div className="flex justify-end gap-2 border-t border-line pt-4">
           <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
             {t("Cancel")}
           </Button>
-          <Button size="sm" onClick={handleSelect} disabled={!selectedPath || busy}>
-            {busy ? t("Uploading…") : t("Save")}
+          <Button size="sm" onClick={handleSelect} disabled={!selectedItem || busy}>
+            {busy ? t("Uploading…") : t("Save selection")}
           </Button>
         </div>
       </div>
@@ -801,3 +904,190 @@ function ConfirmDialog({
     </Modal>
   );
 }
+
+function MediaLibraryExplorer() {
+  const [category, setCategory] = useState<string>("all");
+  const [search, setSearch] = useState<string>("");
+  const query = new URLSearchParams();
+  if (category !== "all") query.set("category", category);
+  if (search.trim()) query.set("search", search.trim());
+  const qs = query.toString();
+  const endpoint = `/manager/media-library${qs ? `?${qs}` : ""}`;
+  const { data, error, reload } = useRead<{ items: MediaLibraryItem[] }>(endpoint);
+  const isVi = locale() === "vi";
+
+  const items = data?.items ?? [];
+
+  const { sports } = useSports();
+  const categories = [
+    { value: "all", label: t("All categories") },
+    ...sports.map((s) => ({ value: s.code, label: s.name })),
+    { value: "other-sports", label: t("Other sports") },
+    { value: "facility", label: t("Facility") },
+    { value: "coach", label: t("Coach") },
+    { value: "class", label: t("Class") },
+    { value: "equipment", label: t("Equipment") },
+    { value: "event", label: t("Event") },
+    { value: "uploaded", label: t("Uploaded") },
+    { value: "legacy", label: t("Legacy") },
+  ];
+
+  const totalCount = items.length;
+  const licensedCount = items.filter((i) => i.license !== "project").length;
+  const uploadedCount = items.filter((i) => i.category === "uploaded").length;
+  const categoriesCount = new Set(items.map((i) => i.category)).size;
+
+  function handleCopy(path: string) {
+    const fullRelPath = path.startsWith("/media/") ? path : `/media/${path.replace(/^\//, "")}`;
+    void navigator.clipboard.writeText(fullRelPath);
+    toast.success(t("Path copied to clipboard"));
+  }
+
+  return (
+    <div className="grid gap-6">
+      <StatStrip
+        stats={[
+          { label: tk("Total library assets"), value: totalCount },
+          { label: tk("Curated categories"), value: categoriesCount },
+          { label: tk("Licensed / CC"), value: licensedCount },
+          { label: tk("Uploaded media"), value: uploadedCount },
+        ]}
+        className="mb-2"
+      />
+
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {categories.map((c) => {
+            const isSelected = category === c.value;
+            return (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => setCategory(c.value)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  isSelected
+                    ? "bg-accent text-accent-fg"
+                    : "bg-wood/60 text-muted hover:bg-wood hover:text-fg"
+                }`}
+              >
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t("Search library...")}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      {error ? (
+        <LoadError message={error.message} onRetry={reload} />
+      ) : !data ? (
+        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <Skeleton key={i} className="h-64 rounded-[var(--radius-lg)]" />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <EmptyState
+          title={t("No media items match the selected filter.")}
+          hint={t("Browse and manage all curated photography and uploaded assets.")}
+          action={
+            category !== "all" || search ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCategory("all");
+                  setSearch("");
+                }}
+              >
+                {t("Show all")}
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          {items.map((item) => {
+            const isCoach = item.category === "coach";
+            const aspectStyle = isCoach ? "aspect-[4/5]" : "aspect-video";
+
+            return (
+              <Card key={item.id} className="flex flex-col overflow-hidden p-0">
+                <div className={`relative overflow-hidden bg-wood ${aspectStyle}`}>
+                  <img
+                    src={item.url}
+                    alt={isVi ? item.alt_vi || item.alt_en : item.alt_en || item.alt_vi}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  <div className="absolute left-2.5 top-2.5 flex flex-wrap gap-1">
+                    <Badge tone="muted" className="text-2xs capitalize">
+                      {item.category}
+                    </Badge>
+                    <Badge tone="accent" className="font-mono text-2xs uppercase">
+                      {item.license}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="flex flex-1 flex-col p-3.5 text-xs">
+                  <div className="mb-2">
+                    <p className="truncate font-semibold text-fg" title={item.name}>
+                      {item.name}
+                    </p>
+                    <div className="mt-1 flex items-center justify-between text-2xs text-muted">
+                      <span>
+                        {item.width && item.height ? `${item.width} × ${item.height}` : "–"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(item.path)}
+                        className="inline-flex items-center gap-1 font-mono text-accent hover:underline"
+                        title={t("Copy path")}
+                      >
+                        <Copy className="size-3" />
+                        <span>{t("Copy path")}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="mb-2 line-clamp-2 text-2xs text-muted">
+                    {isVi ? item.alt_vi : item.alt_en}
+                  </p>
+
+                  <div className="mt-auto border-t border-line/60 pt-2 text-2xs text-muted">
+                    {item.credit && (
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="truncate">{item.credit}</span>
+                        {item.source_url && (
+                          <a
+                            href={item.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center text-accent hover:underline"
+                            title={t("Source")}
+                          >
+                            <ExternalLink className="size-3" />
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+

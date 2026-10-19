@@ -9,7 +9,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { SiteAssetsProvider, type PublicSiteAsset } from "@/components/media";
 import appCss from "../styles.css?url";
 
-const APP_NAME = "Arena3";
+const APP_NAME = "Lê Long Sport";
 
 export const getRootAssets = createServerFn({ method: "GET" }).handler(async () => {
   try {
@@ -84,7 +84,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Arena3: book badminton, basketball and volleyball courts, coached classes and memberships at an indoor sports centre in Ho Chi Minh City.",
+          "Lê Long Sport: book badminton, basketball and volleyball courts, coached classes and memberships at an indoor sports centre in Ho Chi Minh City.",
       },
     ],
     links: [

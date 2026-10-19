@@ -4,32 +4,46 @@ import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { ArenaMark } from "@/components/mark";
 import { Cover } from "@/components/media";
-import { Button, Card, Check, DateField, Field, Input } from "@/components/ui";
+import { Button, Card, Check, DateField, Field, Input, Modal } from "@/components/ui";
 import { AnimatePresence, motion } from "motion/react";
 import { Reveal } from "@/components/motion";
 import { GLBackground, Magnet, SplitText, SpotlightCard } from "@/components/fx";
 import { ApiClientError, apiPost, homeFor, setSession, type SessionUser } from "@/lib/arena3/client";
 import { LangSwitch } from "@/components/lang-switch";
 import { t, tServer } from "@/lib/i18n";
+import { LegalBody } from "@/components/legal-page";
+import { PRIVACY, TERMS } from "@/lib/legal";
 
 export const Route = createFileRoute("/register")({ component: Register });
 
 /**
- * The consent sentence with its two documents linked (R-1). They open in a new tab: following a
- * link must not throw away a half-filled form. A link inside the label does not tick the box.
+ * The consent sentence with its two documents linked (R-1).
+ * Clicking a link opens the document in an in-place modal so any half-filled form state
+ * is preserved. Ctrl/Cmd+click still opens in a new tab for direct access / SEO.
+ * A click inside the label does not tick the consent box.
  */
-function ConsentLabel() {
+function ConsentLabel({ onOpen }: { onOpen: (which: "terms" | "privacy") => void }) {
   const [before, rest] = t("I agree to the {terms} and the {policy}, under Decree 13/2023 on personal data protection.").split("{terms}");
   const [middle, after] = (rest ?? "").split("{policy}");
   const link = "font-medium text-accent-2 underline underline-offset-2";
+
+  const makeHandler = (which: "terms" | "privacy") => (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    onOpen(which);
+  };
+
   return (
     <span>
       {before}
-      <a href="/terms" target="_blank" rel="noopener" className={link}>
+      <a href="/terms" target="_blank" rel="noopener" onClick={makeHandler("terms")} className={link}>
         {t("terms of use")}
       </a>
       {middle}
-      <a href="/privacy" target="_blank" rel="noopener" className={link}>
+      <a href="/privacy" target="_blank" rel="noopener" onClick={makeHandler("privacy")} className={link}>
         {t("personal data notice")}
       </a>
       {after}
@@ -56,6 +70,7 @@ function Register() {
   const [otp, setOtp] = useState("");
   const [shown, setShown] = useState("");
   const [busy, setBusy] = useState(false);
+  const [legalDoc, setLegalDoc] = useState<"terms" | "privacy" | null>(null);
   // Nothing about the password is pre-filled. It used to arrive holding the
   // demo password, which is printed in the README and was printed on the sign-in
   // page — so every real member who registered and pressed straight on ended up
@@ -155,12 +170,12 @@ function Register() {
           <div className="relative flex h-full min-h-dvh flex-col justify-between p-10">
             <Link to="/" className="inline-flex items-center gap-2 self-start rounded-full bg-pass/90 px-3 py-1.5 text-pass-fg">
               <ArenaMark className="size-8" />
-              <span className="font-display text-2xl">Arena3</span>
+              <span className="font-display text-2xl">Lê Long Sport</span>
             </Link>
             <div className="max-w-sm rounded-[var(--radius-xl)] bg-pass/92 p-6 text-pass-fg">
               <SplitText
                 as="p"
-                text={t("A live plan is your key to the courts and the classes.")}
+                text={t("An active plan lets you book courts and join classes.")}
                 splitBy="words"
                 stagger={0.05}
                 delay={0.2}
@@ -179,7 +194,7 @@ function Register() {
         <Card className="relative z-[2] w-full p-6">
           <div className="flex items-center gap-2">
             <ArenaMark className="size-7" />
-            <p className="text-2xs text-muted">Arena3</p>
+            <p className="text-2xs text-muted">Lê Long Sport</p>
           </div>
           <h1 className="mt-3 font-display text-3xl">{t("Create an account")}</h1>
           <AnimatePresence mode="wait">
@@ -290,7 +305,7 @@ function Register() {
                 className="text-muted"
                 checked={form.pii_consent}
                 onChange={(e) => setForm({ ...form, pii_consent: e.target.checked })}
-                label={<ConsentLabel />}
+                label={<ConsentLabel onOpen={(which) => setLegalDoc(which)} />}
               />
               {error ? (
                 <p id="register-error" role="alert" className="text-sm text-danger">
@@ -367,6 +382,42 @@ function Register() {
         </SpotlightCard>
         </Reveal>
       </div>
+
+      <Modal
+        open={legalDoc !== null}
+        onClose={() => setLegalDoc(null)}
+        title={legalDoc === "privacy" ? t("Personal data notice") : t("Terms of use")}
+        footer={
+          <div className="flex w-full flex-wrap items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setLegalDoc((prev) => (prev === "terms" ? "privacy" : "terms"))}
+            >
+              {legalDoc === "terms" ? t("Personal data notice") : t("Terms of use")}
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setLegalDoc(null)}>
+                {t("Close")}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setForm((f) => ({ ...f, pii_consent: true }));
+                  setLegalDoc(null);
+                }}
+              >
+                {t("I agree")}
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        {legalDoc ? <LegalBody doc={legalDoc === "privacy" ? PRIVACY : TERMS} /> : null}
+      </Modal>
     </main>
   );
 }

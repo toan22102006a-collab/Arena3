@@ -7,11 +7,13 @@ import { limit, RULES } from "../ratelimit";
 import {
   findUserByLogin,
   issueSession,
+  loadUser,
   toPublic,
   type PublicUser,
 } from "../session";
 import { KeepWrites, one } from "../tx";
 import { pageParams } from "../validate";
+import { getActiveSportCodes } from "./sports";
 
 /**
  * Whether the OTP may be handed straight back to whoever asked for it.
@@ -54,17 +56,6 @@ async function deliverOtp(email: string | null | undefined, otp: string): Promis
   const [name, domain] = email.split("@");
   const masked = name && domain ? `${name.slice(0, 2)}${"*".repeat(Math.max(1, name.length - 2))}@${domain}` : null;
   return { sentTo: masked };
-}
-
-async function loadUser(sql: Sql, id: string) {
-  const u = await one<Record<string, unknown>>(
-    sql,
-    `select id, member_code, full_name, phone, email, role, status, date_of_birth, health_notes, must_change_password
-       from users where id = $1`,
-    [id],
-  );
-  if (!u) throw err.notFound();
-  return toPublic(u);
 }
 
 export async function register(sql: Sql, request: Request) {
@@ -361,11 +352,12 @@ export async function meGet(sql: Sql, user: PublicUser) {
   ]);
   // What enrolling in each sport would take (BR-19, BR-20), from the plan enrolment itself picks
   // (classSubscription), so a class card can say so before the tap instead of after.
+  const activeSportCodes = await getActiveSportCodes(sql);
   const classAccess =
     user.role === "member"
       ? Object.fromEntries(
           await Promise.all(
-            (["badminton", "basketball", "volleyball"] as const).map(async (sport) => {
+            activeSportCodes.map(async (sport) => {
               const sub = await classSubscription(sql, user.id, sport);
               return [sport, sub ? { covered: true, session_left: sub.session_left } : { covered: false, session_left: null }];
             }),

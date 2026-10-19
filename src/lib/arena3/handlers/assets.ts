@@ -184,6 +184,16 @@ export async function managerAssetsList(sql: Sql, user: PublicUser | null) {
   if (!user) throw err.unauth();
   requireRole(user, ["manager"]);
 
+  // Coaches made before staff.ts started creating their avatar slot have none, so the
+  // manager could not find them here. Give every coach a slot before listing.
+  await sql.query(
+    `insert into site_assets (slot, kind, alt_en, alt_vi, enabled, version)
+     select 'coach.' || u.id::text, 'image', 'Photo of coach ' || u.full_name, 'Ảnh HLV ' || u.full_name, true, 1
+       from users u
+      where u.role = 'coach'
+     on conflict (slot) do nothing`,
+  );
+
   const rows = await sql.query<{
     slot: string;
     kind: "image" | "video";
@@ -200,14 +210,17 @@ export async function managerAssetsList(sql: Sql, user: PublicUser | null) {
     updated_at: string;
     updated_by_name: string | null;
     history_count: number;
+    coach_name: string | null;
   }>(
     `select a.slot, a.kind, a.src_path, a.default_path, a.mime,
             a.bytes is not null as has_bytes,
             a.width, a.height, a.alt_en, a.alt_vi, a.enabled, a.version,
             a.updated_at, u.full_name as updated_by_name,
-            coalesce(h.cnt, 0) as history_count
+            coalesce(h.cnt, 0) as history_count,
+            c.full_name as coach_name
        from site_assets a
   left join users u on u.id = a.updated_by
+  left join users c on a.slot = 'coach.' || c.id::text
   left join (
          select slot, count(*) as cnt from site_asset_history group by slot
        ) h on h.slot = a.slot
@@ -232,8 +245,8 @@ export async function managerAssetsList(sql: Sql, user: PublicUser | null) {
       updated_at: r.updated_at,
       updated_by: r.updated_by_name ?? null,
       history_count: Number(r.history_count || 0),
-      label_en: def?.labelEn ?? r.slot,
-      label_vi: def?.labelVi ?? r.slot,
+      label_en: r.coach_name ? `Coach avatar · ${r.coach_name}` : (def?.labelEn ?? r.slot),
+      label_vi: r.coach_name ? `Ảnh đại diện HLV · ${r.coach_name}` : (def?.labelVi ?? r.slot),
       location_en: def?.locationEn ?? "",
       location_vi: def?.locationVi ?? "",
       aspect: def?.aspect ?? "16:9",
@@ -422,6 +435,16 @@ export async function managerAssetUpload(
     [buf, mime, width, height, altEn, altVi, nextVer, user.id, targetSlot],
   );
 
+  // Auto-register uploaded asset into media_library
+  const uploadId = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const fileUrl = `/v1/site-assets/${targetSlot}/file?v=${nextVer}`;
+  await sql.query(
+    `insert into media_library (id, path, kind, category, tags, width, height, alt_en, alt_vi, credit, source_url, license)
+     values ($1, $2, 'image', 'uploaded', array['uploaded', $3], $4, $5, $6, $7, $8, $9, 'project')
+     on conflict (id) do nothing`,
+    [uploadId, fileUrl, targetSlot, width, height, altEn, altVi, user.full_name || "Manager", fileUrl],
+  );
+
   await audit(sql, user.id, "replace_asset", "site_asset", targetSlot, null, {
     from_version: cur.version,
     to_version: nextVer,
@@ -473,6 +496,9 @@ export async function managerAssetPatch(
     alt_vi?: unknown;
     enabled?: unknown;
     src_path?: unknown;
+    library_id?: unknown;
+    path?: unknown;
+    media_path?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -482,21 +508,50 @@ export async function managerAssetPatch(
 
   let nextSrcPath = cur.src_path;
   let clearBytes = false;
-  if (body.src_path !== undefined) {
-    if (typeof body.src_path !== "string") {
-      throw err.validation("src_path must be a string", { field: "src_path" });
+
+  if (typeof body.library_id === "string" && body.library_id.trim()) {
+    const libRows = await sql.query<{ id: string; path: string }>(
+      `select id, path from media_library where id = $1`,
+      [body.library_id.trim()],
+    );
+    if (!libRows[0]) {
+      throw err.validation("Library asset not found", { field: "library_id" });
     }
-    const p = body.src_path.trim();
-    if (!p.startsWith(MEDIA_PREFIX) || p.includes("..") || p.includes("//") || p.includes("http")) {
-      throw err.validation("src_path must be a safe local media path", { field: "src_path" });
-    }
-    const fileName = p.slice(MEDIA_PREFIX.length);
-    const mediaFiles = getMediaFiles();
-    if (!mediaFiles.includes(fileName)) {
-      throw err.validation("File does not exist in media library", { field: "src_path" });
-    }
-    nextSrcPath = p;
+    const rel = libRows[0].path;
+    nextSrcPath = rel.startsWith("/") ? rel : MEDIA_PREFIX + rel;
     clearBytes = true;
+  } else {
+    const rawPath =
+      typeof body.src_path === "string"
+        ? body.src_path
+        : typeof body.path === "string"
+        ? body.path
+        : typeof body.media_path === "string"
+        ? body.media_path
+        : undefined;
+
+    if (rawPath !== undefined) {
+      const p = rawPath.trim();
+      if (p.includes("..") || p.includes("//") || p.includes("http")) {
+        throw err.validation("src_path must be a safe local media path", { field: "src_path" });
+      }
+      const cleanRel = p.startsWith(MEDIA_PREFIX)
+        ? p.slice(MEDIA_PREFIX.length)
+        : p.startsWith("/")
+        ? p.slice(1)
+        : p;
+
+      const libCheck = await sql.query<{ id: string; path: string }>(
+        `select id, path from media_library where path = $1 or path = $2 or path = $3 limit 1`,
+        [cleanRel, "/" + cleanRel, MEDIA_PREFIX + cleanRel],
+      );
+      const mediaFiles = getMediaFiles();
+      if (!libCheck[0] && !mediaFiles.includes(cleanRel)) {
+        throw err.validation("File does not exist in media library", { field: "src_path" });
+      }
+      nextSrcPath = cleanRel.startsWith("/") ? cleanRel : MEDIA_PREFIX + cleanRel;
+      clearBytes = true;
+    }
   }
 
   const nextAltEn = typeof body.alt_en === "string" ? body.alt_en.trim() : cur.alt_en;
@@ -631,15 +686,111 @@ export async function managerAssetRevert(
   return json(200, { ok: true, version: nextVer });
 }
 
-/** Get media library files in public/media */
-export async function managerMediaLibrary(user: PublicUser | null) {
+/** Get media library items from database */
+export async function managerMediaLibrary(
+  sql: Sql,
+  request: Request,
+  user: PublicUser | null,
+) {
   if (!user) throw err.unauth();
   requireRole(user, ["manager"]);
-  const files = getMediaFiles();
-  const items = files.map((file) => ({
-    name: file,
-    path: MEDIA_PREFIX + file,
-    kind: file.endsWith(".mp4") ? "video" : "image",
-  }));
+
+  const url = new URL(request.url);
+  const category = url.searchParams.get("category")?.trim();
+  const search = url.searchParams.get("search")?.trim()?.toLowerCase();
+
+  let query = `select id, path, kind, category, tags, width, height, alt_en, alt_vi, credit, source_url, license, created_at
+                 from media_library where 1=1`;
+  const params: unknown[] = [];
+
+  if (category && category !== "all") {
+    params.push(category);
+    query += ` and category = $${params.length}`;
+  }
+
+  if (search) {
+    params.push(`%${search}%`);
+    query += ` and (lower(id) like $${params.length} or lower(path) like $${params.length} or lower(alt_en) like $${params.length} or lower(alt_vi) like $${params.length} or lower(credit) like $${params.length} or array_to_string(tags, ' ') ilike $${params.length})`;
+  }
+
+  query += ` order by created_at desc, id asc`;
+
+  const rows = await sql.query<{
+    id: string;
+    path: string;
+    kind: string;
+    category: string;
+    tags: string[];
+    width: number | null;
+    height: number | null;
+    alt_en: string;
+    alt_vi: string;
+    credit: string | null;
+    source_url: string | null;
+    license: string;
+    created_at: string;
+  }>(query, params);
+
+  const items = rows.map((r) => {
+    const fileUrl = r.path.startsWith("/") ? r.path : MEDIA_PREFIX + r.path;
+    return {
+      ...r,
+      url: fileUrl,
+      name: r.path.split("/").pop() || r.id,
+    };
+  });
+
   return json(200, { items });
 }
+
+/** Public credits list for all media items from database */
+export async function publicMediaCredits(sql: Sql, request: Request) {
+  const url = new URL(request.url);
+  const category = url.searchParams.get("category")?.trim();
+  const search = url.searchParams.get("search")?.trim()?.toLowerCase();
+
+  let query = `select id, path, kind, category, tags, width, height, alt_en, alt_vi, credit, source_url, license, created_at
+                 from media_library where category <> 'legacy'`;
+  const params: unknown[] = [];
+
+  if (category && category !== "all") {
+    params.push(category);
+    query += ` and category = $${params.length}`;
+  }
+
+  if (search) {
+    params.push(`%${search}%`);
+    query += ` and (lower(id) like $${params.length} or lower(path) like $${params.length} or lower(alt_en) like $${params.length} or lower(alt_vi) like $${params.length} or lower(credit) like $${params.length} or lower(license) like $${params.length})`;
+  }
+
+  query += ` order by category asc, id asc`;
+
+  const rows = await sql.query<{
+    id: string;
+    path: string;
+    kind: string;
+    category: string;
+    tags: string[];
+    width: number | null;
+    height: number | null;
+    alt_en: string;
+    alt_vi: string;
+    credit: string | null;
+    source_url: string | null;
+    license: string;
+    created_at: string;
+  }>(query, params);
+
+  const items = rows.map((r) => {
+    const fileUrl = r.path.startsWith("/") ? r.path : MEDIA_PREFIX + r.path;
+    return {
+      ...r,
+      author: r.credit,
+      url: fileUrl,
+      name: r.path.split("/").pop() || r.id,
+    };
+  });
+
+  return json(200, { items });
+}
+

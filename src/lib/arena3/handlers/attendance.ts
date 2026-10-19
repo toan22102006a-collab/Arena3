@@ -20,9 +20,10 @@ import { addDays, ictDateString, ictDateTime } from "../time";
 import { one } from "../tx";
 import { reportDay } from "./desk";
 
+import { getActiveSportCodes } from "./sports";
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_DAYS = 93;
-const SPORTS = ["badminton", "basketball", "volleyball"];
 const EXPIRING_DAYS = 7;
 const LOW_RATE_PCT = 50;
 
@@ -41,7 +42,7 @@ function oneOf<T extends string>(list: readonly T[], v: unknown, field: string, 
   return s as T;
 }
 
-function windowParams(request: Request) {
+async function windowParams(sql: Sql, request: Request) {
   const sp = new URL(request.url).searchParams;
   const to = reportDay(sp, "to", ictDateString());
   const from = reportDay(sp, "from", addDays(to, -29));
@@ -50,7 +51,7 @@ function windowParams(request: Request) {
     throw err.field("from", `Pick a period of at most ${MAX_DAYS} days.`);
   }
   const sport = sp.get("sport") || null;
-  if (sport && !SPORTS.includes(sport)) throw err.field("sport", "Unknown sport.");
+  if (sport && !(await getActiveSportCodes(sql)).includes(sport)) throw err.field("sport", "Unknown sport.");
   const classId = sp.get("class_id");
   if (classId && !UUID_RE.test(classId)) throw err.field("class_id", "class_id is not valid.");
   return { from, to, sport, classId: classId || null };
@@ -170,7 +171,7 @@ export async function attendanceReportBody(
 export async function reportsAttendance(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["manager", "coach"]);
   await requireFlag(sql, "F4");
-  const { from, to, sport, classId } = windowParams(request);
+  const { from, to, sport, classId } = await windowParams(sql, request);
   const body = await attendanceReportBody(sql, from, to, {
     sport,
     classId,

@@ -6,7 +6,7 @@ import { Shell } from "@/components/shell";
 import { PageHero } from "@/components/page-hero";
 import { StatStrip } from "@/components/stat-strip";
 import { RowActions } from "@/components/row-actions";
-import { SportBadge } from "@/components/sports-ui";
+import { SportBadge, useSports } from "@/components/sports-ui";
 import {
   Badge,
   Button,
@@ -65,9 +65,15 @@ function Page() {
   const [offset, setOffset] = useState(0);
   const pageSize = 25;
 
+  const { sports } = useSports();
   // Dialog states
   const [creating, setCreating] = useState(false);
-  const [createSport, setCreateSport] = useState("badminton");
+  const [createSport, setCreateSport] = useState("");
+  useEffect(() => {
+    if (!createSport && sports.length > 0) {
+      setCreateSport(sports[0].code);
+    }
+  }, [createSport, sports]);
   const [createCode, setCreateCode] = useState("");
   const [createName, setCreateName] = useState("");
   const [createSortOrder, setCreateSortOrder] = useState("");
@@ -103,7 +109,8 @@ function Page() {
   // Next court code suggestion for create dialog
   useEffect(() => {
     if (!creating || !items) return;
-    const prefix = createSport === "badminton" ? "CL-" : createSport === "basketball" ? "BR-" : "BC-";
+    const sportObj = sports.find((s) => s.code === createSport);
+    const prefix = sportObj?.court_prefix ? `${sportObj.court_prefix}-` : "CT-";
     const used = new Set<number>();
     for (const c of items) {
       if (c.court_code.startsWith(prefix)) {
@@ -279,9 +286,7 @@ function Page() {
             }}
             options={[
               { value: "", label: t("All") },
-              { value: "badminton", label: sportLabel("badminton") },
-              { value: "basketball", label: sportLabel("basketball") },
-              { value: "volleyball", label: sportLabel("volleyball") },
+              ...sports.map((s) => ({ value: s.code, label: sportLabel(s.code) })),
             ]}
           />
         </div>
@@ -444,9 +449,11 @@ function Page() {
         <form onSubmit={(e) => void handleCreate(e)} className="grid gap-4">
           <Field label={t("Sport")}>
             <Select value={createSport} onChange={(e) => setCreateSport(e.target.value)}>
-              <option value="badminton">{sportLabel("badminton")}</option>
-              <option value="basketball">{sportLabel("basketball")}</option>
-              <option value="volleyball">{sportLabel("volleyball")}</option>
+              {sports.map((s) => (
+                <option key={s.code} value={s.code}>
+                  {sportLabel(s.code)}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label={t("Court code")} hint={t("Leave blank to auto-generate code")}>
@@ -487,9 +494,11 @@ function Page() {
         <form onSubmit={(e) => void handleEdit(e)} className="grid gap-4">
           <Field label={t("Sport")}>
             <Select value={editSport} onChange={(e) => setEditSport(e.target.value)}>
-              <option value="badminton">{sportLabel("badminton")}</option>
-              <option value="basketball">{sportLabel("basketball")}</option>
-              <option value="volleyball">{sportLabel("volleyball")}</option>
+              {sports.map((s) => (
+                <option key={s.code} value={s.code}>
+                  {sportLabel(s.code)}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label={t("Court code")}>

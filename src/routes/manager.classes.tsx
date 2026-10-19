@@ -13,6 +13,7 @@ import { apiPost } from "@/lib/arena3/client";
 import { composeWeeklyRrule, levelLabel, rruleLabel, sportLabel, todayISO, addDaysISO } from "@/lib/arena3/labels";
 import { t, tk, tServer } from "@/lib/i18n";
 import { useRead } from "@/lib/use-read";
+import { HighlightBadge, useLive } from "@/lib/use-live";
 
 export const Route = createFileRoute("/manager/classes")({
   component: Page,
@@ -50,6 +51,10 @@ function Page() {
     "/staff?role=coach&status=active",
   );
   const items = classesRead.data?.items ?? null;
+  // Cancelled classes stay on record but are folded away; the server sends the newest first.
+  const [showCancelled, setShowCancelled] = useState(false);
+  const cancelledCount = items?.filter((c) => c.status === "cancelled").length ?? 0;
+  const listed = items ? (showCancelled ? items : items.filter((c) => c.status !== "cancelled")) : null;
   const courts = useMemo(() => courtsRead.data?.items ?? [], [courtsRead.data]);
   const coaches = useMemo(() => coachesRead.data?.items ?? [], [coachesRead.data]);
   // The form can only say "no coach teaches this" once the coaches have really been read.
@@ -60,8 +65,9 @@ function Page() {
   const [creating, setCreating] = useState(false);
   const [days, setDays] = useState<string[]>(["TU", "TH"]);
   const [hour, setHour] = useState(19);
+  const { sports } = useSports();
   const [form, setForm] = useState({
-    sport: "badminton",
+    sport: "",
     level: "beginner",
     coach_id: "",
     court_id: "",
@@ -70,9 +76,15 @@ function Page() {
     start_on: todayISO(),
     end_on: addDaysISO(todayISO(), 60),
   });
+  useEffect(() => {
+    if (!form.sport && sports.length > 0) {
+      setForm((prev) => ({ ...prev, sport: sports[0].code }));
+    }
+  }, [form.sport, sports]);
 
   // After a change, the class list is read again (a published class is a new row or a new status).
   const load = classesRead.reload;
+  useLive("classes", load);
 
   // The people and courts a class of this sport can actually use. Nothing is
   // assumed about which accounts exist: a centre that issued its own coach
@@ -101,9 +113,8 @@ function Page() {
     setDays((prev) => (prev.includes(k) ? prev.filter((d) => d !== k) : [...prev, k]));
   }
 
-  const sports = useSports();
   const totalClasses = items?.length ?? 0;
-  const publishedClasses = items?.filter((c) => c.status === "published").length ?? 0;
+  const publishedClasses = items?.filter((c) => c.status === "open").length ?? 0;
   const draftClasses = items?.filter((c) => c.status === "draft").length ?? 0;
   const totalEnrolled = items?.reduce((sum, c) => sum + (c.enrolled_count || 0), 0) ?? 0;
 
@@ -148,7 +159,7 @@ function Page() {
           <Select value={form.sport} onChange={(e) => setForm({ ...form, sport: e.target.value })}>
             {sports.map((s) => (
               <option key={s.code} value={s.code}>
-                {s.name}
+                {s.name_en || (s as any).name}
               </option>
             ))}
           </Select>
@@ -269,7 +280,7 @@ function Page() {
         <Skeleton className="h-40" />
       ) : null}
       <Stagger className="grid gap-3 md:grid-cols-2" gap={0.06}>
-        {(items ?? []).slice(0, limit).map((c) => (
+        {(listed ?? []).slice(0, limit).map((c) => (
           <StaggerItem key={c.id} className="h-full">
           <Lift className="h-full">
           <SpotlightCard className="h-full rounded-[var(--radius-xl)]" size={320} strength={0.1}>
@@ -285,7 +296,7 @@ function Page() {
               {sportLabel(c.sport)} · {levelLabel(c.level)}
             </h2>
             <p className="text-sm text-muted">
-              {c.coach_name} · {c.court_code} · {c.enrolled_count}/{c.capacity}
+              {c.coach_name} · {c.court_code} · <HighlightBadge value={c.enrolled_count}>{c.enrolled_count}</HighlightBadge>/{c.capacity}
             </p>
             {c.rrule ? <p className="text-sm">{rruleLabel(c.rrule, c.duration_min)}</p> : null}
             <Button className="mt-3" variant="outline" onClick={() => setDetail(c.id)}>
@@ -313,8 +324,15 @@ function Page() {
           </StaggerItem>
         ))}
       </Stagger>
-      {items ? (
-        <ShowMore shown={Math.min(limit, items.length)} total={items.length} step={8} onMore={() => setLimit((n) => n + 8)} />
+      {listed ? (
+        <ShowMore shown={Math.min(limit, listed.length)} total={listed.length} step={8} onMore={() => setLimit((n) => n + 8)} />
+      ) : null}
+      {cancelledCount ? (
+        <div className="mt-3 text-center">
+          <Button variant="ghost" onClick={() => setShowCancelled((v) => !v)}>
+            {showCancelled ? t("Hide cancelled classes") : t("Show {n} cancelled classes", { n: cancelledCount })}
+          </Button>
+        </div>
       ) : null}
       {items && !items.length ? (
         <EmptyState

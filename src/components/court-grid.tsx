@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Plus } from "lucide-react";
 import { availLabel, type AvailMap } from "@/components/availability-calendar";
 import { cn } from "@/lib/cn";
 import { locale, t } from "@/lib/i18n";
+import { useLive } from "@/lib/use-live";
 import {
   addDaysISO,
   kindLabel,
@@ -348,6 +349,7 @@ export function CourtGrid({
   onInspect,
   onPickSport,
   onPickDate,
+  onRefresh,
   legendCompact = false,
   selected,
   startedIsPast = false,
@@ -366,6 +368,8 @@ export function CourtGrid({
   onPickSport?: (sport: string) => void;
   /** Offered when the whole day is sold out. */
   onPickDate?: (date: string) => void;
+  /** Live update trigger from SSE. */
+  onRefresh?: () => void;
   legendCompact?: boolean;
   /** Member and guest grids: an hour that has started can no longer be held (BR-07). */
   startedIsPast?: boolean;
@@ -382,8 +386,50 @@ export function CourtGrid({
   selected?: { courtId: string; hour: number } | null;
 }) {
   const now = useNowMinute();
+  useLive("courts", () => {
+    onRefresh?.();
+  });
+
+  const [changedCells, setChangedCells] = useState<Set<string>>(() => new Set());
+  const prevSlotsMap = useRef<Map<string, SlotState>>(new Map());
+  const initialMount = useRef(true);
+
   const [showPast, setShowPast] = useState(defaultShowPast);
   const list = sport ? courts.filter((c) => c.sport === sport) : courts;
+
+  useEffect(() => {
+    const nextMap = new Map<string, SlotState>();
+    for (const c of list) {
+      for (const h of dayHours) {
+        const occ = occAt(slots, c.id, date, h);
+        const state = slotState(c, occ, date, h, now, startedIsPast);
+        nextMap.set(`${c.id}:${h}`, state);
+      }
+    }
+
+    if (initialMount.current) {
+      initialMount.current = false;
+      prevSlotsMap.current = nextMap;
+      return;
+    }
+
+    const changed = new Set<string>();
+    for (const [key, state] of nextMap.entries()) {
+      const prev = prevSlotsMap.current.get(key);
+      if (prev !== undefined && prev !== state) {
+        changed.add(key);
+      }
+    }
+    prevSlotsMap.current = nextMap;
+
+    if (changed.size > 0) {
+      setChangedCells(changed);
+      const timer = setTimeout(() => {
+        setChangedCells(new Set());
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [slots, list, date, dayHours, now, startedIsPast]);
   const freeList = freeHours(list, slots, date, now, startedIsPast, dayHours);
   const free = freeCount ?? freeList.length;
   // Finished hours fold away, so the first row on screen is an hour you can still play.
@@ -487,6 +533,7 @@ export function CourtGrid({
                 // the point of the grid, but nothing can be sold backwards.
                 const clickable = onPick && (isBookable(state));
                 const inspect = !clickable && onInspect && canInspect(occ) ? occ : null;
+                const isChanged = changedCells.has(`${c.id}:${h}`);
                 const cls = cn(
                   "grid min-h-11 place-items-center rounded-[var(--radius-xs)] text-2xs font-medium tabular-nums",
                   STATE_CLASS[state],
@@ -494,6 +541,7 @@ export function CourtGrid({
                   selected?.courtId === c.id &&
                     selected.hour === h &&
                     "ring-2 ring-accent ring-offset-1 ring-offset-surface",
+                  isChanged && "motion-safe:ring-2 motion-safe:ring-accent/70 motion-safe:animate-pulse",
                 );
                 if (inspect) {
                   return (
@@ -585,6 +633,7 @@ export function CourtGrid({
               selected={selected}
               now={now}
               startedIsPast={startedIsPast}
+              changedCells={changedCells}
             />
           ))}
         </div>
@@ -622,6 +671,7 @@ function HourRow({
   selected,
   now,
   startedIsPast = false,
+  changedCells,
 }: {
   hour: number;
   list: Court[];
@@ -632,6 +682,7 @@ function HourRow({
   selected?: { courtId: string; hour: number } | null;
   now: number;
   startedIsPast?: boolean;
+  changedCells?: Set<string>;
 }) {
   const past = isPast(date, hour, now, startedIsPast);
   const live = isNow(date, hour, now);
@@ -651,6 +702,7 @@ function HourRow({
         const state = slotState(c, occ, date, hour, now, startedIsPast);
         const title = cellTitle(state, occ);
         const clickable = onPick && (isBookable(state));
+        const isChanged = changedCells?.has(`${c.id}:${hour}`);
         const cls = cn(
           "h-9 w-full overflow-hidden rounded-[var(--radius-xs)]",
           STATE_CLASS[state],
@@ -658,6 +710,7 @@ function HourRow({
           selected?.courtId === c.id &&
             selected.hour === hour &&
             "ring-2 ring-accent ring-offset-1 ring-offset-surface",
+          isChanged && "motion-safe:ring-2 motion-safe:ring-accent/70 motion-safe:animate-pulse",
         );
         const inspect = !clickable && onInspect && canInspect(occ) ? occ : null;
         if (inspect) {

@@ -1,6 +1,6 @@
 export type CoachCard = {
   name: string;
-  sport: string;
+  sport?: string;
   title: string;
   blurb: string;
   creds: string[];
@@ -12,7 +12,6 @@ export type CoachCard = {
 export const COACHES: CoachCard[] = [
   {
     name: "Nguyễn Minh Khoa",
-    sport: "badminton",
     title: "Head badminton coach",
     blurb:
       "Runs the beginner and advanced ladders. Footwork first, controlled smashes second. No shoulders burned out in week one.",
@@ -22,7 +21,6 @@ export const COACHES: CoachCard[] = [
   },
   {
     name: "Trần Thị Lan",
-    sport: "badminton",
     title: "Intermediate badminton coach",
     blurb:
       "Assists the beginner ladder, owns intermediate. Patient with players moving from casual rallies to a real training plan.",
@@ -32,7 +30,6 @@ export const COACHES: CoachCard[] = [
   },
   {
     name: "Phạm Đức Anh",
-    sport: "basketball",
     title: "Head basketball coach",
     blurb:
       "Beginner basketball program: footwork, release, reading the floor. Classes never sit on a sold slot.",
@@ -42,7 +39,6 @@ export const COACHES: CoachCard[] = [
   },
   {
     name: "Lê Quốc Việt",
-    sport: "volleyball",
     title: "Head volleyball coach",
     blurb:
       "Intermediate volleyball: digs, serves and team reading, built for players moving off the sand into a structured side.",

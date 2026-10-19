@@ -232,6 +232,16 @@ export function notificationContent(n: Pick<Notification, "template" | "payload"
         link: typeof p.user_id === "string" ? { to: `/coach/student/${p.user_id}`, label: t("Open their profile") } : undefined,
       };
     }
+    case "chat_message": {
+      const senderName = typeof p.sender_name === "string" ? p.sender_name : t("Someone");
+      const preview = typeof p.preview === "string" ? p.preview : "";
+      const convId = typeof p.conversation_id === "string" ? p.conversation_id : "";
+      return {
+        title: t("New message from {name}", { name: senderName }),
+        body: preview || t("You have a new message."),
+        link: convId ? { to: `/chat?conv=${convId}`, label: t("Open chat") } : { to: "/chat", label: t("Open chat") },
+      };
+    }
     case "ticket_replied":
       return {
         title: t("Reception replied"),

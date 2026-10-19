@@ -6,6 +6,7 @@ import type { CatalogCourt, CatalogPrice, CatalogSlot } from "@/lib/arena3/catal
 import { sportLabel } from "@/lib/arena3/labels";
 import { gsap, useScene } from "@/lib/gsap";
 import { t } from "@/lib/i18n";
+import { useSports } from "@/components/sports-ui";
 import { SplitHeading } from "./kit";
 import { rise } from "./tweens";
 import { priceFor, wdLabel } from "./util";
@@ -42,6 +43,7 @@ export function ScheduleScene({
 }) {
   const venue = useVenue();
   const root = useRef<HTMLElement>(null);
+  const { sports } = useSports();
   useScene(root, ({ motion }) => {
     if (motion && root.current) rise(root.current, "[data-rise]", { stagger: 0.07 });
   });
@@ -55,7 +57,7 @@ export function ScheduleScene({
         <SplitHeading text={t("When is a court free?")} />
       </h2>
       <p data-rise className="mt-3 max-w-lg text-muted">
-        {t("Every hour in the hall, exactly as it stands. Tap a free one and it is yours for {n} minutes while you sign in. No card up front, no phone call.", {
+        {t("Free and booked hours for every court. Tap a free hour to hold it for {n} minutes while you sign in. You do not pay to hold it.", {
           n: venue.holdMinutes,
         })}
       </p>
@@ -73,9 +75,9 @@ export function ScheduleScene({
             }}
             options={[
               { value: "", label: t("All") },
-              ...["badminton", "basketball", "volleyball"]
-                .filter((s) => sched.courts.some((c) => c.sport === s))
-                .map((s) => ({ value: s, label: sportLabel(s) })),
+              ...sports
+                .filter((s) => sched.courts.some((c) => c.sport === s.code))
+                .map((s) => ({ value: s.code, label: sportLabel(s.code) })),
             ]}
           />
         </div>

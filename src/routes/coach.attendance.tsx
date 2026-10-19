@@ -23,6 +23,7 @@ import { cn } from "@/lib/cn";
 import { levelLabel, sportLabel } from "@/lib/arena3/labels";
 import { t, tServer, tk, tData } from "@/lib/i18n";
 import { useRead, type ReadError } from "@/lib/use-read";
+import { HighlightBadge, useLive } from "@/lib/use-live";
 import type { CoachSession } from "./coach.index";
 
 export const Route = createFileRoute("/coach/attendance")({
@@ -118,6 +119,10 @@ function Page() {
         : `/classes/${open.class_id}/roster`
       : null;
   const register = useRead<RegisterData>(registerPath);
+  useLive("attendance", () => {
+    register.reload();
+    scheduleRead.reload();
+  });
   // After the lock only a manager may correct a register, and must say why (BR-35).
   const locked = !!register.data?.session?.locked;
 
@@ -173,7 +178,7 @@ function Page() {
                     </span>
                     <span className="inline-flex items-center gap-1.5">
                       <Users aria-hidden className="size-4" />
-                      {open.enrolled_count}/{open.capacity}
+                      <HighlightBadge value={open.enrolled_count}>{open.enrolled_count}</HighlightBadge>/{open.capacity}
                     </span>
                   </p>
                 </div>

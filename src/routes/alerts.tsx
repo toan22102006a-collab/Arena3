@@ -6,6 +6,7 @@ import { EmptyState, LoadError, Pagination, Skeleton } from "@/components/ui";
 import { t } from "@/lib/i18n";
 import { usePageState } from "@/lib/use-page-state";
 import { useRead } from "@/lib/use-read";
+import { useLive } from "@/lib/use-live";
 
 export const Route = createFileRoute("/alerts")({
   component: () => (
@@ -23,6 +24,7 @@ function Page() {
     `/me/notifications?limit=${pageSize}&offset=${offset}`,
     { keepPrevious: true },
   );
+  useLive("notifications", reload);
   // The list is the server's copy, marked read here as the person opens things.
   const [items, setItems] = useState<Notification[] | null>(null);
   useEffect(() => {

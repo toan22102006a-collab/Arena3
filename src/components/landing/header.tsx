@@ -99,7 +99,7 @@ export function SiteHeader() {
           <span className="inline-flex transition-transform duration-300 ease-[var(--ease-smooth)] group-hover:-rotate-6 group-hover:scale-105">
             <ArenaMark className="size-8" />
           </span>
-          <span className="font-display text-xl font-bold">Arena3</span>
+          <span className="font-display text-xl font-bold">Lê Long Sport</span>
         </Link>
         {/* Same voice as the signed-in header: a row of quiet pills. */}
         <nav className="hidden items-center gap-1 xl:flex">

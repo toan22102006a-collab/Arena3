@@ -24,7 +24,7 @@ export function PlansScene({ plans }: { plans: CatalogPlan[] }) {
         {t("Memberships")}
       </p>
       <h2 className="mt-2 font-display text-4xl sm:text-5xl">
-        <SplitHeading text={t("Buy in the app, settle at the desk")} />
+        <SplitHeading text={t("Buy in the app, pay at the desk")} />
       </h2>
 
       <div className="mt-8 grid gap-4 md:grid-cols-3">
@@ -112,10 +112,10 @@ export function ClassesScene({ classes }: { classes: CatalogClass[] }) {
         {t("Open classes")}
       </p>
       <h2 className="mt-2 font-display text-4xl">
-        <SplitHeading text={t("Enrol while seats last")} />
+        <SplitHeading text={t("Classes open for enrolment")} />
       </h2>
       <p data-rise className="mt-3 max-w-lg text-muted">
-        {t("Coached ladders run on the same calendar as the courts, so a class never sits on an hour you have already bought. Seats are first come.")}
+        {t("Classes with a coach. They never overlap court hours you have booked. Seats go to whoever signs up first.")}
       </p>
 
       <div className="mt-8 grid gap-4 md:grid-cols-2">

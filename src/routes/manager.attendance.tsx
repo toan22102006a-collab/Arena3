@@ -13,7 +13,7 @@ function Page() {
     <Shell
       role="manager"
       title={t("Attendance")}
-      subtitle={t("How often people actually turn up, and who needs a call before they drift away.")}
+      subtitle={t("How often members come, and who has stopped coming.")}
     >
       <div className="mb-4">
         <Seg

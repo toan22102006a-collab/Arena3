@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { Badge, Button, Field, Input, LoadError, Modal, Select, Skeleton, StatusBadge } from "@/components/ui";
-import { hhmm, initials, money, when } from "@/components/shell";
+import { hhmm, initials, money, useSessionUser, when } from "@/components/shell";
 import { Cover } from "@/components/media";
 import { apiPatch, apiPost } from "@/lib/arena3/client";
 import { formatDate, kindLabel, levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
 import { scrollBehavior } from "@/lib/calm";
 import { locale, t, tk, tServer } from "@/lib/i18n";
 import { useRead } from "@/lib/use-read";
+import { HighlightBadge, useLive } from "@/lib/use-live";
 
 /** "Tue 21 Oct" in the centre's timezone. */
 export function sessionDay(iso: string) {
@@ -75,6 +78,8 @@ export function ClassDetailModal({
   onChanged?: () => void;
 }) {
   const { data, error, reload } = useRead<ClassDetail>(classId ? `/classes/${classId}` : null);
+  useLive(classId ? `class:${classId}` : null, reload);
+  useLive("classes", reload);
   const [action, setAction] = useState<Action | null>(null);
 
   // Another class never starts with a half-filled form from the last one.
@@ -87,6 +92,24 @@ export function ClassDetailModal({
     reload();
     onChanged?.();
   }, [onChanged, reload]);
+
+  const navigate = useNavigate();
+  const user = useSessionUser();
+  const [messagingCoach, setMessagingCoach] = useState(false);
+
+  async function handleMessageCoach() {
+    if (!c?.coach_id || messagingCoach) return;
+    setMessagingCoach(true);
+    try {
+      const res = await apiPost<{ conversation: { id: string } }>("/conversations", { recipient_id: c.coach_id });
+      onClose();
+      navigate({ to: "/chat", search: { conv: res.conversation.id } });
+    } catch (e: any) {
+      toast.error(e instanceof Error ? tServer(e.message) : t("Cannot message this coach"));
+    } finally {
+      setMessagingCoach(false);
+    }
+  }
 
   const c = data?.class;
   const confirmed = data?.roster.filter((r) => r.status === "confirmed") ?? [];
@@ -121,12 +144,14 @@ export function ClassDetailModal({
               initialsClassName="text-sm font-bold"
               alt={c.coach_name}
             />
-            <div className="min-w-0 grid gap-1 text-sm">
+            <div className="min-w-0 flex-1 grid gap-1 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium tabular-nums">{c.code}</span>
                 <StatusBadge status={c.status} />
                 <Badge tone="muted">
-                  {t("{n}/{cap} enrolled", { n: c.enrolled_count, cap: c.capacity })}
+                  <HighlightBadge value={c.enrolled_count}>
+                    {t("{n}/{cap} enrolled", { n: c.enrolled_count, cap: c.capacity })}
+                  </HighlightBadge>
                 </Badge>
               </div>
               <p className="text-muted">
@@ -137,6 +162,18 @@ export function ClassDetailModal({
                 {rruleLabel(c.rrule, c.duration_min)} · {formatDate(c.start_on)} - {formatDate(c.end_on)}
               </p>
             </div>
+            {c.coach_id && user && user.id !== c.coach_id ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={messagingCoach}
+                onClick={() => void handleMessageCoach()}
+                className="shrink-0 flex items-center gap-1.5"
+              >
+                <MessageSquare className="size-4" />
+                <span>{t("Message coach")}</span>
+              </Button>
+            ) : null}
           </div>
 
           <section>

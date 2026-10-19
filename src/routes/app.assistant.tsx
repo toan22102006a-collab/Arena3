@@ -96,7 +96,7 @@ function Page() {
     <Shell
       role="member"
       title={t("Assistant")}
-      subtitle={t("Gemini answers, grounded in Arena3's own timetable, plans and coaches.")}
+      subtitle={t("Answers use Lê Long Sport's timetable, plans and coaches.")}
     >
       {/* The dot field tracks the cursor behind the thread — it makes an empty
           conversation feel awake without competing with the messages. */}
@@ -119,7 +119,7 @@ function Page() {
             <AssistantMark className="size-4" strokeWidth={1.9} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium leading-tight">{t("Arena3 assistant")}</p>
+            <p className="text-sm font-medium leading-tight">{t("Lê Long Sport assistant")}</p>
             <p className="text-2xs text-muted">{t("Grounded in this centre's timetable and prices")}</p>
           </div>
           {log.length > 1 ? (

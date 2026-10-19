@@ -39,6 +39,8 @@ export const err = {
   holdExpired: (msg = "Your hold has expired.") => new ApiError(409, "HOLD_EXPIRED", msg),
   conflictState: (msg = "That is not a valid state.", extra: Record<string, unknown> = {}) =>
     new ApiError(409, "CONFLICT_STATE", msg, extra),
+  conflict: (msg = "Conflict.", extra: Record<string, unknown> = {}) =>
+    new ApiError(409, "CONFLICT_STATE", msg, extra),
   br: (br: string, message: string, extra: Record<string, unknown> = {}) =>
     new ApiError(422, "BR_VIOLATION", message, { br, ...extra }),
   validation: (message: string, extra: Record<string, unknown> = {}) =>

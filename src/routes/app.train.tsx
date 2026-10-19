@@ -9,7 +9,7 @@ import { Lift, Stagger, StaggerItem, motion } from "@/components/motion";
 import { SpotlightCard } from "@/components/fx";
 import { ActivityRings, NextMilestoneCard, SessionCountdown, WorkoutStreak } from "@/components/training-progress";
 import { apiPut } from "@/lib/arena3/client";
-import { formatDate, levelLabel, sportLabel } from "@/lib/arena3/labels";
+import { addDaysISO, formatDate, levelLabel, sportLabel, todayISO } from "@/lib/arena3/labels";
 import { t, tk } from "@/lib/i18n";
 import { useRead } from "@/lib/use-read";
 
@@ -172,27 +172,37 @@ function Page() {
           {/* Activity Ring, Streak, Milestone */}
           {(() => {
             const realDone = d.results.length;
-            const sessionDates = new Set(d.results.map((r) => r.start_at.slice(0, 10)));
-            const now = new Date();
-            const currentDayOfWeek = (now.getDay() + 6) % 7;
-            const monday = new Date(now);
-            monday.setDate(now.getDate() - currentDayOfWeek);
+            const sessionDates = new Set(
+              d.results.map((r) => {
+                const dt = new Date(r.start_at);
+                return new Intl.DateTimeFormat("en-CA", {
+                  timeZone: "Asia/Ho_Chi_Minh",
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                }).format(dt);
+              }),
+            );
+            const today = todayISO();
+            const [y, m, dayNum] = today.split("-").map(Number);
+            const todayDt = new Date(Date.UTC(y, (m ?? 1) - 1, dayNum ?? 1));
+            const currentDayOfWeek = (todayDt.getUTCDay() + 6) % 7;
+            const mondayISO = addDaysISO(today, -currentDayOfWeek);
 
             const activeDays: boolean[] = [];
             for (let i = 0; i < 7; i++) {
-              const dt = new Date(monday);
-              dt.setDate(monday.getDate() + i);
-              activeDays.push(sessionDates.has(dt.toISOString().slice(0, 10)));
+              const dayStr = addDaysISO(mondayISO, i);
+              activeDays.push(sessionDates.has(dayStr));
             }
 
             let streak = 0;
-            const checkDate = new Date(now);
-            if (!sessionDates.has(checkDate.toISOString().slice(0, 10))) {
-              checkDate.setDate(checkDate.getDate() - 1);
+            let checkDay = today;
+            if (!sessionDates.has(checkDay)) {
+              checkDay = addDaysISO(checkDay, -1);
             }
-            while (sessionDates.has(checkDate.toISOString().slice(0, 10))) {
+            while (sessionDates.has(checkDay)) {
               streak++;
-              checkDate.setDate(checkDate.getDate() - 1);
+              checkDay = addDaysISO(checkDay, -1);
             }
 
             const milestoneTarget = d.levels.length > 0 ? levelLabel(d.levels[0].level) : null;

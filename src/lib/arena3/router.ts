@@ -21,19 +21,23 @@ import * as attH from "./handlers/attendance";
 import * as xH from "./handlers/extras";
 import * as assetsH from "./handlers/assets";
 import * as courtH from "./handlers/courts";
+import * as sportsH from "./handlers/sports";
+import * as chatH from "./handlers/chat";
+import * as avatarH from "./handlers/avatar";
+import { liveStreamHandler } from "./handlers/live";
 
 type Result = { status: number; body: unknown };
 
 function pathOf(request: Request): { method: string; parts: string[]; url: URL } {
   const url = new URL(request.url);
-  const raw = url.pathname.replace(/^\/v1\/?/, "").replace(/\/+$/, "");
+  const raw = url.pathname.replace(/^\/(?:v1|api)\/?/, "").replace(/\/+$/, "");
   const parts = raw ? raw.split("/") : [];
   return { method: request.method.toUpperCase(), parts, url };
 }
 
 async function dispatch(request: Request): Promise<Response | Result> {
   startJobLoop();
-  const { method, parts } = pathOf(request);
+  const { method, parts, url } = pathOf(request);
   const p0 = parts[0] ?? "";
   const p1 = parts[1] ?? "";
   const p2 = parts[2] ?? "";
@@ -43,6 +47,73 @@ async function dispatch(request: Request): Promise<Response | Result> {
       const r = await withIdempotency(sql, request, userId, true, fn);
       return r;
     });
+
+  // Server-Sent Events live update stream
+  if (method === "GET" && p0 === "live" && !p1) {
+    const sql = await getSql();
+    const user = await optionalAuth(sql, request);
+    return liveStreamHandler(request, sql, user);
+  }
+
+  // WebRTC Signaling Relay
+  if (p0 === "rtc" && !p1) {
+    if (method === "GET") {
+      return withTx(async (sql) => {
+        const user = await authFromRequest(sql, request);
+        const data = await chatH.rtcPollHandler(sql, user, request);
+        return { status: 200, body: data };
+      });
+    }
+    if (method === "POST") {
+      return withTx(async (sql) => {
+        const user = await authFromRequest(sql, request);
+        const data = await chatH.rtcSignalHandler(sql, user, request);
+        return { status: 200, body: data };
+      });
+    }
+  }
+
+  // Two-way Chat
+  if (p0 === "conversations") {
+    if (method === "GET" && !p1) {
+      return withTx(async (sql) => {
+        const user = await authFromRequest(sql, request);
+        const data = await chatH.listConversations(sql, user);
+        return { status: 200, body: data };
+      });
+    }
+    if (method === "POST" && !p1) {
+      return withTx(async (sql) => {
+        const user = await authFromRequest(sql, request);
+        const data = await chatH.createOrGetConversation(sql, user, request);
+        return { status: 201, body: data };
+      });
+    }
+    if (p1) {
+      const convId = p1;
+      if (method === "GET" && p2 === "messages") {
+        return withTx(async (sql) => {
+          const user = await authFromRequest(sql, request);
+          const data = await chatH.listMessages(sql, user, convId, url);
+          return { status: 200, body: data };
+        });
+      }
+      if (method === "POST" && p2 === "messages") {
+        return withTx(async (sql) => {
+          const user = await authFromRequest(sql, request);
+          const data = await chatH.sendMessage(sql, user, convId, request);
+          return { status: 201, body: data };
+        });
+      }
+      if (method === "POST" && p2 === "read") {
+        return withTx(async (sql) => {
+          const user = await authFromRequest(sql, request);
+          const data = await chatH.markConversationRead(sql, user, convId);
+          return { status: 200, body: data };
+        });
+      }
+    }
+  }
 
   // "Is the server there?" — what the connection banner's retry button asks. No session and no
   // database on purpose: it answers whenever the app itself is running, which is the whole question.
@@ -107,6 +178,14 @@ async function dispatch(request: Request): Promise<Response | Result> {
     const sql = await getSql();
     return assetsH.siteAssetGetFile(sql, p1);
   }
+  if (method === "GET" && p0 === "media" && p1 === "credits") {
+    const sql = await getSql();
+    return assetsH.publicMediaCredits(sql, request);
+  }
+  if (method === "GET" && p0 === "sports" && !p1) {
+    const sql = await getSql();
+    return sportsH.publicSportsList(sql);
+  }
 
   // Authenticated
   const authed = async (fn: (sql: Awaited<ReturnType<typeof getSql>>, user: PublicUser) => Promise<Result | Response>) => {
@@ -142,6 +221,15 @@ async function dispatch(request: Request): Promise<Response | Result> {
   }
   if (method === "PATCH" && p0 === "me" && !p1) {
     return authed((sql, user) => authH.mePatch(sql, request, user));
+  }
+  if (method === "PUT" && p0 === "me" && p1 === "avatar" && !p2) {
+    return authed((sql, user) => avatarH.meAvatarPut(sql, request, user));
+  }
+  if (method === "DELETE" && p0 === "me" && p1 === "avatar" && !p2) {
+    return authed((sql, user) => avatarH.meAvatarDelete(sql, user));
+  }
+  if (method === "GET" && p0 === "users" && p1 && p2 === "avatar" && !parts[3]) {
+    return authedRead((sql, user) => avatarH.userAvatarGet(sql, p1, user));
   }
   if (method === "GET" && p0 === "me" && p1 === "notifications" && !p2) {
     return authedRead((sql, user) => authH.meNotifications(sql, request, user));
@@ -424,7 +512,10 @@ async function dispatch(request: Request): Promise<Response | Result> {
       return deskH.reportsRevenue(sql, request, user);
     });
   }
-  if (method === "GET" && p0 === "reports" && p1 === "capacity") {
+  if (
+    (method === "GET" && p0 === "reports" && p1 === "capacity") ||
+    (method === "GET" && p0 === "manager" && p1 === "capacity")
+  ) {
     return authedRead((sql, user) => reportH.reportsCapacity(sql, request, user));
   }
   if (method === "GET" && p0 === "reports" && p1 === "members") {
@@ -614,9 +705,12 @@ async function dispatch(request: Request): Promise<Response | Result> {
     });
   }
 
-  // Manager site assets
-  if (method === "GET" && p0 === "manager" && p1 === "site-assets" && p2 === "library") {
-    return authedRead((_sql, user) => assetsH.managerMediaLibrary(user));
+  // Manager site assets & media library
+  if (
+    (method === "GET" && p0 === "manager" && p1 === "site-assets" && p2 === "library") ||
+    (method === "GET" && p0 === "manager" && p1 === "media-library" && !p2)
+  ) {
+    return authedRead((sql, user) => assetsH.managerMediaLibrary(sql, request, user));
   }
   if (method === "GET" && p0 === "manager" && p1 === "site-assets" && !p2) {
     return authedRead((sql, user) => assetsH.managerAssetsList(sql, user));
@@ -663,6 +757,26 @@ async function dispatch(request: Request): Promise<Response | Result> {
   }
   if (method === "POST" && p0 === "manager" && p1 === "courts" && p2 && parts[3] === "restore") {
     return authed((sql, user) => courtH.managerCourtRestore(sql, p2, user));
+  }
+
+  // Manager sports
+  if (method === "GET" && p0 === "manager" && p1 === "sports" && !p2) {
+    return authedRead((sql, user) => sportsH.managerSportsList(sql, user));
+  }
+  if (method === "POST" && p0 === "manager" && p1 === "sports" && !p2) {
+    return authed((sql, user) => sportsH.managerSportCreate(sql, request, user));
+  }
+  if (method === "PATCH" && p0 === "manager" && p1 === "sports" && p2 && !parts[3]) {
+    return authed((sql, user) => sportsH.managerSportPatch(sql, p2, request, user));
+  }
+  if (method === "POST" && p0 === "manager" && p1 === "sports" && p2 && parts[3] === "retire") {
+    return authed((sql, user) => sportsH.managerSportRetire(sql, p2, user));
+  }
+  if (method === "POST" && p0 === "manager" && p1 === "sports" && p2 && parts[3] === "restore") {
+    return authed((sql, user) => sportsH.managerSportRestore(sql, p2, user));
+  }
+  if (method === "DELETE" && p0 === "manager" && p1 === "sports" && p2 && !parts[3]) {
+    return authed((sql, user) => sportsH.managerSportDelete(sql, p2, user));
   }
 
   void staffRoles;

@@ -10,6 +10,7 @@ import { SportIcon } from "@/components/arena-icons";
 import { formatDate, levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
 import { t } from "@/lib/i18n";
 import { useRead } from "@/lib/use-read";
+import { HighlightBadge, useLive } from "@/lib/use-live";
 
 export const Route = createFileRoute("/coach/classes")({
   component: Page,
@@ -34,6 +35,7 @@ type CoachClassRow = {
 
 function Page() {
   const read = useRead<{ items: CoachClassRow[]; total: number }>("/coach/classes");
+  useLive("classes", read.reload);
   const items = read.data?.items ?? null;
   const [detail, setDetail] = useState<string | null>(null);
   const [limit, setLimit] = useState(8);
@@ -89,7 +91,9 @@ function Page() {
               </div>
               <div>
                 <p className="text-2xs font-medium uppercase text-muted">{t("Total Students")}</p>
-                <p className="figure text-2xl font-bold tabular-nums">{totalStudents}</p>
+                <HighlightBadge value={totalStudents}>
+                  <p className="figure text-2xl font-bold tabular-nums">{totalStudents}</p>
+                </HighlightBadge>
               </div>
             </Card>
           </div>
@@ -135,10 +139,12 @@ function Page() {
                         <div className="mt-4">
                           <div className="flex items-baseline justify-between gap-2 text-xs">
                             <span className="text-muted">
-                              {t("{enrolled}/{capacity} students", {
-                                enrolled: c.enrolled_count,
-                                capacity: c.capacity,
-                              })}
+                              <HighlightBadge value={c.enrolled_count}>
+                                {t("{enrolled}/{capacity} students", {
+                                  enrolled: c.enrolled_count,
+                                  capacity: c.capacity,
+                                })}
+                              </HighlightBadge>
                             </span>
                             <span className="font-semibold tabular-nums text-fg">{pct}%</span>
                           </div>

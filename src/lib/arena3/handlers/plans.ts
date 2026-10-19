@@ -7,6 +7,7 @@ import { limit, RULES } from "../ratelimit";
 import { requireRole, type PublicUser } from "../session";
 import { one } from "../tx";
 import { parseInteger } from "../validate";
+import { getActiveSportCodes } from "./sports";
 
 export async function plansList(sql: Sql, user: PublicUser | null) {
   const all = user?.role === "manager";
@@ -21,7 +22,6 @@ export async function plansList(sql: Sql, user: PublicUser | null) {
   return { status: 200, body: { items } };
 }
 
-const PLAN_SPORTS = ["badminton", "basketball", "volleyball", "all"];
 const INT4 = 2_147_483_647;
 
 /** Blank means "not given" (null); anything else has to be a whole number in range. */
@@ -43,7 +43,8 @@ export async function plansCreate(sql: Sql, request: Request, user: PublicUser) 
   const name = planName(b.name);
   const sport_scope = str(b.sport_scope);
   if (!name) throw err.field("name", "A plan needs a name.");
-  if (!sport_scope || !PLAN_SPORTS.includes(sport_scope)) throw err.field("sport_scope", "Choose a sport.");
+  const allowedScopes = await getActiveSportCodes(sql, true);
+  if (!sport_scope || !allowedScopes.includes(sport_scope)) throw err.field("sport_scope", "Choose a sport.");
   const price_vnd = parseInteger("price_vnd", "Price", b.price_vnd, 0, INT4);
   const duration_days = optInt("duration_days", "Duration", b.duration_days, 1, 3650);
   const session_quota = optInt("session_quota", "Class sessions", b.session_quota, 0, 100000);
