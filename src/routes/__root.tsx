@@ -1,3 +1,4 @@
+import { THEME_BOOT } from "@/lib/theme";
 import { createRootRoute, HeadContent, Outlet, Scripts, useRouterState } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { useRetryKey } from "@/lib/connection";
@@ -103,6 +104,7 @@ function RootComponent() {
     <html lang="en" className="antialiased" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
       </head>
       <body className="bg-bg text-fg">
         <PreviewHostBridge />

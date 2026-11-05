@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
+  Camera,
   ChevronRight,
   Flame,
   LayoutGrid,
@@ -33,6 +34,7 @@ import {
   Stat,
 } from "@/components/ui";
 import { SportDot, SportThumbnail, invalidateSportsCache } from "@/components/sports-ui";
+import { useRefreshAssets } from "@/components/media";
 import { apiDelete, apiPatch, apiPost } from "@/lib/arena3/client";
 import { sportLabel } from "@/lib/arena3/labels";
 import { cn } from "@/lib/cn";
@@ -61,7 +63,6 @@ export type ManagerSport = {
   active_courts_count: number;
   future_bookings_count: number;
   future_classes_count: number;
-  active_plans_count: number;
   photo_url: string;
 };
 
@@ -85,6 +86,7 @@ const GLYPH_KEYS = [
 
 function Page() {
   const read = useRead<{ items: ManagerSport[] }>("/manager/sports");
+  const refreshAssets = useRefreshAssets();
   const [items, setItems] = useState<ManagerSport[] | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | "active" | "retired">("");
@@ -103,6 +105,7 @@ function Page() {
   const [cWeekdayPeak, setCWeekdayPeak] = useState("150000");
   const [cWeekendPrice, setCWeekendPrice] = useState("120000");
   const [cWeekendPeak, setCWeekendPeak] = useState("180000");
+  const [cPhoto, setCPhoto] = useState<File | null>(null);
   const [cSubmitting, setCSubmitting] = useState(false);
 
   // Edit state
@@ -161,6 +164,7 @@ function Page() {
     setCWeekdayPeak("150000");
     setCWeekendPrice("120000");
     setCWeekendPeak("180000");
+    setCPhoto(null);
     setCreateStep(1);
     setCreating(true);
   }
@@ -193,6 +197,14 @@ function Page() {
         weekend_peak_price_vnd: Number(cWeekendPeak) || 180000,
       });
       toast.success(t("Sport {name} created", { name: res.sport.name_en }));
+      if (cPhoto) {
+        try {
+          await uploadSportPhoto(res.sport.code, cPhoto);
+          await refreshAssets();
+        } catch (e) {
+          toast.error(t("The sport was saved without its photo: {reason}", { reason: tServer((e as Error).message) }));
+        }
+      }
       invalidateSportsCache();
       setCreating(false);
       read.reload();
@@ -344,11 +356,22 @@ function Page() {
                 <div>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <SportThumbnail
-                        sport={s.code}
-                        colorKey={s.color_key}
-                        className="size-12 shrink-0 rounded-[var(--radius-lg)]"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => openEdit(s)}
+                        aria-label={t("Change the photo of {name}", { name: s.name_en })}
+                        title={t("Change the photo of {name}", { name: s.name_en })}
+                        className="group relative shrink-0 rounded-[var(--radius-lg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      >
+                        <SportThumbnail
+                          sport={s.code}
+                          colorKey={s.color_key}
+                          className="size-12 shrink-0 rounded-[var(--radius-lg)]"
+                        />
+                        <span className="absolute -bottom-1 -right-1 grid size-5 place-items-center rounded-full border border-line bg-surface text-muted shadow-[var(--shadow-border)] transition-colors group-hover:text-fg">
+                          <Camera aria-hidden="true" className="size-3" />
+                        </span>
+                      </button>
                       <div>
                         <div className="flex items-center gap-1.5">
                           <h3 className="font-semibold text-fg text-base">{s.name_en}</h3>
@@ -386,10 +409,6 @@ function Page() {
                     <div>
                       <span className="text-muted block text-2xs">{t("Active classes")}</span>
                       <span className="font-semibold text-fg">{s.future_classes_count}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted block text-2xs">{t("Active plans")}</span>
-                      <span className="font-semibold text-fg">{s.active_plans_count}</span>
                     </div>
                   </div>
                 </div>
@@ -552,6 +571,8 @@ function Page() {
                 </div>
               </div>
 
+              <NewSportPhotoField file={cPhoto} onFile={setCPhoto} />
+
               <div className="mt-6 flex justify-end gap-2 border-t border-line pt-4">
                 <Button variant="ghost" onClick={() => setCreating(false)}>
                   {t("Cancel")}
@@ -640,6 +661,8 @@ function Page() {
         <p className="text-xs text-muted font-mono mb-4">{editing?.code}</p>
 
           <div className="mt-4 space-y-4">
+            {editing ? <SportPhotoField sport={editing} /> : null}
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-muted mb-1">{t("English name")}</label>
@@ -827,5 +850,181 @@ function Page() {
         </div>
       </Modal>
     </Shell>
+  );
+}
+
+const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+function imageSize(file: File): Promise<{ w: number; h: number }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      resolve({ w: img.naturalWidth, h: img.naturalHeight });
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      reject(new Error("unreadable"));
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  });
+}
+
+/** Why the server would turn this picture down, in the manager's language; null when it fits. */
+async function photoProblem(file: File): Promise<string | null> {
+  if (!PHOTO_TYPES.includes(file.type)) return t("Choose a JPEG, PNG or WebP picture.");
+  if (file.size > 2 * 1024 * 1024) return t("The photo must be 2 MB or smaller.");
+  try {
+    const { w, h } = await imageSize(file);
+    if (Math.min(w, h) < 400 || Math.max(w, h) > 4000) {
+      return t("The shorter side needs 400 px or more, the longer side 4000 px or less.");
+    }
+  } catch {
+    return t("This file could not be read as a picture.");
+  }
+  return null;
+}
+
+function uploadSportPhoto(code: string, file: File) {
+  const fd = new FormData();
+  fd.append("slot", `sport.${code}`);
+  fd.append("file", file);
+  return apiPost("/manager/site-assets/upload", fd);
+}
+
+/**
+ * The sport's photo (site asset `sport.<code>`), shown on its cards and booking screens. A picked
+ * photo is saved at once; the form's Save is for the rest. The server's own limits are checked here
+ * first so the reason reads in the manager's language.
+ */
+function SportPhotoField({ sport }: { sport: ManagerSport }) {
+  const refresh = useRefreshAssets();
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const slot = `sport.${sport.code}`;
+
+  async function pick(file: File) {
+    setProblem(null);
+    const why = await photoProblem(file);
+    if (why) return setProblem(why);
+    setBusy(true);
+    try {
+      await uploadSportPhoto(sport.code, file);
+      await refresh();
+      toast.success(t("Photo changed"));
+    } catch (e) {
+      setProblem(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reset() {
+    setProblem(null);
+    setBusy(true);
+    try {
+      await apiPost(`/manager/site-assets/${encodeURIComponent(slot)}/reset`);
+      await refresh();
+      toast.success(t("Photo put back as shipped"));
+    } catch (e) {
+      setProblem(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-4 rounded-[var(--radius-md)] border border-line bg-surface p-3">
+      <SportThumbnail sport={sport.code} colorKey={sport.color_key} className="size-20 rounded-[var(--radius-lg)]" />
+      <div className="grid min-w-0 gap-1.5">
+        <span className="text-xs font-medium text-muted">{t("Photo")}</span>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => input.current?.click()}>
+            <Camera aria-hidden="true" className="mr-1 size-3.5" />
+            {busy ? t("Uploading…") : t("Change photo")}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void reset()}>
+            {t("Use the shipped photo")}
+          </Button>
+        </div>
+        <p className={problem ? "text-2xs text-danger" : "text-2xs text-muted"} role={problem ? "alert" : undefined}>
+          {problem ?? t("JPEG, PNG or WebP, up to 2 MB, 400 px or more on the shorter side. Saved as soon as you pick it.")}
+        </p>
+        <input
+          ref={input}
+          type="file"
+          accept={PHOTO_TYPES.join(",")}
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void pick(file);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** A photo for a sport that does not exist yet: checked now, uploaded once the sport is saved. */
+function NewSportPhotoField({ file, onFile }: { file: File | null; onFile: (f: File | null) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!file) return setPreview(null);
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  async function pick(f: File) {
+    setProblem(null);
+    const why = await photoProblem(f);
+    if (why) return setProblem(why);
+    onFile(f);
+  }
+
+  return (
+    <div className="flex items-center gap-4 rounded-[var(--radius-md)] border border-line bg-surface p-3">
+      {preview ? (
+        <img src={preview} alt="" className="size-20 shrink-0 rounded-[var(--radius-lg)] object-cover" />
+      ) : (
+        <span className="grid size-20 shrink-0 place-items-center rounded-[var(--radius-lg)] border border-dashed border-line text-subtle">
+          <Camera aria-hidden="true" className="size-5" />
+        </span>
+      )}
+      <div className="grid min-w-0 gap-1.5">
+        <span className="text-xs font-medium text-muted">{t("Photo (optional)")}</span>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => input.current?.click()}>
+            <Camera aria-hidden="true" className="mr-1 size-3.5" />
+            {file ? t("Change photo") : t("Choose a photo")}
+          </Button>
+          {file ? (
+            <Button size="sm" variant="ghost" onClick={() => onFile(null)}>
+              {t("Remove")}
+            </Button>
+          ) : null}
+        </div>
+        <p className={problem ? "text-2xs text-danger" : "text-2xs text-muted"} role={problem ? "alert" : undefined}>
+          {problem ?? t("JPEG, PNG or WebP, up to 2 MB, 400 px or more on the shorter side. Saved with the sport.")}
+        </p>
+        <input
+          ref={input}
+          type="file"
+          accept={PHOTO_TYPES.join(",")}
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) void pick(f);
+          }}
+        />
+      </div>
+    </div>
   );
 }

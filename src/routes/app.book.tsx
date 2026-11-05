@@ -4,7 +4,7 @@ import { Landmark, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { MonthCalendar, useAvailability } from "@/components/availability-calendar";
-import { CourtGrid, DateStrip, freeHours, type Court, type OccSlot } from "@/components/court-grid";
+import { CourtGrid, freeHours, type Court, type OccSlot } from "@/components/court-grid";
 import { HoldTimer, sportPhoto } from "@/components/media";
 import { HoldCountdown } from "@/components/moments/hold-countdown";
 import { PaidMark, ScrambleCode } from "@/components/moments/paid";
@@ -12,16 +12,19 @@ import { CancelBookingDialog } from "@/components/cancel-booking";
 import { PayOnlineButton } from "@/components/pay-online";
 import { MemberTransferModal, useCentreBank, type CentreBank } from "@/components/transfer-qr-modal";
 import { Shell, money, when } from "@/components/shell";
-import { Button, Card, ContextLayout, DateField, Input, LoadError, PageHero, Seg, Skeleton, SportThumbnail, StatusBadge } from "@/components/ui";
+import { Button, Card, ContextLayout, Input, LoadError, PageHero, Seg, Skeleton, SportThumbnail, StatusBadge } from "@/components/ui";
 import { StarBorder } from "@/components/fx";
 import { apiGet, apiPost, openInvoice, ApiClientError } from "@/lib/arena3/client";
-import { addDaysISO, todayISO, sportLabel } from "@/lib/arena3/labels";
+import type { ConfirmResponse, HoldResponse, MeBookingsResponse, MyBooking, MyClassSession } from "@/lib/arena3/contracts";
+import { addDaysISO, levelLabel, todayISO, sportLabel } from "@/lib/arena3/labels";
 import { locale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { useRead } from "@/lib/use-read";
+import { useLimits } from "@/lib/use-centre";
 import { useLive } from "@/lib/use-live";
 import { useSports } from "@/components/sports-ui";
 import { DEFAULT_VENUE, hoursOf, venueFrom, type Venue, type VenueRaw } from "@/lib/venue";
+import { AddToCalendar } from "@/components/class-extras";
 
 export const Route = createFileRoute("/app/book")({
   validateSearch: (s: Record<string, unknown>): { sport?: string } => ({
@@ -37,6 +40,7 @@ function nearestFree(
   hour: number,
   date: string,
   hours: readonly number[],
+  count: number,
 ) {
   const sameSport = data.courts.filter((c) => c.sport === wanted.sport);
   return freeHours(sameSport, data.slots, date, Date.now(), true, hours)
@@ -46,38 +50,14 @@ function nearestFree(
         Number(b.court.court_code === wanted.court_code) -
           Number(a.court.court_code === wanted.court_code),
     )
-    .slice(0, 3);
+    .slice(0, count);
 }
 
 /** One of the member's own upcoming court bookings (M-04). */
-type MyBooking = {
-  id: string;
-  code: string;
-  status: string;
-  start_at: string;
-  end_at: string;
-  court_id: string;
-  court_code: string;
-  sport: string;
-  can_move: boolean;
-  paid_vnd?: number;
-  price_vnd?: number;
-  series_id?: string | null;
-};
-
-type Hold = {
-  booking: { id: string; code: string; hold_until?: string };
-  price: number;
-  /** What is asked up front when only a deposit is due; equals the price otherwise. */
-  due_now_vnd?: number;
-  deposit_vnd?: number;
-  hold_until: string;
+type Hold = HoldResponse & {
   /** Which slot this is, carried from the tap so the card can name it. */
   court_code?: string;
   hour?: number;
-  promo?: { code: string; name: string; discount_vnd: number } | null;
-  /** Court hours on a plan that covers this sport and is live today (BR-12, BR-13). */
-  plan_hours_left?: number;
 };
 
 /** A hold that was refused, and — when another hour would help — where to go instead. */
@@ -89,15 +69,19 @@ type Taken = {
 };
 
 function Page() {
+  const limits = useLimits();
   const { sports } = useSports();
   const searchSport = Route.useSearch().sport;
   const [date, setDate] = useState(todayISO);
   const [sport, setSport] = useState(searchSport ?? "");
+  // Open on the first sport once; after that "All" ("") is a real choice, not a gap to fill.
+  const sportDefaulted = useRef(searchSport != null);
   useEffect(() => {
-    if (!sport && sports.length > 0) {
+    if (!sportDefaulted.current && sports.length > 0) {
+      sportDefaulted.current = true;
       setSport(sports[0].code);
     }
-  }, [sport, sports]);
+  }, [sports]);
   // The day on screen. A day the server will not show comes back as `error` (not a grid of grey
   // blocks behind a toast), and a late reply for an earlier date never lands on a later one.
   const { data, error, reload } = useRead<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${date}`);
@@ -108,11 +92,11 @@ function Page() {
   // Refusals and clash warnings appear above the grid; a tap deep in the grid must still see them.
   const notices = useRef<HTMLDivElement>(null);
   const [overlap, setOverlap] = useState<{ court: Court; hour: number; message: string } | null>(null);
-  // Week strip or whole month — both show how many slots each day has left.
-  const [view, setView] = useState<"week" | "month">("week");
   const [refresh, setRefresh] = useState(0);
   const avail = useAvailability(sport, refresh);
   const [mine, setMine] = useState<MyBooking[] | null>(null);
+  const [myClasses, setMyClasses] = useState<MyClassSession[]>([]);
+  const [showAllClasses, setShowAllClasses] = useState(false);
   const [windowHours, setWindowHours] = useState(2);
   const [showAllMine, setShowAllMine] = useState(false);
   type MySub = {
@@ -129,8 +113,9 @@ function Page() {
   const [cancelId, setCancelId] = useState<string | null>(null);
   async function loadMine() {
     try {
-      const r = await apiGet<{ items: MyBooking[]; window_hours: number }>("/me/bookings");
+      const r = await apiGet<MeBookingsResponse>("/me/bookings");
       setMine(r.items);
+      setMyClasses(r.class_sessions ?? []);
       setWindowHours(r.window_hours);
     } catch {
       // Keep the list that is already on screen
@@ -236,7 +221,7 @@ function Page() {
     const start = `${date}T${String(hour).padStart(2, "0")}:00:00+07:00`;
     setBusy(true);
     try {
-      const res = await apiPost<Hold>(
+      const res = await apiPost<HoldResponse>(
         "/bookings",
         {
           court_id: court.id,
@@ -279,7 +264,7 @@ function Page() {
         if (aboutTheSlot) reload();
         setTaken({
           message,
-          alts: fresh ? nearestFree(fresh, court, hour, date, hoursOf(venue)) : [],
+          alts: fresh ? nearestFree(fresh, court, hour, date, hoursOf(venue), limits.book_alternatives) : [],
           canRetry: aboutTheSlot,
         });
       }
@@ -288,25 +273,21 @@ function Page() {
     }
   }
 
-  async function confirmPay(method: "quota" | "transfer") {
+  async function confirmPay(method: "transfer") {
     if (!hold) return;
     setBusy(true);
     try {
       // The endpoint issues an invoice and hands back its id. Dropping that on
       // the floor is why a member could pay and never see a receipt — nothing
       // in the UI ever mentioned one existed.
-      const res = await apiPost<{
-        invoice_id?: string;
-        awaiting_transfer?: boolean;
-        hold_until?: string;
-      }>(`/bookings/${hold.booking.id}/confirm`, { method }, true);
+      const res = await apiPost<ConfirmResponse>(`/bookings/${hold.booking.id}/confirm`, { method }, true);
       setHold(null);
       load();
       // A transfer is not a booking yet. Saying "Booking confirmed" here would
       // be the app telling a member their court is theirs while reception has
       // not found a single dong of it in the bank.
-      if (res.awaiting_transfer) {
-        setPending({ amount: hold.due_now_vnd ?? hold.price, until: res.hold_until ?? hold.hold_until, code: hold.booking.code });
+      if ("awaiting_transfer" in res) {
+        setPending({ amount: hold.due_now_vnd, until: res.hold_until, code: hold.booking.code });
         toast.success(t("Transfer noted"), {
           description: t("Your court is held while reception checks the bank."),
         });
@@ -314,7 +295,7 @@ function Page() {
       }
       if (res.invoice_id) {
         setReceipt(res.invoice_id);
-        toast.success(method === "quota" ? t("One plan hour deducted") : t("Booking confirmed"), {
+        toast.success(t("Booking confirmed"), {
           description: t("Your receipt is ready."),
           action: {
             label: t("Open receipt"),
@@ -322,7 +303,7 @@ function Page() {
           },
         });
       } else {
-        toast.success(method === "quota" ? t("One plan hour deducted") : t("Booking confirmed"));
+        toast.success(t("Booking confirmed"));
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("Could not confirm the booking"));
@@ -351,7 +332,7 @@ function Page() {
         <span className="text-xs tabular-nums text-muted">{mine.length}</span>
       </div>
       <ul className="divide-y divide-line">
-        {(showAllMine ? mine : mine.slice(0, 4)).map((b) => (
+        {(showAllMine ? mine : mine.slice(0, limits.member_bookings)).map((b) => (
           <li key={b.id} className="py-2.5" title={b.code}>
             <div className="flex items-start justify-between gap-2">
               <span className="text-sm">
@@ -362,6 +343,17 @@ function Page() {
               {b.status !== "confirmed" ? <StatusBadge status={b.status} /> : null}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-3">
+              {b.status === "confirmed" || b.status === "hold" ? (
+                <AddToCalendar
+                  event={{
+                    title: `${t("Court {court}", { court: b.court_code })} · ${sportLabel(b.sport)}`,
+                    start: b.start_at,
+                    end: b.end_at,
+                    details: b.code,
+                    location: "Lê Long Sport",
+                  }}
+                />
+              ) : null}
               {b.can_move ? (
                 <button type="button" onClick={() => startMove(b)} className="hit text-sm font-medium text-accent-2 hover:underline">
                   {t("Change time")}
@@ -378,7 +370,7 @@ function Page() {
           </li>
         ))}
       </ul>
-      {mine.length > 4 ? (
+      {mine.length > limits.member_bookings ? (
         <button
           type="button"
           onClick={() => setShowAllMine((v) => !v)}
@@ -390,10 +382,64 @@ function Page() {
     </Card>
   ) : null;
 
+  // Sessions of the classes the member has a seat in: part of their schedule, booked through the class.
+  const myClassesCard = myClasses.length && !moving ? (
+    <Card className="p-4">
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <h2 className="text-base font-semibold">{t("Your upcoming classes")}</h2>
+        <span className="text-xs tabular-nums text-muted">{myClasses.length}</span>
+      </div>
+      <ul className="divide-y divide-line">
+        {(showAllClasses ? myClasses : myClasses.slice(0, limits.member_bookings)).map((s) => (
+          <li key={s.id} className="py-2.5">
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-sm">
+                <span className="font-semibold">
+                  {sportLabel(s.sport)} · {levelLabel(s.level)}
+                </span>
+                <span className="block text-muted">{when(s.start_at)}</span>
+                <span className="block text-xs text-muted">
+                  {s.court_code} · {s.coach_name}
+                </span>
+              </span>
+              <span className="shrink-0 rounded-[var(--radius-pill)] bg-accent/10 px-2 py-0.5 text-2xs font-semibold text-accent-2">
+                {t("Class")}
+              </span>
+            </div>
+            <AddToCalendar
+              className="mt-1"
+              event={{
+                title: `${t("Class")} · ${sportLabel(s.sport)} · ${levelLabel(s.level)}`,
+                start: s.start_at,
+                end: s.end_at,
+                details: `${s.court_code} · ${s.coach_name}`,
+                location: "Lê Long Sport",
+              }}
+            />
+          </li>
+        ))}
+      </ul>
+      <div className="mt-1 flex flex-wrap items-center gap-x-4">
+        {myClasses.length > limits.member_bookings ? (
+          <button
+            type="button"
+            onClick={() => setShowAllClasses((v) => !v)}
+            className="hit text-sm font-medium text-accent-2 hover:underline"
+          >
+            {showAllClasses ? t("Show fewer") : t("Show all {n}", { n: myClasses.length })}
+          </button>
+        ) : null}
+        <Link to="/app/classes" className="hit text-sm font-medium text-accent-2 hover:underline">
+          {t("Manage classes")}
+        </Link>
+      </div>
+    </Card>
+  ) : null;
+
   const planQuotaCard = (
     <Card className="p-4">
       <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="text-base font-semibold">{t("Plan quota")}</h2>
+        <h2 className="text-base font-semibold">{t("My plan")}</h2>
         <Link to="/app/plans" className="text-xs font-medium text-accent-2 hover:underline">
           {t("Order a plan")}
         </Link>
@@ -402,12 +448,7 @@ function Page() {
         <ul className="divide-y divide-line">
           {mySubs.map((sub, idx) => (
             <li key={idx} className="py-2 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium text-fg">{sub.plan_name}</span>
-                <span className="rounded-[var(--radius-pill)] bg-accent/10 px-2 py-0.5 text-xs font-semibold text-accent-2">
-                  {sub.court_hours_left} {t("hours")}
-                </span>
-              </div>
+              <span className="font-medium text-fg">{sub.plan_name}</span>
               <p className="mt-0.5 text-xs text-muted">
                 {sportLabel(sub.sport_scope)} · {t("Ends {date}", { date: sub.end_on })}
               </p>
@@ -416,7 +457,7 @@ function Page() {
         </ul>
       ) : (
         <p className="text-xs text-muted leading-relaxed">
-          {t("No active plan. Buy a plan to get free court hours and member discounts.")}
+          {t("No active plan. See Plans for what each plan includes.")}
         </p>
       )}
     </Card>
@@ -425,7 +466,7 @@ function Page() {
   const bestFreeDays = Object.entries(avail ?? {})
     .filter(([d, info]) => d >= todayISO() && info.free > 0)
     .sort((a, b) => b[1].free - a[1].free)
-    .slice(0, 4);
+    .slice(0, limits.book_best_days);
 
   const bestFreeHoursCard = bestFreeDays.length > 0 ? (
     <Card className="p-4">
@@ -528,45 +569,29 @@ function Page() {
         context={
           <>
             {myCourts}
+            {myClassesCard}
             {planQuotaCard}
             {bestFreeHoursCard}
           </>
         }
       >
         <div className="min-w-0">
-          <div className="grid gap-3">
-            {view === "week" ? (
-              <DateStrip value={date} onChange={setDate} avail={avail} />
-            ) : (
-              <MonthCalendar value={date} onChange={setDate} avail={avail} />
-            )}
-            <div className="flex flex-wrap items-center gap-2">
-              <Seg
-                value={sport}
-                onChange={setSport}
-                options={[
-                  { value: "", label: t("All") },
-                  ...sports
-                    .filter((s) => !data?.courts || data.courts.some((c) => c.sport === s.code))
-                    .map((s) => ({ value: s.code, label: sportLabel(s.code) })),
-                ]}
-              />
-              <Seg
-                value={view}
-                onChange={(v) => setView(v === "month" ? "month" : "week")}
-                options={[
-                  { value: "week", label: t("Week") },
-                  { value: "month", label: t("Month") },
-                ]}
-              />
-              <DateField
-                required
-                value={date}
-                onChange={setDate}
-                invalid={error?.refused === true}
-                aria-label={t("Pick another date")}
-                className="hidden sm:flex"
-              />
+          <div className="grid min-w-0 grid-cols-1 gap-3 rounded-[var(--radius-lg)] border border-line bg-surface/50 p-3 sm:p-4">
+            {/* One way to pick a day: the month, with how many slots each day has left. */}
+            <MonthCalendar value={date} onChange={setDate} avail={avail} />
+            <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="w-full min-w-0 sm:w-auto sm:max-w-full">
+                <Seg
+                  value={sport}
+                  onChange={setSport}
+                  options={[
+                    { value: "", label: t("All") },
+                    ...sports
+                      .filter((s) => !data?.courts || data.courts.some((c) => c.sport === s.code))
+                      .map((s) => ({ value: s.code, label: sportLabel(s.code) })),
+                  ]}
+                />
+              </div>
             </div>
             {promoOpen || promoCode ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -759,7 +784,7 @@ function Page() {
                     <p className="mt-1 text-xs text-muted">
                       {t("Your class enrolment stays put. This is only a clash warning.")}
                     </p>
-                    <div className="mt-3 flex gap-2">
+                    <div className="mt-3 flex flex-wrap gap-2">
                       <Button
                         disabled={busy}
                         onClick={() =>
@@ -825,8 +850,7 @@ function Page() {
                   {(() => {
                     // Only the ways this member can actually pay are offered (B-4), and only the first
                     // of them, the one most people take, gets the bright border.
-                    const hours = hold.plan_hours_left ?? 0;
-                    const primary = hours >= 1 ? "quota" : onlineOn ? "online" : bankOn ? "transfer" : null;
+                    const primary = onlineOn ? "online" : bankOn ? "transfer" : null;
                     const lift = (key: string, node: ReactNode) =>
                       key === primary ? <StarBorder speed={4} key={key}>{node}</StarBorder> : <span key={key}>{node}</span>;
                     if (!primary) {
@@ -838,14 +862,6 @@ function Page() {
                     }
                     return (
                       <div className="flex flex-wrap gap-2">
-                        {hours >= 1
-                          ? lift(
-                              "quota",
-                              <Button disabled={busy} onClick={() => void confirmPay("quota")}>
-                                {t("Use plan hours ({n} left)", { n: hours })}
-                              </Button>,
-                            )
-                          : null}
                         {/* Online payment settles the slot at once (payOS confirms the money first). A bank
                             transfer only promises it: the court stays on hold until reception finds it. */}
                         {onlineOn

@@ -25,7 +25,7 @@ const TESTIMONIALS = [
   },
   {
     quote: tk(
-      "Plan hours come straight off at the desk. No cash, no working out what counts as peak, no arguing about the price on a Saturday morning.",
+      "Each court is paid at the desk when I book it. No cash, no working out what counts as peak, no arguing about the price on a Saturday morning.",
     ),
     name: "Phạm Hoàng Long",
     meta: tk("Badminton · A3-2026-0003"),

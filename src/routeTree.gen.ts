@@ -63,6 +63,7 @@ import { Route as ManagerSportsRouteImport } from './routes/manager.sports'
 import { Route as ManagerStaffRouteImport } from './routes/manager.staff'
 import { Route as PayReturnRouteImport } from './routes/pay.return'
 import { Route as V1SplatRouteImport } from './routes/v1.$'
+import { Route as VerifyCodeRouteImport } from './routes/verify.$code'
 import { Route as CoachStudentIdRouteImport } from './routes/coach.student.$id'
 import { Route as DeskMemberIdRouteImport } from './routes/desk.member.$id'
 
@@ -336,6 +337,11 @@ const V1SplatRoute = V1SplatRouteImport.update({
   path: '/v1/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VerifyCodeRoute = VerifyCodeRouteImport.update({
+  id: '/verify/$code',
+  path: '/verify/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CoachStudentIdRoute = CoachStudentIdRouteImport.update({
   id: '/student/$id',
   path: '/student/$id',
@@ -398,6 +404,7 @@ export interface FileRoutesByFullPath {
   '/manager/staff': typeof ManagerStaffRoute
   '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
+  '/verify/$code': typeof VerifyCodeRoute
   '/app/': typeof AppIndexRoute
   '/coach/': typeof CoachIndexRoute
   '/desk/': typeof DeskIndexRoute
@@ -452,6 +459,7 @@ export interface FileRoutesByTo {
   '/manager/staff': typeof ManagerStaffRoute
   '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
+  '/verify/$code': typeof VerifyCodeRoute
   '/app': typeof AppIndexRoute
   '/coach': typeof CoachIndexRoute
   '/desk': typeof DeskIndexRoute
@@ -511,6 +519,7 @@ export interface FileRoutesById {
   '/manager/staff': typeof ManagerStaffRoute
   '/pay/return': typeof PayReturnRoute
   '/v1/$': typeof V1SplatRoute
+  '/verify/$code': typeof VerifyCodeRoute
   '/app/': typeof AppIndexRoute
   '/coach/': typeof CoachIndexRoute
   '/desk/': typeof DeskIndexRoute
@@ -571,6 +580,7 @@ export interface FileRouteTypes {
     | '/manager/staff'
     | '/pay/return'
     | '/v1/$'
+    | '/verify/$code'
     | '/app/'
     | '/coach/'
     | '/desk/'
@@ -625,6 +635,7 @@ export interface FileRouteTypes {
     | '/manager/staff'
     | '/pay/return'
     | '/v1/$'
+    | '/verify/$code'
     | '/app'
     | '/coach'
     | '/desk'
@@ -683,6 +694,7 @@ export interface FileRouteTypes {
     | '/manager/staff'
     | '/pay/return'
     | '/v1/$'
+    | '/verify/$code'
     | '/app/'
     | '/coach/'
     | '/desk/'
@@ -709,6 +721,7 @@ export interface RootRouteChildren {
   ApiSplatRoute: typeof ApiSplatRoute
   PayReturnRoute: typeof PayReturnRoute
   V1SplatRoute: typeof V1SplatRoute
+  VerifyCodeRoute: typeof VerifyCodeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1091,6 +1104,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/verify/$code': {
+      id: '/verify/$code'
+      path: '/verify/$code'
+      fullPath: '/verify/$code'
+      preLoaderRoute: typeof VerifyCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/coach/student/$id': {
       id: '/coach/student/$id'
       path: '/student/$id'
@@ -1237,6 +1257,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSplatRoute: ApiSplatRoute,
   PayReturnRoute: PayReturnRoute,
   V1SplatRoute: V1SplatRoute,
+  VerifyCodeRoute: VerifyCodeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

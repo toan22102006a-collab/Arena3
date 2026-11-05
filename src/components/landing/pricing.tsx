@@ -52,7 +52,7 @@ export function PricingScene({ weekday }: { weekday: CatalogPrice[] }) {
             {t("Peak / off-peak")}
           </h2>
           <p data-rise className="mt-3 text-muted">
-            {t("Mon-Fri before 17:00 is off-peak. Weekends use weekend prices. Members can use plan hours or get their plan discount.")}
+            {t("Mon-Fri before 17:00 is off-peak. Weekends use weekend prices. Each court is paid per booking at that price.")}
           </p>
 
           {/* The opening day as a bar. */}

@@ -7,12 +7,11 @@ import { rise } from "./tweens";
 import { useVenue } from "./util";
 
 /**
- * How booking works, told as you scroll.
+ * How booking works, on paper.
  *
- * On a computer the section holds still while the scroll draws the line from step to step, and
- * each step lights up as the line reaches it: pick, hold, pay, in the order a booking really
- * happens. On a phone the steps simply arrive one after another. The markup at rest is the
- * finished picture (every step lit, the line drawn), which is what reduced motion gets.
+ * The one light section on a floodlit page, set like a printed programme: a loud three-word
+ * heading on the left, the steps as ruled rows on the right. Copy stays readable throughout;
+ * the rules briefly draw on entry without holding up the scroll.
  */
 export function StepsScene() {
   const venue = useVenue();
@@ -22,70 +21,75 @@ export function StepsScene() {
       n: "01",
       title: t("Pick your slot"),
       body: t("See which courts are free, hour by hour."),
+      tag: t("Live grid"),
     },
-    { n: "02", title: t("Hold it for {n} minutes", { n: venue.holdMinutes }), body: t("The slot is held for you. You do not pay yet.") },
+    {
+      n: "02",
+      title: t("Hold it for {n} minutes", { n: venue.holdMinutes }),
+      body: t("The slot is held for you. You do not pay yet."),
+      tag: t("{n}-min hold", { n: venue.holdMinutes }),
+    },
     {
       n: "03",
       title: t("Pay at the desk"),
-      body: t("Pay at reception by cash, bank transfer or your plan's court hours."),
+      body: t("Pay for each court booking or class at reception by cash or bank transfer."),
+      tag: t("Cash or transfer"),
     },
   ];
 
-  useScene(root, ({ motion, desktop }) => {
+  useScene(root, ({ motion }) => {
     const el = root.current;
     if (!motion || !el) return;
     rise(el, "[data-rise]");
     const q = gsap.utils.selector(el);
-    if (!desktop) {
-      rise(el, "[data-step]", { stagger: 0.14 });
-      return;
-    }
-    const css = getComputedStyle(document.documentElement);
-    const muted = css.getPropertyValue("--color-muted").trim() || "#424c6b";
-    const lit = css.getPropertyValue("--color-accent-fg").trim() || "#ffffff";
-    const tl = gsap.timeline({
-      defaults: { ease: "none" },
-      scrollTrigger: { trigger: el, start: "center center", end: "+=110%", pin: true, scrub: 0.6 },
-    });
-    tl.fromTo(q("[data-line]"), { scaleX: 0 }, { scaleX: 1, duration: 3 }, 0);
-    q("[data-step]").forEach((step, i) => {
-      const at = i * 1.1;
-      tl.fromTo(step.querySelector("[data-fill]"), { scale: 0 }, { scale: 1, duration: 0.45, ease: "arena" }, at);
-      tl.fromTo(step.querySelector("[data-num]"), { color: muted }, { color: lit, duration: 0.3 }, at + 0.1);
-      tl.fromTo(step.querySelectorAll("[data-copy]"), { opacity: 0.28, y: 10 }, { opacity: 1, y: 0, duration: 0.5, stagger: 0.1 }, at);
+    gsap.fromTo(q("[data-rule]"), { scaleX: 0 }, {
+      scaleX: 1,
+      duration: 0.55,
+      stagger: 0.1,
+      ease: "power2.out",
+      scrollTrigger: { trigger: el, start: "top 80%", once: true },
     });
   });
 
   return (
-    <section ref={root} id="how" className="relative mx-auto max-w-6xl scroll-mt-20 px-4 py-20">
-      {/* Pointer-reactive dot field: costs nothing while the cursor is still. */}
-      <GLBackground variant="dotgrid" className="-z-[1]" color="#3f7d20" gap={30} opacity={0.22} />
-      <p data-rise className="kicker text-2xs text-muted">
-        {t("Booking")}
-      </p>
-      <h2 className="mt-2 max-w-xl font-display text-4xl sm:text-5xl">
-        <SplitHeading text={t("How to book a court")} />
-      </h2>
-
-      <div className="relative mt-10">
-        <div aria-hidden className="absolute left-0 right-0 top-6 hidden h-px bg-line-strong/60 md:block">
-          <div data-line className="h-full origin-left bg-accent" />
+    <section ref={root} id="how" className="relative scroll-mt-20 overflow-hidden bg-paper text-paper-ink">
+      {/* Pointer-reactive dot field, pressed lightly into the paper like a print screen: small dots
+          that barely swell, so the cursor leaves a trace and not ink blots. */}
+      <GLBackground variant="dotgrid" color="#121410" gap={22} dot={0.9} radius={110} opacity={0.12} />
+      <div className="relative mx-auto grid w-full max-w-6xl gap-12 px-4 pb-14 pt-20 md:grid-cols-2 md:gap-16 md:pb-20 md:pt-24">
+        <div>
+          <p data-rise className="inline-block rounded-md bg-paper-ink px-2.5 py-1.5 font-mono text-2xs font-bold uppercase tracking-wider text-accent">
+            {t("How to book a court")}
+          </p>
+          <h2 className="font-athletic mt-6 text-5xl leading-[0.95] sm:text-7xl">
+            <SplitHeading text={t("Pick. Hold. Play.")} />
+          </h2>
         </div>
-        <ol className="grid gap-8 md:grid-cols-3">
-          {steps.map((s) => (
-            <li key={s.n} data-step className="relative">
-              <span className="relative z-[1] grid size-12 place-items-center overflow-hidden rounded-full bg-wood shadow-[var(--shadow-accent)]">
-                <span data-fill aria-hidden className="absolute inset-0 rounded-full bg-accent" />
-                <span data-num className="athletic relative pt-0.5 text-lg tabular-nums text-accent-fg">
-                  {s.n}
-                </span>
+
+        <ol className="self-end">
+          {steps.map((s, i) => (
+            <li key={s.n} data-step className="relative grid grid-cols-[3.5rem_1fr] items-start gap-x-4 gap-y-3 py-5 sm:grid-cols-[4.5rem_1fr_auto]">
+              <span aria-hidden data-rule className="absolute inset-x-0 top-0 h-[1.5px] origin-left bg-paper-ink" />
+              {i === steps.length - 1 ? (
+                <span aria-hidden className="absolute inset-x-0 bottom-0 h-[1.5px] bg-paper-ink" />
+              ) : null}
+              <span data-num className="font-display text-3xl leading-none tabular-nums sm:text-4xl">
+                {s.n}
               </span>
-              <h3 data-copy className="mt-5 font-display text-2xl">
-                {s.title}
-              </h3>
-              <p data-copy className="mt-2 text-sm leading-relaxed text-muted">
-                {s.body}
-              </p>
+              <div>
+                <h3 data-copy className="text-lg font-bold">
+                  {s.title}
+                </h3>
+                <p data-copy className="mt-0.5 text-sm leading-relaxed text-paper-ink/65">
+                  {s.body}
+                </p>
+              </div>
+              <span
+                data-tag
+                className="col-start-2 justify-self-start rounded-md bg-paper-ink px-2 py-1 font-mono text-2xs font-bold uppercase tracking-wider text-accent sm:col-start-auto sm:mt-0.5 sm:justify-self-end"
+              >
+                {s.tag}
+              </span>
             </li>
           ))}
         </ol>

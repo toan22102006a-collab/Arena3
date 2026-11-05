@@ -176,11 +176,13 @@ convenience, not the control.
 
 ### 4.3 Classes
 
+A session is spent when the register marks the member Present, Late or Absent; Excused is free.
+
 | ID | Requirement | Enforced by |
 | --- | --- | --- |
 | FR-C01 | A member sees the published timetable with remaining places. | `GET /v1/classes` |
-| FR-C02 | Enrolling requires an active plan covering that sport. | **BR-19** |
-| FR-C03 | A plan with a session quota must have sessions left. | **BR-20** |
+| FR-C02 | Enrolling or accepting a waitlist place requires an active session plan covering that sport; time-based plans cover court time, not classes. | **BR-19** |
+| FR-C03 | An active session plan must not be frozen, must have started, must not have expired, and must have sessions left (`session_left > 0`). Nothing is deducted at enrolment. | **BR-19**, **BR-20** |
 | FR-C04 | A member cannot enrol in a class that clashes with one they are already in. | **BR-22** |
 | FR-C05 | A member cannot enrol twice in the same class. | **BR-22** |
 | FR-C06 | A class that is not `open` cannot be enrolled in. | **BR-18** |
@@ -190,7 +192,7 @@ convenience, not the control.
 | FR-C10 | A class that filled between the offer and the acceptance refuses the acceptance rather than overfilling. | **BR-21** |
 | FR-C11 | A member may leave a class up to `cancel_class_hours` (default 4) before the next session. | **BR-24** |
 | FR-C12 | A member sees their own attendance per session — Present, Late, Absent, Excused — with totals; a session not yet marked reads "Not marked yet". Nobody else's attendance is readable. | `GET /v1/me/attendance` (own rows only; staff `403`) |
-| FR-C13 | When the centre cancels a session or a whole class, a member on a per-session plan gets the session back, once; a time-based plan has nothing to give back. Members are notified. | `POST /v1/sessions/:id/cancel`, `PATCH /v1/classes/:id`, **BR-29** |
+| FR-C13 | Sessions are charged only upon attendance, so centre cancelling a session or class does not refund any session (unless an enrolment had a legacy prepaid session). Members are notified. | `POST /v1/sessions/:id/cancel`, `PATCH /v1/classes/:id`, **BR-29** |
 | FR-C14 | When a session is moved, members are told the new time. | `POST /v1/sessions/:id/reschedule`, **BR-27** |
 
 ### 4.4 Membership
@@ -363,10 +365,10 @@ no other moment.* The return URL can be opened by anybody in any order.
 | FR-G09 | A manager creates classes (coach and court chosen from real data), assigns coaches and publishes timetables. | `POST /v1/classes`, `:id/publish` |
 | FR-G10 | A manager toggles feature flags F4 (training), F5 and F6 without a deploy. | `PATCH /v1/flags` |
 | FR-G11 | A manager opens a class: sessions, court, coach, enrolment, roster and waitlist. | `GET /v1/classes/:id`, `GET /v1/classes/:id/roster` |
-| FR-G12 | A manager cancels a single session with a reason. Each enrolled member on a per-session plan gets one session back, once; a second cancel is refused (`409`). Members are notified and the action is audited. | `POST /v1/sessions/:id/cancel`, **BR-29** |
+| FR-G12 | A manager cancels a single session with a reason. Cancelling upcoming sessions does not refund sessions because sessions are charged upon attendance. A second cancel is refused (`409`). Members are notified and the action is audited. | `POST /v1/sessions/:id/cancel`, **BR-29** |
 | FR-G13 | A manager moves a session to another time on the same court with the same coach. A clash is refused (`409 CONFLICT_SLOT`). A move less than 12 hours before the old time needs a reason (`422`). The original time is kept. | `POST /v1/sessions/:id/reschedule`, **BR-26**, **BR-27** |
 | FR-G14 | A manager puts another coach on a class from now on. The coach must teach that sport and be free at every upcoming time. | `POST /v1/classes/:id/coach`, **BR-25**, **BR-26**, **BR-28** |
-| FR-G15 | A manager edits a class — capacity, open/closed status — or cancels it. Capacity cannot go below the number already enrolled. Cancelling refunds one session per enrolled member once, cancels upcoming sessions and notifies members and the waitlist. | `PATCH /v1/classes/:id`, **BR-21**, **BR-18**, **BR-29** |
+| FR-G15 | A manager edits a class — capacity, open/closed status — or cancels it. Capacity cannot go below the number already enrolled. Cancelling refunds prepaid sessions if any exist, cancels upcoming sessions and notifies members and the waitlist. | `PATCH /v1/classes/:id`, **BR-21**, **BR-18**, **BR-29** |
 | FR-G16 | A manager issues staff accounts (receptionist or coach), locks and unlocks them, changes role between those two, resets a password (temporary, change forced at next sign-in) and revokes sessions. There is no public staff sign-up, no admin role, and a manager cannot lock or demote themselves. Every action is audited with who and when. | `GET/POST /v1/staff`, `PATCH /v1/staff/:id`, `POST /v1/staff/:id/reset-password`, `POST /v1/staff/:id/revoke-sessions` |
 | FR-G17 | A manager approves or rejects pending refunds from a queue on the manager side (not only from the desk). | `approve-refund`, `reject-refund` |
 | FR-G18 | A manager sees every member with filters, paging, plan and class count, and opens one. | `GET /v1/directory/members`, `/manager/members` |
@@ -537,8 +539,8 @@ document uses the same number.
 | BR-16 | A withdrawn plan cannot be ordered. |
 | BR-17 | A plan discount is a whole percentage in `[0, 100]`. |
 | BR-18 | A class must be open to enrol. |
-| BR-19 | Class enrolment needs an active plan covering that sport. |
-| BR-20 | A plan with a session quota must have sessions left. |
+| BR-19 | Class enrolment needs a usable session plan for that sport: a session plan (time-based plans cover court time), not frozen, started and not expired. |
+| BR-20 | The session plan must have sessions left (`session_left > 0`). |
 | BR-21 | A class cannot be overfilled; capacity cannot be set below the number enrolled. |
 | BR-22 | No clashing or duplicate enrolment. |
 | BR-23 | A waitlist offer expires. |
@@ -547,7 +549,7 @@ document uses the same number.
 | BR-26 | No court or coach clash: moving a session or changing coach is refused when the court or coach is busy. |
 | BR-27 | A session moved less than 12 hours before its old time needs a reason. |
 | BR-28 | Substitute coach: a class can be handed to another coach from now on. |
-| BR-29 | When the centre cancels a session or class, a per-session plan gets the session back once; a time-based plan has nothing to return. |
+| BR-29 | When the centre cancels a session or class, uncharged future sessions need no refund; legacy prepaid sessions are returned to the plan once. |
 | BR-30 | Check-in codes: reception scans a member's code, a member scans the desk code (self check-in, off by default), and a used code cannot be used again. |
 | BR-31 | A gate visit is written once per dedup window; a member with nothing to be let in on is flagged with the reason. |
 | BR-32 | A gate visit never spends a session or moves a balance, and attendance figures carry no penalty. |

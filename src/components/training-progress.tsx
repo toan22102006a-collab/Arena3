@@ -206,7 +206,8 @@ export function SessionCountdown({
       }
       const hrs = Math.floor(diff / 3600000);
       const mins = Math.floor((diff % 3600000) / 60000);
-      if (hrs > 24) {
+      // Under two days, hours read better than "in 1 days".
+      if (hrs >= 48) {
         const days = Math.floor(hrs / 24);
         setLeft(t("in {n} days", { n: days }));
       } else if (hrs > 0) {

@@ -7,7 +7,9 @@ import { SportBadge, useSports } from "@/components/sports-ui";
 import { Badge, Button, Card, EmptyState, FilterChip, Input, LoadError, Pagination, Select, Skeleton, StatusBadge } from "@/components/ui";
 import { formatDate } from "@/lib/arena3/labels";
 import { cn } from "@/lib/cn";
+import { ageYears } from "@/lib/arena3/time";
 import { locale, t, tk, tData } from "@/lib/i18n";
+import { UserAvatar } from "@/components/user-avatar";
 import { useRead } from "@/lib/use-read";
 import { usePageState } from "@/lib/use-page-state";
 
@@ -21,6 +23,8 @@ type Row = {
   full_name: string;
   phone: string;
   status: string;
+  date_of_birth: string | null;
+  avatar_url?: string | null;
   plan_name: string | null;
   sport_scope: string | null;
   end_on: string | null;
@@ -86,10 +90,10 @@ function Page() {
 
       <StatStrip
         stats={[
-          { label: tk("Total members"), value: total },
-          { label: tk("Plan active"), value: activeCount },
-          { label: tk("Ends within a week"), value: expiringCount },
-          { label: tk("No plan"), value: noPlanCount },
+          { label: term || status || sport || plan ? t("Matching members") : t("Total members"), value: data ? total : "…" },
+          { label: t("Plan active"), value: data ? activeCount : "…", detail: t("On this page") },
+          { label: t("Ends within a week"), value: data ? expiringCount : "…", detail: t("On this page") },
+          { label: t("No plan"), value: data ? noPlanCount : "…", detail: t("On this page") },
         ]}
         className="mb-6"
       />
@@ -153,8 +157,9 @@ function Page() {
             {total === 1 ? t("1 member") : t("{n} members", { n: total.toLocaleString(locale()) })}
           </p>
           <Card className="overflow-hidden p-0">
-            <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1.4fr)_5rem] gap-4 border-b border-line bg-wood/50 px-4 py-2 text-xs font-medium text-muted md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.6fr)_4rem_minmax(0,1.3fr)_minmax(0,1.4fr)_5rem] gap-4 border-b border-line bg-wood/50 px-4 py-2 text-xs font-medium text-muted md:grid">
               <span>{t("Member")}</span>
+              <span>{t("Age")}</span>
               <span>{t("Phone")}</span>
               <span>{t("Plan")}</span>
               <span className="text-right">{t("Classes")}</span>
@@ -165,15 +170,26 @@ function Page() {
                   <Link
                     to="/desk/member/$id"
                     params={{ id: m.id }}
-                    className="grid gap-x-4 gap-y-0.5 px-4 py-2.5 transition-colors duration-150 hover:bg-wood/60 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1.4fr)_5rem] md:items-center"
+                    className="grid gap-x-4 gap-y-0.5 px-4 py-2.5 transition-colors duration-150 hover:bg-wood/60 md:grid-cols-[minmax(0,1.6fr)_4rem_minmax(0,1.3fr)_minmax(0,1.4fr)_5rem] md:items-center"
                   >
-                    <div className="min-w-0">
-                      <p className="flex flex-wrap items-center gap-2 font-medium">
-                        <span className="break-words">{m.full_name}</span>
-                        {m.status !== "active" ? <StatusBadge status={m.status} /> : null}
-                      </p>
-                      <p className="text-xs tabular-nums text-muted">{m.member_code ?? "-"}</p>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="size-8 shrink-0">
+                        <UserAvatar name={m.full_name} url={m.avatar_url} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="flex flex-wrap items-center gap-2 font-medium">
+                          <span className="break-words">{m.full_name}</span>
+                          {m.status !== "active" ? <StatusBadge status={m.status} /> : null}
+                        </p>
+                        <p className="text-xs tabular-nums text-muted">
+                          {m.member_code ?? "-"}
+                          {m.date_of_birth ? ` · ${t("{age} yrs", { age: ageYears(m.date_of_birth) })}` : ""}
+                        </p>
+                      </div>
                     </div>
+                    <p className="hidden text-sm tabular-nums text-muted md:block">
+                      {m.date_of_birth ? ageYears(m.date_of_birth) : "-"}
+                    </p>
                     <p className="text-sm tabular-nums text-muted">{m.phone}</p>
                     <div className="flex flex-wrap items-center gap-2 text-sm">
                       <Badge tone={m.plan_state === "active" ? "accent" : m.plan_state === "expiring" ? "hold" : "muted"}>

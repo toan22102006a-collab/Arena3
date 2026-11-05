@@ -187,7 +187,11 @@ export async function capacityBody(sql: Sql, from: string, to: string, sport: st
     by_hour: hours.map((h) => ({ hour: h, pct: pct1(byHour.get(h)?.sold ?? 0, byHour.get(h)?.open ?? 0) })),
     hours,
     courts,
-    revenue_by_source: { court_vnd: revenue.booking ?? 0, class_vnd: revenue.class ?? 0 },
+    revenue_by_source: {
+      court_vnd: revenue.booking ?? 0,
+      // Class seats are paid as `enrollment`; `class` is kept for older rows.
+      class_vnd: (revenue.enrollment ?? 0) + (revenue.class ?? 0),
+    },
   };
 }
 
@@ -200,32 +204,28 @@ export async function reportsCapacity(sql: Sql, request: Request, user: PublicUs
 // ---- members and class sign-ups (FR-PAY-06) ------------------------------------
 
 export async function membersReportBody(sql: Sql, from: string, to: string, sport: string | null) {
-  const counts = await one<{ new_members: number; active_members: number; expiring: number; renewed: number; ended: number }>(
+  // A member is active in the period if a court booked in it (confirmed, in use or done)
+  // or holds a confirmed place in a class running in it. Enrolments carry no timestamp,
+  // so "joined" for the trend uses the class's start month.
+  const counts = await one<{ new_members: number; active_members: number }>(
     sql,
     `select
        (select count(*) from users u where u.role = 'member'
           and (u.created_at at time zone 'Asia/Ho_Chi_Minh')::date between $1::date and $2::date)::int as new_members,
-       (select count(distinct s.user_id) from subscriptions s
-         where s.status in ('active','frozen') and s.start_on <= $2::date and s.end_on >= $2::date
-           and ($3::text is null or s.sport_scope::text = $3 or s.sport_scope::text = 'all'))::int as active_members,
-       (select count(distinct s.user_id) from subscriptions s
-         where s.status in ('active','frozen','expired') and s.end_on between $1::date and $2::date
-           and ($3::text is null or s.sport_scope::text = $3 or s.sport_scope::text = 'all')
-           and not exists (select 1 from subscriptions n where n.user_id = s.user_id
-                             and n.status in ('active','frozen','pending') and n.end_on > $2::date))::int as expiring,
-       (select count(*) from subscriptions s
-         where s.status in ('active','frozen','expired') and s.end_on between $1::date and $2::date
-           and ($3::text is null or s.sport_scope::text = $3 or s.sport_scope::text = 'all')
-           and exists (select 1 from subscriptions n where n.user_id = s.user_id and n.id <> s.id
-                         and n.status in ('active','frozen','expired','pending')
-                         and n.start_on > s.start_on and n.start_on <= s.end_on + 30))::int as renewed,
-       (select count(*) from subscriptions s
-         where s.status in ('active','frozen','expired') and s.end_on between $1::date and $2::date
-           and ($3::text is null or s.sport_scope::text = $3 or s.sport_scope::text = 'all'))::int as ended`,
+       (select count(distinct x.user_id) from (
+           select b.user_id from court_bookings b join courts c on c.id = b.court_id
+            where b.status in ('confirmed','in_use','completed')
+              and (b.start_at at time zone 'Asia/Ho_Chi_Minh')::date between $1::date and $2::date
+              and ($3::text is null or c.sport = $3)
+           union
+           select e.user_id from enrollments e join classes cl on cl.id = e.class_id
+            where e.status = 'confirmed' and cl.start_on <= $2::date and cl.end_on >= $1::date
+              and ($3::text is null or cl.sport = $3)
+         ) x)::int as active_members`,
     [from, to, sport],
   );
   // Twelve calendar months ending with the month of `to`, gapless.
-  const trend = await sql.query<{ month: string; new_members: number; plans_started: number }>(
+  const trend = await sql.query<{ month: string; new_members: number; classes_joined: number }>(
     `with months as (
        select date_trunc('month', $1::date) - make_interval(months => g) as m
          from generate_series(0, 11) g
@@ -233,9 +233,9 @@ export async function membersReportBody(sql: Sql, from: string, to: string, spor
      select to_char(m.m, 'YYYY-MM') as month,
             (select count(*) from users u where u.role = 'member'
                and date_trunc('month', u.created_at at time zone 'Asia/Ho_Chi_Minh') = m.m)::int as new_members,
-            (select count(*) from subscriptions s where s.status in ('active','frozen','expired')
-               and date_trunc('month', s.start_on) = m.m
-               and ($2::text is null or s.sport_scope::text = $2 or s.sport_scope::text = 'all'))::int as plans_started
+            (select count(*) from enrollments e join classes cl on cl.id = e.class_id
+              where e.status = 'confirmed' and date_trunc('month', cl.start_on) = m.m
+                and ($2::text is null or cl.sport = $2))::int as classes_joined
        from months m order by m.m`,
     [to, sport],
   );
@@ -274,10 +274,6 @@ export async function membersReportBody(sql: Sql, from: string, to: string, spor
     members: {
       new: counts!.new_members,
       active: counts!.active_members,
-      expiring: counts!.expiring,
-      plans_ended: counts!.ended,
-      plans_renewed: counts!.renewed,
-      renewal_rate: counts!.ended ? pct1(counts!.renewed, counts!.ended) : null,
     },
     trend,
     attendance_on: attendanceOn,
@@ -330,18 +326,17 @@ export async function reportDoc(sql: Sql, request: Request, kind: string): Promi
           sections: [
             {
               name: "At-risk members",
-              columns: ["Member", "Code", "Phone", "Plan ends", "Attendance %", "Reasons", "Contacted", "Last outcome"],
+              columns: ["Member", "Code", "Phone", "Attendance %", "Reasons", "Contacted", "Last outcome"],
               rows: d.items.map((i) => [
                 i.full_name,
                 i.member_code,
                 i.phone,
-                i.plan_end_on,
                 i.attendance_pct,
                 i.reasons.map((r) => r.message).join(" "),
                 i.contacted ? "Yes" : "No",
                 i.last_contact?.outcome ?? null,
               ]),
-              note: "Listed so the front desk and coaches can call before the plan lapses. No fee or penalty applies.",
+              note: "Listed so the front desk and coaches can call before they drift away. No fee or penalty applies.",
             },
           ],
         },
@@ -501,17 +496,13 @@ export async function reportDoc(sql: Sql, request: Request, kind: string): Promi
           columns: ["Measure", "Value"],
           rows: [
             ["New members", d.members.new],
-            ["Members with a live plan on the last day", d.members.active],
-            ["Members whose plan ended with no new one", d.members.expiring],
-            ["Plans that ended in the period", d.members.plans_ended],
-            ["…of which renewed within 30 days", d.members.plans_renewed],
-            ["Renewal rate %", d.members.renewal_rate],
+            ["Active members (a court or a class in the period)", d.members.active],
           ],
         },
         {
           name: "12-month trend",
-          columns: ["Month", "New members", "Plans started"],
-          rows: d.trend.map((m) => [m.month, m.new_members, m.plans_started]),
+          columns: ["Month", "New members", "Classes joined"],
+          rows: d.trend.map((m) => [m.month, m.new_members, m.classes_joined]),
         },
         {
           name: "Classes",

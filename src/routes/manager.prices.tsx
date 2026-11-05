@@ -244,7 +244,7 @@ function Page() {
                   <span className="block text-sm font-medium">{tData(p.name)}</span>
                   <span className="block text-xs text-muted">
                     {sportLabel(p.sport_scope)} · {p.duration_days ? t("{n} days", { n: p.duration_days }) : t("per session")} ·{" "}
-                    {t("{n} court hours", { n: p.court_hours })} · {t("{pct}% off courts", { pct: p.court_discount_pct })}
+                    {t("{pct}% off courts", { pct: p.court_discount_pct })}
                   </span>
                 </span>
                 <span className="text-sm tabular-nums">{money(p.price_vnd)}</span>

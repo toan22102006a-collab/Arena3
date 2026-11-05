@@ -93,7 +93,8 @@ export function ScheduleScene({
         />
       ) : null}
 
-      <div className="mt-4">
+      {/* data-no-fly: the 3D ball is cut out of this box, so it never covers a court cell. */}
+      <div data-no-fly className="mt-4">
         {busy ? (
           <div className="grid gap-2">
             <Skeleton className="h-8" />

@@ -162,12 +162,6 @@ function Page() {
                         {t("{n} class sessions", { n: p.session_quota })}
                       </li>
                     ) : null}
-                    {p.court_hours > 0 ? (
-                      <li className="flex items-center gap-2">
-                        <Check className="size-4 text-accent" strokeWidth={1.75} />
-                        {t("{n} court hours", { n: p.court_hours })}
-                      </li>
-                    ) : null}
                     {p.court_discount_pct > 0 ? (
                       <li className="flex items-center gap-2">
                         <Check className="size-4 text-accent" strokeWidth={1.75} />
@@ -215,7 +209,6 @@ function Page() {
                     <th className="pb-2.5 font-semibold">{t("Plan")}</th>
                     <th className="pb-2.5 font-semibold">{t("Sport")}</th>
                     <th className="pb-2.5 font-semibold">{t("Validity")}</th>
-                    <th className="pb-2.5 font-semibold">{t("Court hours")}</th>
                     <th className="pb-2.5 font-semibold">{t("Classes")}</th>
                     <th className="pb-2.5 font-semibold">{t("Discount")}</th>
                     <th className="pb-2.5 font-semibold text-right">{t("Price")}</th>
@@ -232,7 +225,6 @@ function Page() {
                         </td>
                         <td className="py-2.5"><SportBadge sport={p.sport_scope} /></td>
                         <td className="py-2.5 text-muted">{p.duration_days ? t("{n} days", { n: p.duration_days }) : t("Per session")}</td>
-                        <td className="py-2.5 text-fg">{p.court_hours > 0 ? `${p.court_hours}h` : "—"}</td>
                         <td className="py-2.5 text-fg">{p.session_quota ? `${p.session_quota} buổi` : "—"}</td>
                         <td className="py-2.5 text-accent-2 font-medium">{p.court_discount_pct > 0 ? `${p.court_discount_pct}%` : "—"}</td>
                         <td className="py-2.5 text-right font-bold tabular-nums text-fg">{money(p.price_vnd)}</td>

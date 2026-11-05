@@ -9,9 +9,9 @@
  *  2. Manual: no phone → look the member up, pick a reason.            method = manual
  *  3. Self (optional, off by default): the member scans the desk's QR. method = self
  *
- * A plan that has lapsed, is frozen or does not exist is not a hard stop —
- * a member may be there for a court they booked — but if there is nothing at all
- * to let them in on, reception must say why, and the visit is flagged (BR-31).
+ * Nothing booked and no class today is not a hard stop — reception decides —
+ * but if there is nothing at all to let them in on, reception must say why,
+ * and the visit is flagged (BR-31). Plans no longer exist, so they are not read here.
  */
 import type { Sql } from "@/lib/db";
 import { ApiError, err } from "../errors";
@@ -19,7 +19,7 @@ import { requireFlag } from "../flags";
 import { audit, getSettings, pageOf, readJson, str } from "../helpers";
 import { signCheckinToken, verifyCheckinToken } from "../checkin";
 import { normalizePhone } from "../phone";
-import { requireRole, type PublicUser } from "../session";
+import { avatarUrlSql, requireRole, withAvatarUrl, type PublicUser } from "../session";
 import { addDays, ictDateString, ictDateTime } from "../time";
 import { one } from "../tx";
 import { pageParams } from "../validate";
@@ -31,7 +31,7 @@ const DAY_MS = 86_400_000;
 export const MANUAL_REASONS = ["no_phone", "dead_battery", "qr_failed", "forgot", "other"] as const;
 export const OVERRIDE_REASONS = ["expired_ok", "manager_ok", "guest_pass", "renewing", "other"] as const;
 
-type Member = { id: string; full_name: string; member_code: string | null; status: string };
+type Member = { id: string; full_name: string; member_code: string | null; status: string; avatar_url: string | null };
 
 async function findMember(sql: Sql, b: Record<string, unknown>): Promise<Member> {
   const id = str(b.member_id) || null;
@@ -41,23 +41,23 @@ async function findMember(sql: Sql, b: Record<string, unknown>): Promise<Member>
   if (!id && !code && !phone && !q) {
     throw err.field("q", "Type a name, phone number or member code.");
   }
-  const cols = `select id, full_name, member_code, status::text as status from users where role = 'member'`;
+  const cols = `select id, full_name, member_code, status::text as status, ${avatarUrlSql("users")} from users where role = 'member'`;
   let rows: Member[] = [];
   if (id) {
     if (!UUID_RE.test(id)) throw err.field("member_id", "member_id is not valid.");
-    rows = await sql.query<Member>(`${cols} and id = $1`, [id]);
+    rows = (await sql.query<Member>(`${cols} and id = $1`, [id])).map(withAvatarUrl);
   } else if (code) {
-    rows = await sql.query<Member>(`${cols} and upper(member_code) = upper($1)`, [code]);
+    rows = (await sql.query<Member>(`${cols} and upper(member_code) = upper($1)`, [code])).map(withAvatarUrl);
   } else if (phone) {
-    rows = await sql.query<Member>(`${cols} and phone = $1`, [normalizePhone(phone)]);
+    rows = (await sql.query<Member>(`${cols} and phone = $1`, [normalizePhone(phone)])).map(withAvatarUrl);
   } else {
     const digits = (q as string).replace(/\D/g, "");
-    rows = await sql.query<Member>(
+    rows = (await sql.query<Member>(
       `${cols} and (upper(member_code) = upper($1) or ($2 <> '' and phone like '%' || $2)
                     or name_normalized like '%' || lower($1) || '%')
         order by full_name limit 6`,
       [q, digits.length >= 4 ? digits : ""],
-    );
+    )).map(withAvatarUrl);
     if (rows.length > 1) {
       throw err.conflictState("More than one member matches — pick one.", {
         candidates: rows.map((r) => ({ id: r.id, full_name: r.full_name, member_code: r.member_code })),
@@ -71,49 +71,12 @@ async function findMember(sql: Sql, b: Record<string, unknown>): Promise<Member>
   return rows[0];
 }
 
-type PlanRow = {
-  id: string;
-  name: string;
-  sport_scope: string;
-  status: string;
-  start_on: string | null;
-  end_on: string;
-  session_left: number | null;
-  court_hours_left: string;
-};
-
 /** What reception needs to see in the five seconds after a scan. */
 async function memberToday(sql: Sql, memberId: string) {
   const today = ictDateString();
   const dayStart = ictDateTime(today, "00:00").toISOString();
   const dayEnd = ictDateTime(addDays(today, 1), "00:00").toISOString();
-  const plans = await sql.query<PlanRow>(
-    `select s.id, p.name, s.sport_scope::text as sport_scope, s.status::text as status, s.start_on::text as start_on, s.end_on::text as end_on,
-            s.session_left, s.court_hours_left
-       from subscriptions s join membership_plans p on p.id = s.plan_id
-      where s.user_id = $1 and s.status in ('active','frozen')
-      order by s.end_on`,
-    [memberId],
-  );
   const warnings: { kind: string; message: string }[] = [];
-  let usable = false;
-  for (const p of plans) {
-    const left = Math.round((ictDateTime(p.end_on, "00:00").getTime() - ictDateTime(today, "00:00").getTime()) / DAY_MS);
-    if (p.status === "frozen") warnings.push({ kind: "frozen", message: `${p.name} is frozen.` });
-    else if (left < 0) warnings.push({ kind: "expired", message: `${p.name} ended ${-left} day${left === -1 ? "" : "s"} ago.` });
-    else if (p.start_on && p.start_on > today) {
-      // Bought ahead: it grants nothing until its first day (BR-12).
-      warnings.push({ kind: "scheduled", message: `${p.name} starts on ${p.start_on}.` });
-    } else {
-      usable = true;
-      if (left <= 7) warnings.push({ kind: "expiring", message: `${p.name} ends in ${left} day${left === 1 ? "" : "s"}.` });
-      // Walking through the gate spends no session (BR-32), so this is a heads-up only.
-      if (p.session_left !== null && p.session_left <= 0) {
-        warnings.push({ kind: "no_sessions", message: `${p.name} has no sessions left.` });
-      }
-    }
-  }
-  if (plans.length === 0) warnings.push({ kind: "no_plan", message: "No active membership." });
   const bookings = await sql.query(
     `select b.id, b.code, b.start_at, b.end_at, c.court_code, b.status::text as status
        from court_bookings b join courts c on c.id = b.court_id
@@ -131,9 +94,9 @@ async function memberToday(sql: Sql, memberId: string) {
       order by s.start_at`,
     [memberId, dayStart, dayEnd],
   );
-  // Something to let them in on: a live plan, a court booked today, or a class today.
-  const entitled = usable || bookings.length > 0 || sessions.length > 0;
-  return { plans, warnings, bookings, sessions, entitled };
+  // Something to let them in on: a court booked today or a class today.
+  const entitled = bookings.length > 0 || sessions.length > 0;
+  return { warnings, bookings, sessions, entitled };
 }
 
 type VisitInput = {
@@ -269,7 +232,6 @@ async function overrideOrAsk(
         needs_override: true,
         duplicate: false,
         checked_in_at: null,
-        plans: today.plans,
         warnings: today.warnings,
         today: { bookings: today.bookings, sessions: today.sessions },
       },
@@ -298,12 +260,11 @@ function result(
   return {
     status: 200,
     body: {
-      member: { id: member.id, full_name: member.full_name, member_code: member.member_code },
+      member: { id: member.id, full_name: member.full_name, member_code: member.member_code, avatar_url: member.avatar_url },
       allowed: true,
       needs_override: false,
       checked_in_at: visit.at,
       duplicate: visit.duplicate,
-      plans: today.plans,
       warnings: today.warnings,
       today: { bookings: today.bookings, sessions: today.sessions },
       ...extra,
@@ -320,13 +281,14 @@ export async function gateCheckins(sql: Sql, request: Request, user: PublicUser)
   const span = [ictDateTime(today, "00:00").toISOString(), ictDateTime(addDays(today, 1), "00:00").toISOString()];
   const rows = await sql.query<{ total: number } & Record<string, unknown>>(
     `select a.id, a.at, a.method, a.flagged, a.reason, u.id as user_id, u.full_name, u.member_code,
+            ${avatarUrlSql("u")},
             count(*) over ()::int as total
        from attendance a join users u on u.id = a.user_id
       where a.kind = 'gate' and a.at >= $1 and a.at < $2
       order by a.at desc limit $3 offset $4`,
     [...span, limit, offset],
   );
-  const body = await pageOf(rows, { limit, offset }, async () =>
+  const body = await pageOf(rows.map(withAvatarUrl), { limit, offset }, async () =>
     ((await one<{ n: number }>(
       sql,
       `select count(*)::int as n from attendance where kind = 'gate' and at >= $1 and at < $2`,

@@ -10,6 +10,8 @@ import { downloadReport } from "@/lib/arena3/client";
 import { levelLabel, sportLabel } from "@/lib/arena3/labels";
 import { t, tk, tServer } from "@/lib/i18n";
 import { useRead } from "@/lib/use-read";
+import { useLimits } from "@/lib/use-centre";
+import { cn } from "@/lib/cn";
 
 type Kind = "revenue" | "capacity" | "members" | "attendance" | "at-risk";
 
@@ -100,13 +102,42 @@ type Capacity = {
   revenue_by_source: { court_vnd: number; class_vnd: number };
 };
 
+// A free hour is an empty outlined square, so the court × hour grid stays readable where nothing is booked.
+const FREE_CELL: React.CSSProperties = { background: "transparent", boxShadow: "inset 0 0 0 1.5px var(--color-line-strong)", color: "var(--color-fg)" };
+
+// An hour that has already gone by without a booking: a flat grey fill with no outline, so it reads as
+// closed off rather than still free.
+const PASSED_CELL: React.CSSProperties = {
+  background: "color-mix(in srgb, var(--color-muted) 9%, transparent)",
+  color: "var(--color-muted)",
+};
+
+/** The venue's date (YYYY-MM-DD) and hour right now, in Vietnam time whatever the viewer's clock says. */
+function venueNow(): { day: string; hour: number } {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date())
+      .map((p) => [p.type, p.value]),
+  );
+  return { day: `${parts.year}-${parts.month}-${parts.day}`, hour: Number(parts.hour) };
+}
+
 function heat(pct: number, isSingleDay: boolean): React.CSSProperties {
   if (isSingleDay) {
     if (pct > 0) {
-      return { background: "var(--color-heat-5)", color: "#ffffff" };
+      // Booked is the ordinary state on a busy day, so it stays a step below full lime.
+      return { background: "var(--color-heat-3)", color: "var(--color-accent-fg)" };
     }
-    return { background: "var(--color-heat-0)", color: "var(--color-fg)" };
+    return FREE_CELL;
   }
+  if (!(pct > 0)) return FREE_CELL;
   let bg = "var(--color-heat-0)";
   let fg = "var(--color-fg)";
   if (pct > 75) {
@@ -135,9 +166,18 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
   const [sport, setSport] = useState("");
   const q = new URLSearchParams({ from, to });
   if (sport) q.set("sport", sport);
+  const limits = useLimits();
   const { data, error, reload } = useRead<Capacity>(`/reports/capacity?${q}`);
 
   const isSingleDay = from === to;
+  // Read after mount so the server render and the first client render agree; ticks once a minute.
+  const [now, setNow] = useState<{ day: string; hour: number } | null>(null);
+  useEffect(() => {
+    setNow(venueNow());
+    const id = window.setInterval(() => setNow(venueNow()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const passed = (hr: number) => isSingleDay && now != null && (from < now.day || (from === now.day && hr < now.hour));
   const courtsBySport = useMemo(() => {
     if (!data?.courts) return [];
     const map = new Map<string, typeof data.courts>();
@@ -158,7 +198,7 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
       .filter((h) => h.pct > 0)
       .sort((a, b) => b.pct - a.pct);
     if (sorted.length === 0) return t("No bookings in this window");
-    const top3 = sorted.slice(0, 3);
+    const top3 = sorted.slice(0, limits.report_peak_hours);
     const text = top3
       .map((h, idx) =>
         idx === 0
@@ -167,7 +207,7 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
       )
       .join(", ");
     return t("Busiest: {hours}", { hours: text });
-  }, [data]);
+  }, [data, limits.report_peak_hours]);
 
   return (
     <section className="mt-10" aria-labelledby="cap-h">
@@ -242,7 +282,7 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
                 title={t("When courts are busy ({from} – {to})", { from, to })}
                 hint={
                   isSingleDay
-                    ? t("Booked or free, hour by hour.")
+                    ? t("Each square is one court for one hour: green is booked, outlined is free.")
                     : t("Each square shows how often that court was booked at that hour, {from} – {to}.", { from, to })
                 }
               />
@@ -255,34 +295,55 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
               )}
             </div>
 
-            {/* Mini bar chart of all courts by hour */}
-            <div className="px-4 pt-3 pb-1">
-              <div className="flex items-end gap-1 h-8 w-full max-w-xl">
-                {data.by_hour.map((h) => (
-                  <div
-                    key={h.hour}
-                    className="group relative flex-1 flex flex-col items-center justify-end h-full"
-                    title={`${String(h.hour).padStart(2, "0")}:00 · ${Math.round(h.pct)}%`}
-                  >
-                    <div
-                      className="w-full rounded-t-[2px] transition-all bg-[var(--color-accent)] opacity-75 group-hover:opacity-100"
-                      style={{ height: `${Math.max(4, Math.round(h.pct))}%` }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
             <div className="overflow-x-auto px-2 pb-3 pt-2" role="region" aria-label={t("When courts are busy table, scrolls sideways")} tabIndex={0}>
-              <table className="w-full min-w-[640px] border-separate border-spacing-0.5 text-center text-xs">
+              <table className="w-full min-w-[640px] table-fixed border-separate border-spacing-0.5 text-center text-xs">
                 <thead className="text-2xs text-muted">
+                  {/* Share of all courts booked at each hour, one bar per column so each bar sits over its hour;
+                      the busiest hours glow. */}
                   <tr>
-                    <th className="sticky left-0 bg-surface px-2 py-1 text-left font-medium">{t("Court")}</th>
-                    {data.hours.map((h) => (
-                      <th key={h} className="px-1 py-1 font-medium">
-                        {String(h).padStart(2, "0")}h
-                      </th>
-                    ))}
+                    <th scope="row" className="sticky left-0 w-24 bg-surface px-2 pb-1 text-left align-bottom font-medium leading-tight">
+                      {t("Courts booked")}
+                    </th>
+                    {data.by_hour.map((h) => {
+                      const top = Math.max(1, ...data.by_hour.map((x) => x.pct));
+                      const peak = h.pct > 0 && h.pct >= (top * limits.report_peak_pct) / 100;
+                      return (
+                        <th key={h.hour} className="px-0.5 font-normal" title={`${String(h.hour).padStart(2, "0")}:00 · ${Math.round(h.pct)}%`}>
+                          <div className="flex h-20 flex-col items-stretch justify-end gap-1">
+                            <span className={cn("tabular-nums", peak ? "font-semibold text-fg" : "text-muted")}>
+                              {Math.round(h.pct)}%
+                            </span>
+                            <div
+                              className={cn(
+                                "mx-auto w-full max-w-8 rounded-t-[3px]",
+                                peak ? "bg-accent shadow-[0_0_14px_rgb(212_245_60/0.4)]" : "bg-accent/35",
+                              )}
+                              style={{ height: h.pct > 0 ? `${Math.max(0.25, (h.pct / top) * 3)}rem` : "2px" }}
+                            />
+                          </div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                  <tr>
+                    <th className="sticky left-0 w-24 bg-surface px-2 py-1 text-left font-medium">{t("Court")}</th>
+                    {data.hours.map((h) => {
+                      const current = isSingleDay && now != null && from === now.day && h === now.hour;
+                      return (
+                        <th
+                          key={h}
+                          className={cn(
+                            "px-1 py-1 font-medium",
+                            passed(h) && "opacity-45",
+                            current && "rounded-[4px] bg-accent font-semibold text-accent-fg",
+                          )}
+                          aria-current={current ? "time" : undefined}
+                          title={current ? t("Now") : undefined}
+                        >
+                          {String(h).padStart(2, "0")}h
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
@@ -308,8 +369,9 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
                             const detail = c.cell_details?.[i];
                             const booked = detail?.days_booked ?? (p > 0 ? 1 : 0);
                             const total = detail?.days_total ?? 1;
+                            const gone = !(p > 0) && passed(data.hours[i]);
                             const title = isSingleDay
-                              ? `${c.court_code} · ${String(data.hours[i]).padStart(2, "0")}:00 · ${p > 0 ? t("Booked") : t("Free")}`
+                              ? `${c.court_code} · ${String(data.hours[i]).padStart(2, "0")}:00 · ${p > 0 ? t("Booked") : gone ? t("Passed, not booked") : t("Free")}`
                               : `${c.court_code} · ${String(data.hours[i]).padStart(2, "0")}:00 · ${t("booked {booked} of {total} days ({pct}%)", {
                                   booked,
                                   total,
@@ -319,7 +381,7 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
                               <td
                                 key={i}
                                 className="h-7 min-w-[1.75rem] rounded-[4px] border border-transparent transition-colors hover:ring-2 hover:ring-primary focus-visible:ring-2 focus-visible:ring-primary outline-none cursor-default"
-                                style={heat(p, isSingleDay)}
+                                style={gone ? PASSED_CELL : heat(p, isSingleDay)}
                                 tabIndex={0}
                                 role="gridcell"
                                 aria-label={title}
@@ -331,16 +393,6 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
                       ))}
                     </Fragment>
                   ))}
-                  <tr>
-                    <th scope="row" className="sticky left-0 bg-surface px-2 py-1 text-left font-semibold">
-                      {t("All courts")}
-                    </th>
-                    {data.by_hour.map((h) => (
-                      <td key={h.hour} className="px-1 py-1.5 font-semibold tabular-nums text-2xs">
-                        {Math.round(h.pct)}%
-                      </td>
-                    ))}
-                  </tr>
                 </tbody>
               </table>
             </div>
@@ -349,19 +401,23 @@ export function CapacityPanel({ from, to }: { from: string; to: string }) {
               <div className="flex flex-wrap items-center justify-end gap-3 border-t border-line/50 px-4 py-2.5 text-2xs text-muted">
                 <span className="font-medium">{t("Status:")}</span>
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="size-3.5 rounded-[2px] border border-line" style={{ background: "var(--color-heat-0)" }} />
+                  <span className="size-3.5 rounded-[2px] border border-line" />
                   {t("Free")}
                 </span>
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="size-3.5 rounded-[2px]" style={{ background: "var(--color-heat-5)" }} />
+                  <span className="size-3.5 rounded-[2px]" style={{ background: "var(--color-heat-3)" }} />
                   {t("Booked")}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-3.5 rounded-[2px]" style={PASSED_CELL} />
+                  {t("Passed, not booked")}
                 </span>
               </div>
             ) : (
               <div className="flex flex-wrap items-center justify-end gap-3 border-t border-line/50 px-4 py-2.5 text-2xs text-muted">
                 <span className="font-medium">{t("Occupancy:")}</span>
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="size-3 rounded-[2px] border border-line" style={{ background: "var(--color-heat-0)" }} />
+                  <span className="size-3 rounded-[2px] border border-line" />
                   0%
                 </span>
                 <span className="inline-flex items-center gap-1.5">
@@ -399,12 +455,8 @@ type MembersReport = {
   members: {
     new: number;
     active: number;
-    expiring: number;
-    plans_ended: number;
-    plans_renewed: number;
-    renewal_rate: number | null;
   };
-  trend: Array<{ month: string; new_members: number; plans_started: number }>;
+  trend: Array<{ month: string; new_members: number; classes_joined: number }>;
   attendance_on: boolean;
   classes: Array<{
     id: string;
@@ -437,7 +489,7 @@ export function MembersPanel({ from, to }: { from: string; to: string }) {
           id="mem-h"
           icon={Users}
           text={tk("Members and class sign-ups")}
-          hint={t("New members, plan renewals and how full each class is.")}
+          hint={t("New members, participation and how full each class is.")}
         />
         <div className="flex flex-wrap items-center gap-2">
           <SportSelect value={sport} onChange={setSport} />
@@ -453,19 +505,13 @@ export function MembersPanel({ from, to }: { from: string; to: string }) {
         <Skeleton className="mt-4 h-64" />
       ) : (
         <>
-          <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Stat label={t("New members")} value={data.members.new} icon={UserPlus} note={t("Signed up in this period")} />
-            <Stat label={t("Active plans")} value={data.members.active} hint={t("members with a plan running")} />
-            <Stat label={t("Plans ending")} value={data.members.expiring} hint={t("and not renewed yet")} />
-            <Stat
-              label={t("Renewal rate")}
-              value={pctText(data.members.renewal_rate)}
-              hint={t("{a} of {b} ended plans", { a: data.members.plans_renewed, b: data.members.plans_ended })}
-            />
+            <Stat label={t("Participating members")} value={data.members.active} hint={t("With a booking or confirmed class in this period")} />
           </div>
 
           <Card className="mt-3">
-            <CardTitle icon={TrendingUp} title={t("Last 12 months")} hint={t("New members and plans started, month by month.")} />
+            <CardTitle icon={TrendingUp} title={t("Last 12 months")} hint={t("New members by signup month; confirmed class places by class start month.")} />
             {chartReady ? (
               <div className="mt-3 h-52">
                 <ResponsiveContainer width="100%" height="100%">
@@ -497,7 +543,7 @@ export function MembersPanel({ from, to }: { from: string; to: string }) {
                     />
                     <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                     <Bar dataKey="new_members" name={t("New members")} fill="var(--color-accent)" radius={[4, 4, 0, 0]} maxBarSize={18} />
-                    <Bar dataKey="plans_started" name={t("Plans started")} fill="var(--color-line-strong)" radius={[4, 4, 0, 0]} maxBarSize={18} />
+                    <Bar dataKey="classes_joined" name={t("Confirmed class places")} fill="var(--color-line-strong)" radius={[4, 4, 0, 0]} maxBarSize={18} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

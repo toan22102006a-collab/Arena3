@@ -14,7 +14,7 @@ import {
 } from "../helpers";
 import { isValidVnPhone, normalizePhone } from "../phone";
 import { seriesDates, seriesWeekday } from "../policy";
-import { applyDiscount, lookupPrice, memberDiscount } from "../pricing";
+import { applyDiscount, lookupPrice } from "../pricing";
 import { requireRole, type PublicUser } from "../session";
 import { ictClock, ictDateString, ictDateTime, ictStamp, roundVnd } from "../time";
 import { one } from "../tx";
@@ -53,7 +53,7 @@ export function pickMethod(v: unknown): string {
 
 type SeriesWho = { userId: string | null; name: string; phone: string; discountPct: number };
 
-async function resolveWho(sql: Sql, b: Record<string, unknown>, sport: string): Promise<SeriesWho> {
+async function resolveWho(sql: Sql, b: Record<string, unknown>): Promise<SeriesWho> {
   const phoneRaw = str(b.phone) ?? str(b.guest_phone);
   if (!phoneRaw) throw err.field("phone", "Phone number is required.");
   const phone = normalizePhone(phoneRaw);
@@ -63,10 +63,8 @@ async function resolveWho(sql: Sql, b: Record<string, unknown>, sport: string): 
     `select id, full_name from users where phone = $1 and role = 'member'`,
     [phone],
   );
-  if (member) {
-    const d = await memberDiscount(sql, member.id, sport);
-    return { userId: member.id, name: member.full_name, phone, discountPct: d.pct };
-  }
+  // Members pay the slot price like everyone else; only the series discount applies.
+  if (member) return { userId: member.id, name: member.full_name, phone, discountPct: 0 };
   const name = str(b.guest_name) ?? str(b.name);
   if (!name) throw err.field("guest_name", "Enter the customer's name.");
   return { userId: null, name, phone, discountPct: 0 };
@@ -182,7 +180,7 @@ export async function seriesPreview(sql: Sql, request: Request, user: PublicUser
   requireRole(user, ["receptionist", "manager"]);
   const b = await readJson(request);
   const input = await readSeriesInput(sql, b);
-  const who = await resolveWho(sql, b, input.court.sport);
+  const who = await resolveWho(sql, b);
   const { lines, discountPct } = await planSeries(sql, input, who, false);
   const ok = lines.filter((l) => l.available);
   const settings = await getSettings(sql);
@@ -208,7 +206,7 @@ export async function seriesCreate(sql: Sql, request: Request, user: PublicUser)
   const b = await readJson(request);
   const method = pickMethod(b.method);
   const input = await readSeriesInput(sql, b);
-  const who = await resolveWho(sql, b, input.court.sport);
+  const who = await resolveWho(sql, b);
   const shiftId = await openShift(sql, user);
   const settings = await getSettings(sql);
   const { lines, discountPct, attached } = await planSeries(sql, input, who, true);

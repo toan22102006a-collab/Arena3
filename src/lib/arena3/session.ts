@@ -1,28 +1,27 @@
 import type { Sql } from "@/lib/db";
 import { hashPassword, randomToken, sha256, verifyPassword } from "./crypto";
+import type { PublicUser, Role } from "./contracts";
 import { err } from "./errors";
 import { one, q } from "./tx";
 
-export type Role = "manager" | "coach" | "receptionist" | "member";
-
-export type PublicUser = {
-  id: string;
-  member_code: string | null;
-  full_name: string;
-  phone: string;
-  email: string | null;
-  role: Role;
-  status: string;
-  date_of_birth: string | null;
-  health_notes: string | null;
-  must_change_password: boolean;
-  avatar_url: string | null;
-};
+export type { PublicUser, Role } from "./contracts";
 
 export type AuthUser = PublicUser & { password_hash: string };
 
-const PUBLIC_COLS =
-  "id, member_code, full_name, phone, email, role, status, date_of_birth, health_notes, must_change_password, (select version from user_avatars a where a.user_id = users.id) as avatar_version";
+export function avatarUrlSql(alias = "users"): string {
+  return `(select version from user_avatars a where a.user_id = ${alias}.id) as avatar_version`;
+}
+
+export function withAvatarUrl<T extends Record<string, any>>(
+  row: T,
+): T & { avatar_url: string | null } {
+  const v = row.avatar_version;
+  const avatar_url = v != null && row.id != null ? `/v1/users/${row.id}/avatar?v=${v}` : null;
+  return { ...row, avatar_url };
+}
+
+export const PUBLIC_COLS =
+  `id, member_code, full_name, phone, email, role, status, date_of_birth, health_notes, must_change_password, ${avatarUrlSql("users")}`;
 
 export function toPublic(u: Record<string, unknown>): PublicUser {
   return {

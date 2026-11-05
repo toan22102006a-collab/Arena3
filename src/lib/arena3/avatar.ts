@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type RefObject, useEffect, useState } from "react";
 import { getToken } from "./client";
 
 type CacheEntry = { src: string; refs: number };
@@ -9,13 +9,44 @@ const cache = new Map<string, CacheEntry>();
  *
  * Uses reference counting so identical avatar URLs share one object URL, and revokes
  * the object URL when all referencing components unmount.
+ *
+ * If a targetRef is provided, avatar image fetching is deferred until the element
+ * intersects the viewport (via IntersectionObserver).
  */
-export function useAvatarSrc(url: string | null | undefined): string | null {
+export function useAvatarSrc(
+  url: string | null | undefined,
+  targetRef?: RefObject<Element | null>,
+): string | null {
   const [src, setSrc] = useState<string | null>(null);
+  const [inView, setInView] = useState<boolean>(() => !targetRef || typeof IntersectionObserver === "undefined");
 
   useEffect(() => {
-    if (!url) {
-      setSrc(null);
+    if (!targetRef?.current || typeof IntersectionObserver === "undefined") {
+      setInView(true);
+      return;
+    }
+    const el = targetRef.current;
+    let cancelled = false;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (cancelled) return;
+        if (entries.some((e) => e.isIntersecting)) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "100px" },
+    );
+    observer.observe(el);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [targetRef]);
+
+  useEffect(() => {
+    if (!url || !inView) {
+      if (!inView) setSrc(null);
       return;
     }
     const token = getToken();
@@ -74,7 +105,7 @@ export function useAvatarSrc(url: string | null | undefined): string | null {
         }
       }
     };
-  }, [url]);
+  }, [url, inView]);
 
   return src;
 }

@@ -3,9 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { Copy, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Shell, initials, when } from "@/components/shell";
+import { UserAvatar } from "@/components/user-avatar";
 import { Cover } from "@/components/media";
 import { PageHero } from "@/components/page-hero";
 import { StatStrip } from "@/components/stat-strip";
+import { CertificationsModal } from "@/components/coach-certifications";
 import { RowActions } from "@/components/row-actions";
 import { SportBadge, useSports } from "@/components/sports-ui";
 import { Badge, Button, Card, EmptyState, Field, Input, LoadError, Modal, Select, Skeleton, Pagination } from "@/components/ui";
@@ -31,6 +33,7 @@ type Staff = {
   open_sessions: number;
   issued_by: string | null;
   issued_at: string | null;
+  avatar_url?: string | null;
 };
 
 type Issued = { name: string; phone: string; password: string; why: string };
@@ -46,6 +49,7 @@ function Page() {
   const [createRole] = useState(initialRole);
   const [issued, setIssued] = useState<Issued | null>(null);
   const [editing, setEditing] = useState<Staff | null>(null);
+  const [certsOf, setCertsOf] = useState<Staff | null>(null);
 
   // Typing waits a beat so one search is one request.
   const [term, setTerm] = useState("");
@@ -183,18 +187,9 @@ function Page() {
             return (
               <Card key={s.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
                 <div className="flex items-center gap-3.5 min-w-0">
-                  {s.role === "coach" ? (
-                    <Cover
-                      slot={"coach." + s.id}
-                      fallbackInitials={initials(s.full_name)}
-                      className="size-14 shrink-0 rounded-full border border-line"
-                      initialsClassName="text-base font-bold"
-                    />
-                  ) : (
-                    <div className="grid size-14 shrink-0 place-items-center rounded-full border border-line bg-wood text-base font-bold text-fg">
-                      {initials(s.full_name)}
-                    </div>
-                  )}
+                  <div className="size-10 shrink-0">
+                    <UserAvatar name={s.full_name} url={s.avatar_url} />
+                  </div>
                   <div className="min-w-0">
                     <p className="flex flex-wrap items-center gap-2 font-medium">
                       {tData(s.full_name)}
@@ -228,6 +223,9 @@ function Page() {
                       onClick: () => setEditing(s),
                     }}
                     secondary={[
+                      ...(s.role === "coach"
+                        ? [{ label: t("Certifications"), onClick: () => setCertsOf(s) }]
+                        : []),
                       {
                         label: t("Reset password"),
                         onClick: () => void act(s, "reset"),
@@ -275,6 +273,11 @@ function Page() {
           setIssued(i);
           read.reload();
         }}
+      />
+      <CertificationsModal
+        coachId={certsOf?.id ?? null}
+        coachName={certsOf?.full_name ?? ""}
+        onClose={() => setCertsOf(null)}
       />
       <RoleModal
         staff={editing}

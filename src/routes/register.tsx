@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { ArenaMark } from "@/components/mark";
@@ -11,10 +11,16 @@ import { GLBackground, Magnet, SplitText, SpotlightCard } from "@/components/fx"
 import { ApiClientError, apiPost, homeFor, setSession, type SessionUser } from "@/lib/arena3/client";
 import { LangSwitch } from "@/components/lang-switch";
 import { t, tServer } from "@/lib/i18n";
+import { ageYears } from "@/lib/arena3/time";
 import { LegalBody } from "@/components/legal-page";
+import { clearGoogleSignup, readGoogleSignup, type GoogleSignup } from "@/components/google-sign-in";
 import { PRIVACY, TERMS } from "@/lib/legal";
 
-export const Route = createFileRoute("/register")({ component: Register });
+export const Route = createFileRoute("/register")({
+  // `via=google`: the sign-in page sent someone whose Google email has no account yet.
+  validateSearch: (s: Record<string, unknown>): { via?: "google" } => (s.via === "google" ? { via: "google" } : {}),
+  component: Register,
+});
 
 /**
  * The consent sentence with its two documents linked (R-1).
@@ -51,6 +57,9 @@ function ConsentLabel({ onOpen }: { onOpen: (which: "terms" | "privacy") => void
   );
 }
 
+/** The default `minor_age` setting; the sign-up page has no session to read the real one with. */
+const MINOR_AGE = 18;
+
 /** Puts a styled node where a translated sentence has its single placeholder. */
 const SLOT = "";
 const slot = (text: string, node: ReactNode) => {
@@ -66,6 +75,9 @@ const slot = (text: string, node: ReactNode) => {
 
 function Register() {
   const navigate = useNavigate();
+  const { via } = Route.useSearch();
+  /** Signing up with a Google token: no password and no OTP, and the email is Google's. */
+  const [google, setGoogle] = useState<GoogleSignup | null>(null);
   const [step, setStep] = useState<"form" | "otp">("form");
   const [otp, setOtp] = useState("");
   const [shown, setShown] = useState("");
@@ -87,7 +99,7 @@ function Register() {
     dob: "",
     pii_consent: false,
   });
-  /** Opens when the date of birth makes this a minor — the server decides the age, so the form asks only then. */
+  /** The server asked for a guardian (its minor age is a setting and may be above 18). Cleared when the birthday changes. */
   const [askGuardian, setAskGuardian] = useState(false);
   const [guardian, setGuardian] = useState({ name: "", phone: "" });
   /** The masked address the code went to, e.g. `ng****@example.com`. */
@@ -104,13 +116,57 @@ function Register() {
 
   // Only complain once there is something to complain about — a red line under
   // an empty box the moment the page loads is noise, not help.
+  // The guardian step follows the birthday as it is picked, so going back to an adult date closes it
+  // at once. 18 is the default minor age; a centre that set it higher still gets asked by the server.
+  const needGuardian = askGuardian || (form.dob !== "" && ageYears(form.dob) < MINOR_AGE);
   const mismatch = confirm.length > 0 && confirm !== form.password;
   const tooWeak =
     form.password.length > 0 && !(form.password.length >= 8 && /[A-Za-z]/.test(form.password) && /\d/.test(form.password));
 
+  // After mount, because session storage does not exist while the server renders this page.
+  useEffect(() => {
+    const g = via === "google" ? readGoogleSignup() : null;
+    setGoogle(g);
+    if (g) setForm((f) => ({ ...f, full_name: f.full_name || g.full_name, email: g.email }));
+  }, [via]);
+
+  async function finishGoogle(g: GoogleSignup) {
+    setBusy(true);
+    try {
+      const res = await apiPost<{ token: string; user: SessionUser }>("/auth/google/register", {
+        credential: g.credential,
+        full_name: form.full_name,
+        phone: form.phone,
+        dob: form.dob,
+        pii_consent: form.pii_consent,
+        ...(needGuardian ? { guardian_name: guardian.name, guardian_phone: guardian.phone } : {}),
+      });
+      clearGoogleSignup();
+      setSession(res.token, res.user);
+      toast.success(t("Welcome, {name}", { name: res.user.full_name }), { id: "login-hello" });
+      navigate({ to: homeFor(res.user.role) });
+    } catch (err) {
+      const field = err instanceof ApiClientError ? (err.body.field ?? null) : null;
+      if (field === "guardian_name") setAskGuardian(true);
+      // Google's token lasts an hour; past that, the way on is to press the Google button again.
+      const expired = err instanceof ApiClientError && err.status === 401;
+      setError({
+        message: expired
+          ? t("Your Google sign-in has expired. Sign in with Google again.")
+          : err instanceof Error
+            ? tServer(err.message)
+            : t("Could not create the account"),
+        field,
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function send(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (google) return finishGoogle(google);
     if (form.password !== confirm) {
       setError({ message: t("The two passwords do not match."), field: "confirm" });
       return;
@@ -119,7 +175,7 @@ function Register() {
     try {
       const res = await apiPost<{ otp?: string; sent_to?: string | null }>(
         "/auth/register",
-        askGuardian ? { ...form, guardian_name: guardian.name, guardian_phone: guardian.phone } : form,
+        needGuardian ? { ...form, guardian_name: guardian.name, guardian_phone: guardian.phone } : form,
       );
       setShown(res.otp ?? "");
       setSentTo(res.sent_to ?? null);
@@ -175,7 +231,7 @@ function Register() {
             <div className="max-w-sm rounded-[var(--radius-xl)] bg-pass/92 p-6 text-pass-fg">
               <SplitText
                 as="p"
-                text={t("An active plan lets you book courts and join classes.")}
+                text={t("Book a court by the hour, or pay for one class at a time.")}
                 splitBy="words"
                 stagger={0.05}
                 delay={0.2}
@@ -231,7 +287,11 @@ function Register() {
               <Field
                 label={t("Email")}
                 tone="muted"
-                hint={t("Where your verification code is sent, and how you recover the account.")}
+                hint={
+                  google
+                    ? t("From your Google account. No password needed: you sign in with Google.")
+                    : t("Where your verification code is sent, and how you recover the account.")
+                }
               >
                 <Input
                   required
@@ -239,18 +299,29 @@ function Register() {
                   autoComplete="email"
                   placeholder="you@example.com"
                   value={form.email}
+                  readOnly={!!google}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                 />
               </Field>
               <Field label={t("Date of birth")}>
-                <DateField value={form.dob} onChange={(v) => setForm({ ...form, dob: v })} aria-label={t("Date of birth")} />
+                <DateField
+                  value={form.dob}
+                  onChange={(v) => {
+                    setForm({ ...form, dob: v });
+                    // The server's request was about the old birthday; the new one decides by itself.
+                    setAskGuardian(false);
+                    if (error?.field === "guardian_name") setError(null);
+                  }}
+                  aria-label={t("Date of birth")}
+                />
               </Field>
-              {askGuardian ? (
+              {needGuardian ? (
                 <>
                   <Field label={t("Guardian name")} hint={error?.field === "guardian_name" ? error.message : undefined}>
                     <Input
                       required
-                      autoFocus
+                      // Only when the server sent the person here; on a date pick, focus stays on the date.
+                      autoFocus={askGuardian}
                       autoComplete="off"
                       value={guardian.name}
                       onChange={(e) => setGuardian({ ...guardian, name: e.target.value })}
@@ -268,6 +339,8 @@ function Register() {
                   </Field>
                 </>
               ) : null}
+              {google ? null : (
+              <>
               <Field label={t("Password")} hint={tooWeak ? t("At least 8 characters, with a letter and a number.") : undefined}>
                 <div className="relative">
                   <Input
@@ -301,6 +374,8 @@ function Register() {
                   aria-invalid={mismatch || error?.field === "confirm" ? true : undefined}
                 />
               </Field>
+              </>
+              )}
               <Check
                 className="text-muted"
                 checked={form.pii_consent}
@@ -315,10 +390,16 @@ function Register() {
               <Magnet radius={140} pull={0.22} wrapperClassName="w-full" className="w-full">
                 <Button
                   type="submit"
-                  disabled={busy || mismatch || tooWeak || !form.password || !form.email || !form.dob || !form.pii_consent}
+                  disabled={
+                    busy ||
+                    !form.email ||
+                    !form.dob ||
+                    !form.pii_consent ||
+                    (!google && (mismatch || tooWeak || !form.password))
+                  }
                   className="w-full"
                 >
-                  {busy ? t("Sending…") : t("Send OTP")}
+                  {google ? (busy ? t("Creating…") : t("Create account")) : busy ? t("Sending…") : t("Send OTP")}
                 </Button>
               </Magnet>
             </motion.form>

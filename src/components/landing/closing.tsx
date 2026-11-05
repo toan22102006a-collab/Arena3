@@ -68,7 +68,7 @@ export function SiteFooter() {
             <span className="font-display text-xl font-bold">Lê Long Sport</span>
           </div>
           <p className="mt-4 max-w-xs text-sm text-muted">
-            {t("Indoor sports centre with court booking, classes and membership plans.")}
+            {t("Indoor sports centre with court booking and classes.")}
           </p>
         </div>
 
@@ -100,7 +100,6 @@ export function SiteFooter() {
               ["#how", t("How booking works")],
               ["#facilities", t("Facilities")],
               ["#coaches", t("Coaches")],
-              ["#plans", t("Membership plans")],
               ["/credits", t("Media Credits")],
             ].map(([href, label]) => (
               <li key={href}>

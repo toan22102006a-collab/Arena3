@@ -759,8 +759,11 @@ const Aurora = lazy(() => import("./gl").then((m) => ({ default: m.Aurora })));
 const Silk = lazy(() => import("./gl").then((m) => ({ default: m.Silk })));
 const Threads = lazy(() => import("./gl").then((m) => ({ default: m.Threads })));
 const DotGrid = lazy(() => import("./gl").then((m) => ({ default: m.DotGrid })));
+const Court = lazy(() => import("./gl").then((m) => ({ default: m.Court })));
+const HallFlow = lazy(() => import("./gl").then((m) => ({ default: m.HallFlow })));
 
-export type GLVariant = "aurora" | "silk" | "threads" | "dotgrid";
+/** `flow` redraws the `<video>` in the same `[data-media]` box, so mount it inside that box. */
+export type GLVariant = "aurora" | "silk" | "threads" | "dotgrid" | "court" | "flow";
 
 /**
  * Drops a live shader behind a section.
@@ -792,6 +795,8 @@ export function GLBackground({
   gap?: number;
   dot?: number;
   radius?: number;
+  /** `court` only: live dials (scroll tilt, free-hours glow), mutated by the page. */
+  drive?: { current: { tilt: number; glow: number } };
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const reduced = useCalm();
@@ -800,7 +805,17 @@ export function GLBackground({
   const live = mounted && near && !reduced;
 
   const Comp =
-    variant === "aurora" ? Aurora : variant === "silk" ? Silk : variant === "threads" ? Threads : DotGrid;
+    variant === "aurora"
+      ? Aurora
+      : variant === "silk"
+        ? Silk
+        : variant === "threads"
+          ? Threads
+          : variant === "court"
+            ? Court
+            : variant === "flow"
+              ? HallFlow
+              : DotGrid;
 
   return (
     <div

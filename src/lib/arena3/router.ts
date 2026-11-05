@@ -5,6 +5,7 @@ import { startJobLoop } from "./jobs";
 import { authFromRequest, optionalAuth, requireRole, staffRoles, type PublicUser } from "./session";
 import { withTx } from "./tx";
 import * as authH from "./handlers/auth";
+import * as googleH from "./handlers/google";
 import * as memberH from "./handlers/members";
 import * as planH from "./handlers/plans";
 import * as bookH from "./handlers/bookings";
@@ -24,6 +25,7 @@ import * as courtH from "./handlers/courts";
 import * as sportsH from "./handlers/sports";
 import * as chatH from "./handlers/chat";
 import * as avatarH from "./handlers/avatar";
+import * as certH from "./handlers/certificates";
 import { liveStreamHandler } from "./handlers/live";
 
 type Result = { status: number; body: unknown };
@@ -41,6 +43,7 @@ async function dispatch(request: Request): Promise<Response | Result> {
   const p0 = parts[0] ?? "";
   const p1 = parts[1] ?? "";
   const p2 = parts[2] ?? "";
+  const p3 = parts[3] ?? "";
 
   const idem = (userId: string | null, fn: () => Promise<Result>) =>
     withTx(async (sql) => {
@@ -131,6 +134,15 @@ async function dispatch(request: Request): Promise<Response | Result> {
   if (method === "POST" && p0 === "auth" && p1 === "login") {
     return withTx((sql) => authH.login(sql, request));
   }
+  if (method === "GET" && p0 === "auth" && p1 === "google" && !p2) {
+    return googleH.googleConfig();
+  }
+  if (method === "POST" && p0 === "auth" && p1 === "google" && p2 === "register") {
+    return withTx((sql) => googleH.googleRegister(sql, request));
+  }
+  if (method === "POST" && p0 === "auth" && p1 === "google" && !p2) {
+    return withTx((sql) => googleH.googleLogin(sql, request));
+  }
   /*
    * payOS calling to say a link was paid.
    *
@@ -187,6 +199,15 @@ async function dispatch(request: Request): Promise<Response | Result> {
     return sportsH.publicSportsList(sql);
   }
 
+  if (method === "GET" && p0 === "coaches" && p1 === "certifications" && !p2) {
+    const sql = await getSql();
+    return certH.coachCertificationsPublic(sql);
+  }
+  if (method === "GET" && p0 === "certificates" && p1 && !p2) {
+    const sql = await getSql();
+    return certH.certificateVerify(sql, p1);
+  }
+
   // Authenticated
   const authed = async (fn: (sql: Awaited<ReturnType<typeof getSql>>, user: PublicUser) => Promise<Result | Response>) => {
     return withTx(async (sql) => {
@@ -212,6 +233,24 @@ async function dispatch(request: Request): Promise<Response | Result> {
   }
   if (method === "GET" && p0 === "me" && !p1) {
     return authedRead((sql, user) => authH.meGet(sql, user));
+  }
+  if (method === "GET" && p0 === "me" && p1 === "profile" && !p2) {
+    return authedRead((sql, user) => authH.meProfile(sql, request, user));
+  }
+  if (method === "GET" && p0 === "me" && p1 === "certificates" && !p2) {
+    return authedRead((sql, user) => certH.meCertificates(sql, user));
+  }
+  if (method === "POST" && p0 === "me" && p1 === "certificates" && p2 && !p3) {
+    return authed((sql, user) => certH.meCertificateIssue(sql, p2, user));
+  }
+  if (method === "GET" && p0 === "coaches" && p1 && p2 === "certifications" && !p3) {
+    return authedRead((sql, user) => certH.coachCertificationsList(sql, p1, user));
+  }
+  if (method === "POST" && p0 === "coaches" && p1 && p2 === "certifications" && !p3) {
+    return authed((sql, user) => certH.coachCertificationCreate(sql, p1, request, user));
+  }
+  if (method === "DELETE" && p0 === "certifications" && p1 && !p2) {
+    return authed((sql, user) => certH.coachCertificationDelete(sql, p1, user));
   }
   if (method === "GET" && p0 === "me" && p1 === "bookings" && !p2) {
     return authedRead((sql, user) => bookH.meBookings(sql, user));
@@ -239,6 +278,9 @@ async function dispatch(request: Request): Promise<Response | Result> {
   }
   if (method === "POST" && p0 === "me" && p1 === "password") {
     return authed((sql, user) => authH.mePassword(sql, request, user));
+  }
+  if (method === "POST" && p0 === "me" && p1 === "sessions" && p2 === "sign-out-others" && !parts[3]) {
+    return authed((sql, user) => authH.meSignOutOthers(sql, request, user));
   }
   if (method === "GET" && p0 === "occupancy" && p1 === "detail") {
     return authedRead((sql, user) => bookH.occupancyDetail(sql, request, user));
@@ -384,6 +426,9 @@ async function dispatch(request: Request): Promise<Response | Result> {
   }
   if (method === "GET" && p0 === "coach" && p1 === "classes") {
     return authedRead((sql, user) => classH.coachClasses(sql, user));
+  }
+  if (method === "POST" && p0 === "enrollments" && p1 && p2 === "transfer") {
+    return authed((sql, user) => classH.enrollmentTransfer(sql, p1, user));
   }
   if (method === "DELETE" && p0 === "enrollments" && p1) {
     return authed((sql, user) => classH.enrollmentDelete(sql, p1, user));

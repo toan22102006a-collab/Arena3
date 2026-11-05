@@ -10,6 +10,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { SpotlightCard, StarBorder } from "@/components/fx";
 import { ClassDetailModal, OccupancyDetailModal } from "@/components/class-detail";
 import { apiPost, openInvoice } from "@/lib/arena3/client";
+import type { WalkInResponse } from "@/lib/arena3/contracts";
 import { todayISO } from "@/lib/arena3/labels";
 import { t, tServer } from "@/lib/i18n";
 import { useRead } from "@/lib/use-read";
@@ -126,7 +127,7 @@ function Page() {
               <Button
                 onClick={async () => {
                   try {
-                    const res = await apiPost<{ payment: { amount_vnd: number; code: string }; invoice_id: string }>(
+                    const res = await apiPost<WalkInResponse>(
                       "/walk-in",
                       { court_id: pick.court.id, start_at: isoAt(pick.hour), ...form },
                       true,

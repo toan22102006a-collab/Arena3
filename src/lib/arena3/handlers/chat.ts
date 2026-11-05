@@ -1,7 +1,8 @@
 import type { Sql } from "@/lib/db";
 import { err } from "../errors";
+import { requireFlag } from "../flags";
 import { enqueue, readJson, str } from "../helpers";
-import { limit } from "../ratelimit";
+import { limit, RULES } from "../ratelimit";
 import type { PublicUser } from "../session";
 import { one } from "../tx";
 
@@ -83,6 +84,7 @@ export async function assertCanChat(sql: Sql, user: PublicUser, otherUserId: str
  * List all conversations for the authenticated user, with last message and unread count.
  */
 export async function listConversations(sql: Sql, user: PublicUser) {
+  await requireFlag(sql, "F6");
   const query = `
     select c.id, c.member_id, c.staff_id, c.created_at,
            case when c.member_id = $1 then u_staff.id else u_member.id end as peer_id,
@@ -171,6 +173,7 @@ export async function listConversations(sql: Sql, user: PublicUser) {
  * Open or retrieve an existing conversation with another user.
  */
 export async function createOrGetConversation(sql: Sql, user: PublicUser, request: Request) {
+  await requireFlag(sql, "F6");
   const body = await readJson(request);
   const otherId = str(body.recipient_id ?? body.target_id ?? body.staff_id ?? body.member_id);
   if (!otherId) {
@@ -223,6 +226,7 @@ export async function createOrGetConversation(sql: Sql, user: PublicUser, reques
  * List paginated messages in a conversation.
  */
 export async function listMessages(sql: Sql, user: PublicUser, convId: string, url: URL) {
+  await requireFlag(sql, "F6");
   const conv = await one<ConversationRow>(
     sql,
     `select id, member_id, staff_id, created_at
@@ -257,7 +261,8 @@ export async function listMessages(sql: Sql, user: PublicUser, convId: string, u
  * Send a message into a conversation (Idempotent by client message ID).
  */
 export async function sendMessage(sql: Sql, user: PublicUser, convId: string, request: Request) {
-  limit(`chat:${user.id}`, { windowMs: 10_000, limit: 25 }, "chat messages");
+  await requireFlag(sql, "F6");
+  limit(`chat:${user.id}`, RULES.chatMessage, "chat messages");
 
   const body = await readJson(request);
   const msgId = str(body.id);
@@ -323,6 +328,7 @@ export async function sendMessage(sql: Sql, user: PublicUser, convId: string, re
  * Mark messages in a conversation as read.
  */
 export async function markConversationRead(sql: Sql, user: PublicUser, convId: string) {
+  await requireFlag(sql, "F6");
   const conv = await one<ConversationRow>(
     sql,
     `select id from conversations where id = $1 and (member_id = $2 or staff_id = $2)`,
@@ -345,9 +351,40 @@ export async function markConversationRead(sql: Sql, user: PublicUser, convId: s
 }
 
 /**
+ * The relay's own ceiling, charged before anything is parsed or validated.
+ *
+ * It has to come first: the per-room budget below cannot be charged until the
+ * room is known, so without this a request rejected for a missing room would
+ * cost nothing and could be repeated without limit.
+ */
+function rtcEndpointQuota(userId: string): void {
+  limit(`rtc:${userId}`, RULES.rtcEndpoint, "signaling calls");
+}
+
+/**
+ * The signalling budget for one conversation.
+ *
+ * Counted per room, not per person: `RULES.rtcSignal` is sized from a single
+ * room's poll rate, so keying on the user alone meant somebody with three tabs
+ * open tripped it and lost P2P in all three. Both endpoints charge it, because
+ * a poll, an offer, an answer and an ICE candidate are all calls against the
+ * same relay and limiting only the poll left the write side open.
+ *
+ * `leave` is deliberately exempt. It is teardown, the client fires it with
+ * `keepalive` and ignores the result, so refusing it would strand the departing
+ * peer in the roster until it ages out and leave everyone else dialling
+ * somebody who has gone. It still pays the endpoint ceiling above.
+ */
+function rtcRoomQuota(userId: string, room: string): void {
+  limit(`rtc:${userId}:${room}`, RULES.rtcSignal, "signaling calls");
+}
+
+/**
  * WebRTC Signaling GET relay /api/rtc?room=...&peer=...&name=...&since=...
  */
 export async function rtcPollHandler(sql: Sql, user: PublicUser, request: Request) {
+  rtcEndpointQuota(user.id);
+  await requireFlag(sql, "F6");
   const url = new URL(request.url);
   const room = str(url.searchParams.get("room"));
   const peer = str(url.searchParams.get("peer"));
@@ -356,6 +393,7 @@ export async function rtcPollHandler(sql: Sql, user: PublicUser, request: Reques
 
   if (!room) throw err.validation("Room parameter is required.");
   if (!peer) throw err.validation("Peer parameter is required.");
+  rtcRoomQuota(user.id, room);
 
   // Caller must match authenticated user
   if (peer !== user.id) {
@@ -381,8 +419,15 @@ export async function rtcPollHandler(sql: Sql, user: PublicUser, request: Reques
     [room, peer, name],
   );
 
-  // Clean stale peers (> 20s) and fetch alive peers
-  await sql.query(`delete from rtc_peers where last_seen < now() - interval '20 seconds'`);
+  // Clean stale peers (> 20s) and fetch alive peers. Scoped to this room: the
+  // unscoped version swept every room in the centre on every poll, so one busy
+  // conversation was doing housekeeping for all the others several times a
+  // second.
+  //
+  // The trade: a room nobody polls again keeps its last rows. That is a handful
+  // per conversation, bounded and dormant, and the next poll on that room
+  // clears them — but it does mean nothing sweeps rooms that go quiet for good.
+  await sql.query(`delete from rtc_peers where room = $1 and last_seen < now() - interval '20 seconds'`, [room]);
 
   const peers = await sql.query<{ id: string; name: string }>(
     `select peer_id as id, name from rtc_peers where room = $1 and last_seen >= now() - interval '20 seconds'`,
@@ -398,8 +443,8 @@ export async function rtcPollHandler(sql: Sql, user: PublicUser, request: Reques
     [room, peer, since],
   );
 
-  // Clean expired signals (> 60s)
-  await sql.query(`delete from rtc_signals where created_at < now() - interval '60 seconds'`);
+  // Clean expired signals (> 60s), this room's only — same reason as above.
+  await sql.query(`delete from rtc_signals where room = $1 and created_at < now() - interval '60 seconds'`, [room]);
 
   return { peers, signals };
 }
@@ -408,11 +453,14 @@ export async function rtcPollHandler(sql: Sql, user: PublicUser, request: Reques
  * WebRTC Signaling POST relay /api/rtc
  */
 export async function rtcSignalHandler(sql: Sql, user: PublicUser, request: Request) {
+  rtcEndpointQuota(user.id);
+  await requireFlag(sql, "F6");
   const body = await readJson(request);
 
   if (body.op === "leave") {
     const room = str(body.room);
     const peer = str(body.peer);
+    // No per-room charge here: see `rtcRoomQuota` on why teardown is exempt.
     if (room && peer && peer === user.id) {
       await sql.query(`delete from rtc_peers where room = $1 and peer_id = $2`, [room, peer]);
     }
@@ -428,6 +476,7 @@ export async function rtcSignalHandler(sql: Sql, user: PublicUser, request: Requ
   if (!room || !from || !to || !kind) {
     throw err.validation("Missing required signaling fields.");
   }
+  rtcRoomQuota(user.id, room);
 
   if (from !== user.id) {
     throw err.forbidden("Sender ID mismatch.");

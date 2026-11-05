@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import { GoogleSignIn } from "@/components/google-sign-in";
 import { ArenaMark } from "@/components/mark";
 import { Cover, HeroVideo, MediaCaption } from "@/components/media";
 import { Button, Card, Field, Input } from "@/components/ui";
@@ -34,9 +35,9 @@ const DEMOS: { role: SessionUser["role"]; phone: string; name: string; note: str
   { role: "manager", phone: "0900000001", name: "Phạm Quốc Bảo", note: tk("Pricing · classes · reports") },
   { role: "receptionist", phone: "0900000002", name: "Trần Thu Hà", note: tk("Search · take payment · walk-ins") },
   { role: "coach", phone: "0901110011", name: "Nguyễn Minh Khoa", note: tk("Badminton classes") },
-  { role: "member", phone: "0901230101", name: "Nam", note: tk("All-access plan · court booked today") },
-  { role: "member", phone: "0901230102", name: "Linh", note: tk("Plan expires in ~4 days") },
-  { role: "member", phone: "0901230106", name: "Ha", note: tk("Expired: needs a renewal") },
+  { role: "member", phone: "0901230101", name: "Nam", note: tk("Court booked today · paid at the desk") },
+  { role: "member", phone: "0901230102", name: "Linh", note: tk("Class booked for this week") },
+  { role: "member", phone: "0901230106", name: "Ha", note: tk("No booking today · nothing to pay") },
 ];
 
 function Login() {
@@ -187,6 +188,19 @@ function Login() {
               </Button>
             </Magnet>
           </form>
+          <GoogleSignIn
+            onSignedIn={(res) => {
+              setSession(res.token, res.user);
+              toast.success(t("Welcome, {name}", { name: res.user.full_name }), { id: "login-hello" });
+              navigate({ to: homeFor(res.user.role) });
+            }}
+            onNeedsSignup={() => navigate({ to: "/register", search: { via: "google" } })}
+            onError={(err) => {
+              const msg = err instanceof Error ? tServer(err.message) : t("Could not sign you in");
+              toast.error(msg, { id: "login-error-toast" });
+              setError({ message: msg, credentials: false });
+            }}
+          />
           <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
             <Link to="/register" className="hit text-accent-2 underline underline-offset-2">
               {t("Create an account")}

@@ -2,6 +2,7 @@ import type { Sql } from "@/lib/db";
 import { err } from "../errors";
 import {
   audit,
+  bookingBuyer,
   enqueueReceipt,
   getSettings,
   issueInvoice,
@@ -23,8 +24,9 @@ import { requireRole, type PublicUser } from "../session";
 import { one } from "../tx";
 import { dueNow } from "../policy";
 import { redeemPromo } from "../promos";
-import { settleHeldBooking } from "./bookings";
-import { activateSubscription } from "./desk";
+import { HELD_COLS, settleHeldBooking } from "./bookings";
+import { activateSubscription, describePayment } from "./desk";
+import { settleEnrollment } from "./classes";
 
 /**
  * Online payment through payOS.
@@ -66,12 +68,20 @@ function baseUrlOf(request: Request): string {
  * Poll and webhook both land here so they cannot drift apart. Called inside a
  * transaction with the payment row already locked.
  */
-async function settleOnline(
+export async function settleOnline(
   sql: Sql,
   pay: PendingPayment,
   paid: { amountPaid: number; transactionId: string | null; providerStatus: string },
 ): Promise<{ posted: boolean; reason?: string }> {
   if (pay.status === "posted") return { posted: true };
+
+  // A seat link the member withdrew by releasing the hold. Read before the row is
+  // overwritten below; the caller already holds the row lock.
+  const wasReleased =
+    pay.ref_type === "enrollment" &&
+    (
+      await one<{ provider_status: string | null }>(sql, `select provider_status from payments where id = $1`, [pay.id])
+    )?.provider_status === "RELEASED";
 
   // Never trust an amount from outside. A confirmation for less than the price
   // is a partial payment, not a paid booking.
@@ -90,7 +100,7 @@ async function settleOnline(
   if (pay.ref_type === "booking") {
     const booking = await one<Parameters<typeof settleHeldBooking>[1]>(
       sql,
-      `select * from court_bookings where id = $1 for update`,
+      `select ${HELD_COLS} from court_bookings where id = $1 for update`,
       [pay.ref_id],
     );
     if (!booking) throw err.notFound("That booking no longer exists.");
@@ -101,11 +111,13 @@ async function settleOnline(
     );
     // Reuses the same settle path as cash at the desk — occupancy confirmed,
     // invoice issued, member notified — against the row that already exists.
+    const buyer = await bookingBuyer(sql, booking.id);
     await settleHeldBooking(sql, booking, court!, {
       method: "gateway",
       payAmount: pay.amount_vnd,
       quotaHours: 0,
-      buyerName: "",
+      buyerName: buyer.name,
+      buyerPhone: buyer.phone,
       actorId: pay.user_id ?? "",
       existingPaymentId: pay.id,
     });
@@ -157,6 +169,39 @@ async function settleOnline(
       amount_vnd: pay.amount_vnd,
       method: "gateway",
     });
+    return { posted: true };
+  }
+
+  if (pay.ref_type === "enrollment") {
+    // The money is in whatever happens to the seat. An outcome that buys no seat
+    // (late, released, class cancelled, paid twice) is flagged to the desk by
+    // settleEnrollment, so the payment stays posted and invoiced.
+    await settleEnrollment(sql, pay.ref_id, { paymentId: pay.id, released: wasReleased });
+    const buyer = await one<{ full_name: string; phone: string | null }>(
+      sql,
+      `select full_name, phone from users where id = $1`,
+      [pay.user_id],
+    );
+    const settings = await getSettings(sql);
+    const item = await describePayment(sql, "enrollment", pay.ref_id);
+    const invoiceId = await issueInvoice(sql, {
+      paymentId: pay.id,
+      buyerName: buyer?.full_name ?? "Khách hàng",
+      buyerPhone: buyer?.phone ?? undefined,
+      amountVnd: pay.amount_vnd,
+      vatRate: Number(settings.vat_rate ?? 0),
+      description: item.description,
+      unit: item.unit,
+      settings,
+    });
+    if (pay.user_id) {
+      await enqueueReceipt(sql, pay.user_id, {
+        payment_id: pay.id,
+        invoice_id: invoiceId,
+        amount_vnd: pay.amount_vnd,
+        method: "gateway",
+      });
+    }
     return { posted: true };
   }
 
@@ -216,6 +261,8 @@ export async function onlineCreate(sql: Sql, request: Request, user: PublicUser)
   let amount = 0;
   let payerId: string | null = null;
   let label = "";
+  /** When the class seat hold ends (ms since epoch); null for courts and plans. */
+  let holdEndsAt: number | null = null;
 
   if (refType === "booking") {
     const booking = await one<{
@@ -261,8 +308,33 @@ export async function onlineCreate(sql: Sql, request: Request, user: PublicUser)
     amount = Math.max(0, basePrice - (sub.promo_discount_vnd ?? 0));
     payerId = sub.user_id;
     label = "plan";
+  } else if (refType === "enrollment") {
+    const enr = await one<{
+      user_id: string;
+      status: string;
+      price_vnd: number | null;
+      hold_until: string | null;
+      class_status: string;
+    }>(
+      sql,
+      `select e.user_id, e.status::text as status, e.price_vnd, e.hold_until, c.status::text as class_status
+         from enrollments e join classes c on c.id = e.class_id
+        where e.id = $1`,
+      [refId],
+    );
+    if (!enr) throw err.notFound();
+    if (!staff && enr.user_id !== user.id) throw err.forbidden();
+    if (enr.class_status === "cancelled") throw err.br("BR-18", "That class is cancelled.");
+    if (enr.status !== "hold") throw err.br("BR-28", "That seat is not on hold, so there is nothing to pay.");
+    if (!enr.hold_until || new Date(enr.hold_until) < new Date()) {
+      throw err.br("BR-28", "This seat hold has expired.");
+    }
+    amount = enr.price_vnd ?? 0;
+    payerId = enr.user_id;
+    label = "class";
+    holdEndsAt = new Date(enr.hold_until).getTime();
   } else {
-    throw err.validation("Online payment covers courts and plans.");
+    throw err.validation("Online payment covers courts, plans and class seats.");
   }
 
   if (amount <= 0) throw err.validation("There is nothing to pay.");
@@ -356,8 +428,15 @@ export async function onlineCreate(sql: Sql, request: Request, user: PublicUser)
         returnUrl: `${base}/pay/return?pid=${pay!.id}`,
         cancelUrl: `${base}/pay/return?pid=${pay!.id}&cancelled=1`,
         // Outliving the court hold would let somebody pay for a slot that has
-        // already been released to another member.
-        expiresInSeconds: settings.transfer_hold_minutes * 60,
+        // already been released to another member. A class seat's link also
+        // ends with its own hold, whichever comes first.
+        expiresInSeconds:
+          holdEndsAt === null
+            ? settings.transfer_hold_minutes * 60
+            : Math.max(
+                1,
+                Math.min(settings.transfer_hold_minutes * 60, Math.floor((holdEndsAt - Date.now()) / 1000)),
+              ),
       });
     } catch (e) {
       lastError = e;
@@ -508,10 +587,13 @@ export async function expireOnlineLinks(sql: Sql): Promise<number> {
     `select p.id, p.provider_order_code
        from payments p
        left join court_bookings b on p.ref_type = 'booking' and b.id = p.ref_id
+       left join enrollments e on p.ref_type = 'enrollment' and e.id = p.ref_id
       where p.status::text = 'pending'
         and p.provider = 'payos'
         and p.provider_order_code is not null
-        and (b.id is null or b.status <> 'hold' or b.hold_until < now())`,
+        and (case when p.ref_type = 'enrollment'
+                  then e.id is null or e.status::text <> 'hold' or e.hold_until < now()
+                  else b.id is null or b.status <> 'hold' or b.hold_until < now() end)`,
   );
   for (const row of stale) {
     try {

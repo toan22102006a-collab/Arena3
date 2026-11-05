@@ -26,7 +26,8 @@ import { Lift, Reveal, Stagger, StaggerItem, motion } from "@/components/motion"
 import { GLBackground, SpotlightCard, StarBorder } from "@/components/fx";
 import { PromoInput } from "@/components/promo-input";
 import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
-import { refTypeLabel, sportLabel } from "@/lib/arena3/labels";
+import type { PaymentCreateResponse, TransferConfirmResponse, TransferRejectResponse } from "@/lib/arena3/contracts";
+import { levelLabel, refTypeLabel, sportLabel } from "@/lib/arena3/labels";
 import { t, tk, tServer, tData } from "@/lib/i18n";
 import { usePageState } from "@/lib/use-page-state";
 import { useRead } from "@/lib/use-read";
@@ -100,8 +101,22 @@ type Awaiting = {
   phone: string | null;
 };
 
+/** A class seat held against a promise to transfer. */
+type AwaitingSeat = {
+  kind: "enrollment";
+  id: string;
+  member_name: string | null;
+  member_code: string | null;
+  phone: string | null;
+  sport: string;
+  level: string;
+  amount_vnd: number;
+  hold_until: string;
+  transfer_requested_at: string;
+};
+
 type Queue = {
-  awaiting: Awaiting[];
+  awaiting: Array<Awaiting | AwaitingSeat>;
   orders: Order[];
   refunds: Refund[];
   /** One page of the receipts in the window, after the method and search filters. */
@@ -249,7 +264,7 @@ function Page() {
     const due = dueOf(o);
     setBusy(o.id);
     try {
-      const res = await apiPost<{ invoice: { id: string } }>(
+      const res = await apiPost<PaymentCreateResponse>(
         "/payments",
         {
           ref_type: "subscription",
@@ -303,16 +318,41 @@ function Page() {
   async function settleTransfer(a: Awaiting, received: boolean) {
     setBusy(a.id);
     try {
-      const res = await apiPost<{ invoice_id?: string }>(
+      const res = await apiPost<TransferConfirmResponse | TransferRejectResponse>(
         `/bookings/${a.id}/${received ? "transfer-confirm" : "transfer-reject"}`,
       );
       toast.success(
         received ? t("Confirmed: {court} is booked", { court: a.court_code }) : t("Slot released back to the grid"),
       );
       refresh();
-      if (received && res.invoice_id) {
+      if ("invoice_id" in res) {
         try {
           await openInvoice(res.invoice_id);
+        } catch {
+          toast.warning(t("Confirmed, but the receipt did not open. Reprint it from the profile."));
+        }
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? tServer(e.message) : t("Could not settle that transfer"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Money for a class seat found on the statement: posts it, which confirms the seat. */
+  async function confirmSeat(a: AwaitingSeat) {
+    setBusy(a.id);
+    try {
+      const res = await apiPost<PaymentCreateResponse>(
+        "/payments",
+        { ref_type: "enrollment", ref_id: a.id, method: method[a.id] ?? "transfer", amount_vnd: a.amount_vnd },
+        true,
+      );
+      toast.success(t("Confirmed: {name} has the seat", { name: a.member_name ?? t("Walk-in") }));
+      refresh();
+      if (res.invoice?.id) {
+        try {
+          await openInvoice(res.invoice.id);
         } catch {
           toast.warning(t("Confirmed, but the receipt did not open. Reprint it from the profile."));
         }
@@ -417,10 +457,56 @@ function Page() {
         <div className="mb-10">
           <SectionTitle text={t("Transfers to check")} className="font-display text-2xl" />
           <p className="mt-1 text-sm text-muted">
-            {t("A member said they would transfer and the court is being held open for them. Find the money on the statement before you confirm. Nothing has been posted yet.")}
+            {t("A member said they would transfer, and their court or class seat is being held for them. Find the money on the statement before you confirm. Nothing has been posted yet.")}
           </p>
           <Stagger className="mt-3 grid gap-3" gap={0.05}>
-            {awaiting.map((a) => (
+            {awaiting.map((a) =>
+              "kind" in a ? (
+                <StaggerItem key={a.id}>
+                  <Lift>
+                    <SpotlightCard className="rounded-[var(--radius-xl)]" size={420} strength={0.1}>
+                      <Card className="relative z-[2] border border-hold/30 p-5">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Clock3 className="size-4 text-hold" />
+                              <h3 className="font-display text-xl">{a.member_name ?? t("Walk-in")}</h3>
+                              <Badge tone="hold">
+                                <HoldTimer until={a.hold_until} onExpire={refresh} /> {t("left")}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-xs tabular-nums text-muted">
+                              {a.member_code ?? t("No code yet")}
+                              {a.phone ? ` · ${a.phone}` : ""} · {t("asked {time}", { time: when(a.transfer_requested_at) })}
+                            </p>
+                            <p className="mt-2 text-sm">
+                              {t("Class seat")} · {sportLabel(a.sport)} · {levelLabel(a.level)}
+                            </p>
+                          </div>
+                          <p className="font-display text-2xl tabular-nums">{money(a.amount_vnd)}</p>
+                        </div>
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          <Select
+                            className="w-auto"
+                            value={method[a.id] ?? "transfer"}
+                            onChange={(e) => setMethod((m) => ({ ...m, [a.id]: e.target.value }))}
+                            aria-label={t("Payment method for {name}", { name: a.member_name ?? t("Walk-in") })}
+                          >
+                            <option value="transfer">{t("Bank transfer")}</option>
+                            <option value="cash">{t("Cash")}</option>
+                            <option value="card">{t("Card")}</option>
+                          </Select>
+                          <StarBorder speed={4}>
+                            <Button disabled={busy === a.id || !canTake} onClick={() => void confirmSeat(a)}>
+                              {t("Money received: confirm")}
+                            </Button>
+                          </StarBorder>
+                        </div>
+                      </Card>
+                    </SpotlightCard>
+                  </Lift>
+                </StaggerItem>
+              ) : (
               <StaggerItem key={a.id}>
                 <Lift>
                   <SpotlightCard className="rounded-[var(--radius-xl)]" size={420} strength={0.1}>
@@ -472,7 +558,8 @@ function Page() {
                   </SpotlightCard>
                 </Lift>
               </StaggerItem>
-            ))}
+              ),
+            )}
           </Stagger>
         </div>
       ) : null}

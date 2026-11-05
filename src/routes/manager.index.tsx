@@ -4,7 +4,6 @@ import {
   Clock,
   FileText,
   HandCoins,
-  Hourglass,
   Image,
   LandPlot,
   Layers,
@@ -13,7 +12,6 @@ import {
   Settings,
   Tag,
   TrendingUp,
-  Trophy,
   Undo2,
   UserCog,
   UserPlus,
@@ -35,12 +33,6 @@ import {
   YAxis,
 } from "recharts";
 
-const CHART_METHOD_COLORS = [
-  "var(--color-chart-1)",
-  "var(--color-chart-2)",
-  "var(--color-chart-3)",
-  "var(--color-chart-4)",
-];
 import { CourtGrid, type Court, type OccSlot } from "@/components/court-grid";
 import { Shell, money, when } from "@/components/shell";
 import { PageHero } from "@/components/page-hero";
@@ -128,6 +120,7 @@ const TOOLTIP = {
     fontSize: 12,
   },
   labelStyle: { color: "var(--color-muted)", fontSize: 12 },
+  itemStyle: { color: "var(--color-fg)", fontWeight: 600 },
 } as const;
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
@@ -212,72 +205,8 @@ function Page() {
         slot="banner.manager"
         title={t("Reports")}
         subtitle={t("Revenue = payments taken − refunds. Court usage for {date}.", { date: formatDate(to) })}
-        stats={[
-          { label: t("Revenue"), value: rev ? money(rev.totals.revenue_vnd) : "..." },
-          { label: t("Refunds"), value: rev ? money(rev.totals.refund_vnd ?? 0) : "0 đ" },
-          { label: t("Plan hours used"), value: rev?.totals.quota_hours ?? 0 },
-        ]}
+
       />
-      <section aria-label={t("Quick actions")} className="mb-6">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Link
-            to="/manager/courts"
-            className="group relative overflow-hidden rounded-[var(--radius-xl)] border border-line bg-surface p-4 shadow-[var(--shadow-border)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-surface-2 text-fg border border-line">
-                <LandPlot className="size-6 text-accent" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-fg transition-colors group-hover:text-accent-2">{t("Courts & map")}</p>
-                <p className="truncate text-xs text-muted">{t("Inspect courts & status")}</p>
-              </div>
-            </div>
-          </Link>
-          <Link
-            to="/manager/sports"
-            className="group relative overflow-hidden rounded-[var(--radius-xl)] border border-line bg-surface p-4 shadow-[var(--shadow-border)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-surface-2 text-fg border border-line">
-                <Trophy className="size-6 text-accent" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-fg transition-colors group-hover:text-accent-2">{t("Sports")}</p>
-                <p className="truncate text-xs text-muted">{t("Prefixes, rules & colors")}</p>
-              </div>
-            </div>
-          </Link>
-          <Link
-            to="/manager/staff"
-            className="group relative overflow-hidden rounded-[var(--radius-xl)] border border-line bg-surface p-4 shadow-[var(--shadow-border)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-surface-2 text-fg border border-line">
-                <UserCog className="size-6 text-accent" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-fg transition-colors group-hover:text-accent-2">{t("Staff management")}</p>
-                <p className="truncate text-xs text-muted">{t("Coaches & receptionists")}</p>
-              </div>
-            </div>
-          </Link>
-          <Link
-            to="/manager/media"
-            className="group relative overflow-hidden rounded-[var(--radius-xl)] border border-line bg-surface p-4 shadow-[var(--shadow-border)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-surface-2 text-fg border border-line">
-                <Image className="size-6 text-accent" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-fg transition-colors group-hover:text-accent-2">{t("Media & banners")}</p>
-                <p className="truncate text-xs text-muted">{t("Site photos & slots")}</p>
-              </div>
-            </div>
-          </Link>
-        </div>
-      </section>
       <GLBackground
         variant="dotgrid"
         position="fixed"
@@ -336,6 +265,7 @@ function Page() {
         {(
           [
             { to: "/manager/courts" as const, label: t("Courts"), Icon: LandPlot },
+            { to: "/manager/sports" as const, label: t("Sports"), Icon: Layers },
             { to: "/manager/media" as const, label: t("Media"), Icon: Image },
             { to: "/manager/staff" as const, label: t("Staff"), Icon: UserCog },
             { href: "/manager/staff?create=1", label: t("Add staff"), Icon: UserPlus },
@@ -426,8 +356,6 @@ function Page() {
                 rev.totals.revenue_vnd,
                 t("Refunds"),
                 rev.totals.refund_vnd ?? 0,
-                t("Plan hours used"),
-                rev.totals.quota_hours,
               ],
               [],
               [t("Method"), t("Amount")],
@@ -447,13 +375,12 @@ function Page() {
       {revError ? (
         <LoadError id="report-error" message={revError.message} onRetry={refused ? undefined : revRead.reload} />
       ) : !rev ? (
-        <div className="grid gap-3 md:grid-cols-3">
-          <Skeleton className="h-28" />
+        <div className="grid gap-3 md:grid-cols-2">
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
         </div>
       ) : (
-        <Stagger className="grid gap-3 md:grid-cols-3" gap={0.08}>
+        <Stagger className="grid gap-3 md:grid-cols-2" gap={0.08}>
           <StaggerItem>
           <Stat
             label={t("Revenue")}
@@ -470,15 +397,6 @@ function Page() {
             note={t("Money handed back to members")}
             value={money(rev.totals.refund_vnd ?? 0)}
             trend={prev ? delta(rev.totals.refund_vnd ?? 0, prev.totals.refund_vnd ?? 0, false) : undefined}
-          />
-          </StaggerItem>
-          <StaggerItem>
-          <Stat
-            label={t("Plan hours used")}
-            icon={Hourglass}
-            note={t("Court hours members drew from their plans")}
-            value={rev.totals.quota_hours}
-            trend={prev ? delta(rev.totals.quota_hours, prev.totals.quota_hours, true) : undefined}
           />
           </StaggerItem>
         </Stagger>
@@ -562,8 +480,12 @@ function Page() {
                   />
                   <Tooltip {...TOOLTIP} cursor={{ fill: "var(--color-wood)", opacity: 0.5 }} />
                   <Bar dataKey="vnd" name={t("Revenue")} radius={[4, 4, 0, 0]} maxBarSize={44}>
-                    {chartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={CHART_METHOD_COLORS[index % CHART_METHOD_COLORS.length]} />
+                    {chartData.map((d, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill="var(--color-accent)"
+                        fillOpacity={d.vnd === Math.max(...chartData.map((x) => x.vnd)) ? 1 : 0.45}
+                      />
                     ))}
                   </Bar>
                 </BarChart>
@@ -647,7 +569,7 @@ function Page() {
               </p>
             )}
             <p className="mt-3 text-xs text-muted">
-              {t("Class places come out of a plan and gear hire is not charged as a payment, so neither has a line of its own.")}
+              {t("Class places are sold separately and gear hire is posted as a payment, so both appear as sources above (Class seat, Equipment hire). Plan hours used are not money and are not in these totals.")}
             </p>
           </Card>
           <Card>

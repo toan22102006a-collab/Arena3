@@ -7,6 +7,7 @@ import { StepTabs } from "@/components/coach-ui";
 import { sessionDay } from "@/components/class-detail";
 import { HomeworkPanel, PlanPanel, ResultsPanel } from "@/components/coach-training";
 import { Shell, hhmm, useSessionUser } from "@/components/shell";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   Badge,
   Button,
@@ -41,6 +42,7 @@ type AttRow = {
   member_code: string | null;
   health_notes: string | null;
   result: string | null;
+  avatar_url?: string | null;
 };
 
 type AttMeta = { locked: boolean; lock_at: string | null; status: string };
@@ -289,10 +291,13 @@ function RegisterPanel({
     setSaving(true);
     setSaveError(null);
     try {
-      await apiPost(`/sessions/${session.id}/attendance`, {
-        items: rows.map((u) => ({ user_id: u.id, result: mark(u) })),
-        ...(locked ? { reason } : {}),
-      });
+      await apiPost(
+        `/sessions/${session.id}/attendance`,
+        {
+          items: rows.map((u) => ({ user_id: u.id, result: mark(u) })),
+          ...(locked ? { reason } : {}),
+        },
+      );
       toast.success(locked ? t("Register corrected") : t("Register saved"));
       setReason("");
       setJustSaved(true);
@@ -370,26 +375,31 @@ function RegisterPanel({
                 f4 && "sm:grid-cols-[1fr_auto] sm:items-center sm:gap-4",
               )}
             >
-              <div className="min-w-0">
-                <p className="font-medium">
-                  {f4 ? (
-                    <Link
-                      to="/coach/student/$id"
-                      params={{ id: u.id }}
-                      className="tap underline-offset-4 hover:underline"
-                    >
-                      {u.full_name}
-                    </Link>
-                  ) : (
-                    u.full_name
-                  )}
-                  <span className="ml-2 text-xs font-normal text-muted">{u.member_code}</span>
-                </p>
-                {u.health_notes ? (
-                  <p className="mt-0.5 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-danger">
-                    {tData(u.health_notes)}
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="size-8 shrink-0">
+                  <UserAvatar name={u.full_name} url={u.avatar_url} />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-medium">
+                    {f4 ? (
+                      <Link
+                        to="/coach/student/$id"
+                        params={{ id: u.id }}
+                        className="tap underline-offset-4 hover:underline"
+                      >
+                        {u.full_name}
+                      </Link>
+                    ) : (
+                      u.full_name
+                    )}
+                    <span className="ml-2 text-xs font-normal text-muted">{u.member_code}</span>
                   </p>
-                ) : null}
+                  {u.health_notes ? (
+                    <p className="mt-0.5 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-danger">
+                      {tData(u.health_notes)}
+                    </p>
+                  ) : null}
+                </div>
               </div>
               {f4 ? (
                 // Named after the student, so a screen reader hears whose "Present" it is on.

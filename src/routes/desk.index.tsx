@@ -17,6 +17,7 @@ import {
   LoadError,
   Modal,
   MoneyInput,
+  Seg,
   Select,
   Skeleton,
   StatusBadge,
@@ -26,10 +27,15 @@ import { CountUp, Reveal, Stagger, StaggerItem, motion } from "@/components/moti
 import { GLBackground, SpotlightCard, StarBorder } from "@/components/fx";
 import { freeHours, useNowMinute, type Court, type OccSlot } from "@/components/court-grid";
 import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
+import type { PaymentCreateResponse } from "@/lib/arena3/contracts";
 import { sportLabel, todayISO } from "@/lib/arena3/labels";
-import { t, tServer, tData } from "@/lib/i18n";
+import { ageYears } from "@/lib/arena3/time";
+import { UserAvatar } from "@/components/user-avatar";
+import { t, tData, tServer } from "@/lib/i18n";
+import { lastPageOffset } from "@/lib/paging";
 import { usePageState } from "@/lib/use-page-state";
 import { readError, useRead } from "@/lib/use-read";
+import { useLimits } from "@/lib/use-centre";
 
 export const Route = createFileRoute("/desk/")({
   component: Page,
@@ -41,6 +47,8 @@ type Hit = {
   phone: string;
   member_code: string | null;
   status: string;
+  date_of_birth?: string | null;
+  avatar_url?: string | null;
 };
 
 type Plan = {
@@ -52,7 +60,18 @@ type Plan = {
   court_hours: number;
 };
 
-type Ticket = { id: string; body: string; full_name: string | null; phone: string | null; created_at: string };
+type Ticket = {
+  id: string;
+  body: string;
+  full_name: string | null;
+  phone: string | null;
+  created_at: string;
+  // Only ever non-null under "All": the open queue is by definition unanswered.
+  status: string;
+  reply: string | null;
+  replied_at: string | null;
+  replied_by_name: string | null;
+};
 type ShiftNow = { shift: { id: string; opened_at: string } | null; totals?: { cash: number } | null };
 
 /**
@@ -82,15 +101,33 @@ function Page() {
   const [closeOpen, setCloseOpen] = useState(false);
   const [cash, setCash] = useState("");
   const ticketPage = usePageState("desk.tickets", 10);
+  // The open queue is the day's work; "All" is for reading back what the desk
+  // told somebody last week. The server has always supported `?status=all` —
+  // nothing here asked for it, so answered requests were unreachable.
+  const [ticketScope, setTicketScope] = useState<"open" | "all">("open");
   const ticketsRead = useRead<{ items: Ticket[]; total: number }>(
-    `/tickets?limit=${ticketPage.pageSize}&offset=${ticketPage.offset}`,
+    `/tickets?limit=${ticketPage.pageSize}&offset=${ticketPage.offset}${ticketScope === "all" ? "&status=all" : ""}`,
     { keepPrevious: true },
   );
-  // The server's list, with a request dropped from it here as soon as the desk closes or answers it.
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  // Straight from the server, with no local copy to drop rows from.
+  //
+  // Answering or closing used to splice the row out here as well as refetching.
+  // That read as instant, but it lied twice: under "All" the request the desk
+  // had just answered vanished from a list whose whole purpose is to show
+  // answered requests, and an emptied page showed "the queue is clear" while
+  // the paging effect below still saw the pre-refetch rows and stayed put.
+  // `keepPrevious` already holds the old page on screen while the new one
+  // loads, so nothing flashes.
+  const tickets = ticketsRead.data?.items ?? [];
+  const { offset: ticketOffset, pageSize: ticketSize, setOffset: setTicketOffset } = ticketPage;
+  // Answering the last request on page three used to leave the desk on an empty
+  // page with the pagination gone — the whole section was hidden when the list
+  // ran out, so there was no way back. Follow the list down as it shrinks.
   useEffect(() => {
-    setTickets(ticketsRead.data?.items ?? []);
-  }, [ticketsRead.data]);
+    const data = ticketsRead.data;
+    if (!data || data.items.length > 0 || ticketOffset === 0) return;
+    setTicketOffset(lastPageOffset(data.total, ticketSize));
+  }, [ticketsRead.data, ticketOffset, ticketSize, setTicketOffset]);
   // Which request the desk is writing an answer to, and the answer so far. One
   // at a time: the box opens on the row being answered rather than sitting
   // under all of them, so it is obvious whose complaint is being replied to.
@@ -268,12 +305,18 @@ function Page() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25, delay: Math.min(i, 6) * 0.03, ease: [0.16, 1, 0.3, 1] }}
             onClick={() => navigate({ to: "/desk/member/$id", params: { id: m.id } })}
-            className="flex min-h-14 items-center justify-between rounded-[var(--radius-lg)] bg-surface px-4 py-3 text-left shadow-[var(--shadow-border)] transition-[background-color,transform] duration-200 hover:-translate-y-0.5 hover:bg-wood"
+            className="flex min-h-14 items-center justify-between gap-3 rounded-[var(--radius-lg)] bg-surface px-4 py-3 text-left shadow-[var(--shadow-border)] transition-[background-color,transform] duration-200 hover:-translate-y-0.5 hover:bg-wood"
           >
-            <div>
-              <div className="font-medium">{m.full_name}</div>
-              <div className="text-xs tabular-nums text-muted">
-                {m.member_code} · {m.phone}
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="size-8 shrink-0">
+                <UserAvatar name={m.full_name} url={m.avatar_url} />
+              </div>
+              <div className="min-w-0">
+                <div className="font-medium">{m.full_name}</div>
+                <div className="text-xs tabular-nums text-muted">
+                  {m.member_code} · {m.phone}
+                  {m.date_of_birth ? ` · ${t("{age} yrs", { age: ageYears(m.date_of_birth) })}` : ""}
+                </div>
               </div>
             </div>
             <StatusBadge status={m.status} />
@@ -400,7 +443,7 @@ function Page() {
                     <p className="font-medium">{tData(p.name)}</p>
                     <p className="text-sm tabular-nums text-muted">
                       {money(p.price_vnd)}
-                      {p.duration_days ? ` · ${t("{n} days", { n: p.duration_days })}` : ""} · {t("{n} court hours", { n: p.court_hours })}
+                      {p.duration_days ? ` · ${t("{n} days", { n: p.duration_days })}` : ""}
                     </p>
                   </button>
                 ))}
@@ -454,7 +497,7 @@ function Page() {
                   if (!subId) return;
                   setBusy(true);
                   try {
-                    const res = await apiPost<{ invoice: { id: string } }>(
+                    const res = await apiPost<PaymentCreateResponse>(
                       "/payments",
                       {
                         ref_type: "subscription",
@@ -527,9 +570,36 @@ function Page() {
             />
           </div>
         </div>
-      ) : tickets.length ? (
+      ) : (
         <div>
           <SectionTitle text={t("Requests from the app")} className="font-display text-xl" />
+          <div className="mt-3">
+            <Seg
+              value={ticketScope}
+              onChange={(v) => {
+                setTicketScope(v as "open" | "all");
+                // A different list is a different set of pages: staying on page
+                // four of the open queue would land on an empty page of "All".
+                setTicketOffset(0);
+              }}
+              options={[
+                { value: "open", label: t("Open queue") },
+                { value: "all", label: t("All requests") },
+              ]}
+            />
+          </div>
+          {!tickets.length ? (
+            <div className="mt-3">
+              <EmptyState
+                title={ticketScope === "all" ? t("Nothing here yet") : t("The queue is clear")}
+                hint={
+                  ticketScope === "all"
+                    ? t("Requests from the app show up here with their replies.")
+                    : t("Everything the app has sent in has been answered or closed.")
+                }
+              />
+            </div>
+          ) : null}
           <Stagger className="mt-3 grid gap-2" gap={0.05}>
             {tickets.map((ticket) => (
               <StaggerItem key={ticket.id}>
@@ -539,31 +609,59 @@ function Page() {
                     {/* A member's own words, so they may contain a long run
                         with nothing to wrap on — without this it pushes the
                         Reply and Close buttons off the side of the card. */}
-                    <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-sm">{ticket.body}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm">{ticket.body}</p>
+                      {/* Under "All" open and finished rows sit together; the badge is what tells them apart. */}
+                      <Badge tone={ticket.reply ? "accent" : ticket.status === "closed" ? "muted" : "hold"} className="shrink-0">
+                        {ticket.reply ? t("Answered") : ticket.status === "closed" ? t("Closed") : t("Waiting")}
+                      </Badge>
+                    </div>
                     <p className="mt-1 text-xs text-muted">
                       {ticket.full_name} · {ticket.phone}
                     </p>
+                    {/* Under "All" the answer is the point of the row: reading
+                        back what somebody was told is the whole reason the
+                        desk opens this filter. */}
+                    {ticket.reply ? (
+                      <div className="mt-2 rounded-[var(--radius-md)] bg-accent/5 p-2.5 ring-1 ring-inset ring-accent/15">
+                        <p className="text-2xs font-semibold text-accent-2">
+                          {ticket.replied_by_name ?? t("Reception")}
+                          {ticket.replied_at ? (
+                            <span className="font-normal text-muted"> · {when(ticket.replied_at)}</span>
+                          ) : null}
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm">{ticket.reply}</p>
+                      </div>
+                    ) : ticket.status === "closed" ? (
+                      <p className="mt-2 text-xs text-muted">{t("Closed without a reply.")}</p>
+                    ) : null}
                   </div>
                   <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setReplyTo(replyTo === ticket.id ? null : ticket.id);
-                        setReply("");
-                      }}
-                    >
-                      {replyTo === ticket.id ? t("Cancel") : t("Reply")}
-                    </Button>
+                    {/* One request carries one answer: the server refuses a
+                        second with a 409, so under "All" a Reply button on an
+                        answered row would be a button that cannot work. */}
+                    {ticket.reply ? null : (
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setReplyTo(replyTo === ticket.id ? null : ticket.id);
+                          setReply("");
+                        }}
+                      >
+                        {replyTo === ticket.id ? t("Cancel") : t("Reply")}
+                      </Button>
+                    )}
                     {/* Closing without answering is still allowed — a duplicate,
                         or something dealt with at the counter in person — but it
-                        is no longer the only thing the desk can do. */}
+                        is no longer the only thing the desk can do. Already
+                        closed rows show up under "All" and have nothing to do. */}
+                    {ticket.status === "closed" ? null : (
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={async () => {
                         try {
                           await apiPost(`/tickets/${ticket.id}/close`);
-                          setTickets((list) => list.filter((x) => x.id !== ticket.id));
                           ticketsRead.reload();
                           toast.success(t("Request closed"));
                         } catch (e) {
@@ -573,6 +671,7 @@ function Page() {
                     >
                       {t("Close")}
                     </Button>
+                    )}
                   </div>
                 </div>
                 {replyTo === ticket.id ? (
@@ -584,7 +683,6 @@ function Page() {
                       setReplying(true);
                       try {
                         await apiPost(`/tickets/${ticket.id}/reply`, { reply: reply.trim() });
-                        setTickets((list) => list.filter((x) => x.id !== ticket.id));
                         ticketsRead.reload();
                         setReplyTo(null);
                         setReply("");
@@ -622,7 +720,7 @@ function Page() {
             label={t("Request pages")}
           />
         </div>
-      ) : null}
+      )}
         </aside>
       </div>
 
@@ -669,6 +767,7 @@ function Page() {
  * without opening the map.
  */
 function DeskNow() {
+  const { desk_upcoming } = useLimits();
   const today = todayISO();
   const { data, error } = useRead<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${today}`);
   const now = useNowMinute();
@@ -711,7 +810,7 @@ function DeskNow() {
       </dl>
       {soon.length ? (
         <ul className="mt-3 grid gap-1 text-sm">
-          {soon.slice(0, 4).map((s) => {
+          {soon.slice(0, desk_upcoming).map((s) => {
             const court = data.courts.find((c) => c.id === s.court_id);
             const cCode = court?.court_code ?? "";
             const sport = court ? sportLabel(court.sport) : "";
@@ -814,7 +913,8 @@ function DeskArrivingTimeline() {
 }
 
 function DeskRecentCheckins() {
-  const read = useRead<{ items: Array<{ id: string; full_name: string; member_code: string | null; method: string | null; at: string }>; total: number }>("/desk/gate-checkins?limit=6");
+  const { desk_checkins } = useLimits();
+  const read = useRead<{ items: Array<{ id: string; full_name: string; member_code: string | null; method: string | null; at: string; avatar_url?: string | null }>; total: number }>(`/desk/gate-checkins?limit=${desk_checkins}`);
   const items = read.data?.items ?? [];
 
   return (
@@ -828,11 +928,16 @@ function DeskRecentCheckins() {
         <div className="mt-3 grid gap-2">
           {items.map((it) => (
             <Card key={it.id} className="flex items-center justify-between gap-3 p-3 text-sm">
-              <div>
-                <p className="font-medium">{it.full_name}</p>
-                <p className="text-xs text-muted tabular-nums">
-                  {it.member_code ? `${it.member_code} · ` : ""}{when(it.at)}
-                </p>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="size-8 shrink-0">
+                  <UserAvatar name={it.full_name} url={it.avatar_url} />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-medium">{it.full_name}</p>
+                  <p className="text-xs text-muted tabular-nums">
+                    {it.member_code ? `${it.member_code} · ` : ""}{when(it.at)}
+                  </p>
+                </div>
               </div>
               <Badge tone="accent">{it.method ? it.method.toUpperCase() : "QR"}</Badge>
             </Card>

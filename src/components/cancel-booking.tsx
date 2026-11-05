@@ -3,20 +3,10 @@ import { toast } from "sonner";
 import { money } from "@/components/shell";
 import { Badge, Button, Check, LoadError, Modal, Skeleton } from "@/components/ui";
 import { apiGet, apiPost } from "@/lib/arena3/client";
+import type { CancelQuoteResponse as Quote } from "@/lib/arena3/contracts";
 import { cn } from "@/lib/cn";
 import { t, tServer } from "@/lib/i18n";
 import { readError, type ReadError } from "@/lib/use-read";
-
-type Quote = {
-  hours_left: number;
-  refund_pct: number;
-  paid_vnd: number;
-  refund_vnd: number;
-  fee_vnd: number;
-  waived: boolean;
-  tiers: { hours: number; refund_pct: number }[];
-  quota_hours: number;
-};
 
 /**
  * Cancel a court booking, with the price of doing it said out loud first.

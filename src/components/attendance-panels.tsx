@@ -17,6 +17,7 @@ import {
   Skeleton,
   Stat,
 } from "@/components/ui";
+import { UserAvatar } from "@/components/user-avatar";
 import { ExportButtons } from "@/components/report-panels";
 import { ApiClientError, apiGet, apiPost } from "@/lib/arena3/client";
 import { addDaysISO, formatDate, sportLabel, todayISO } from "@/lib/arena3/labels";
@@ -175,6 +176,7 @@ type RiskItem = {
   last_seen_at: string | null;
   contacted: boolean;
   last_contact: { at: string; outcome: string; note: string | null; by: string } | null;
+  avatar_url?: string | null;
 };
 
 const CHANNELS = [
@@ -378,20 +380,25 @@ export function AtRiskPanel({ canContact = true }: { canContact?: boolean }) {
             <ul className="divide-y divide-line/70">
               {page.map((m) => (
                 <li key={m.user_id} className="grid gap-x-4 gap-y-1.5 px-4 py-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.5fr)_8.5rem_auto] md:items-center">
-                  <div className="min-w-0">
-                    <p className="break-words font-medium">
-                      {m.full_name} <span className="text-xs font-normal tabular-nums text-muted">{m.member_code}</span>
-                    </p>
-                    <p className="break-words text-xs text-muted">
-                      {m.phone ? (
-                        <a href={`tel:${m.phone}`} className="tabular-nums hover:underline">
-                          {m.phone}
-                        </a>
-                      ) : (
-                        t("no phone")
-                      )}
-                      {m.last_seen_at ? ` · ${t("last seen {date}", { date: formatDate(m.last_seen_at) })}` : ` · ${t("never seen")}`}
-                    </p>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="size-8 shrink-0">
+                      <UserAvatar name={m.full_name} url={m.avatar_url} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="break-words font-medium">
+                        {m.full_name} <span className="text-xs font-normal tabular-nums text-muted">{m.member_code}</span>
+                      </p>
+                      <p className="break-words text-xs text-muted">
+                        {m.phone ? (
+                          <a href={`tel:${m.phone}`} className="tabular-nums hover:underline">
+                            {m.phone}
+                          </a>
+                        ) : (
+                          t("no phone")
+                        )}
+                        {m.last_seen_at ? ` · ${t("last seen {date}", { date: formatDate(m.last_seen_at) })}` : ` · ${t("never seen")}`}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5" title={m.reasons.map((r) => tServer(r.message)).join(" ")}>
                     {m.reasons.map((r) => (

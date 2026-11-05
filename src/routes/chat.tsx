@@ -5,12 +5,13 @@ import { toast } from "sonner";
 import { Guard, Shell, roleLabel, useSessionUser } from "@/components/shell";
 import { Badge, Button, EmptyState, Input, LoadError, Skeleton } from "@/components/ui";
 import { UserAvatar } from "@/components/user-avatar";
-import { apiGet, apiPost } from "@/lib/arena3/client";
+import { apiGet, apiPost, getToken } from "@/lib/arena3/client";
 import { locale, t, tServer } from "@/lib/i18n";
 import { HighlightBadge, useLive } from "@/lib/use-live";
 import { useRead } from "@/lib/use-read";
 import { P2PRoom } from "@/lib/multiplayer/p2p";
 import { cn } from "@/lib/cn";
+import { scrollBehavior } from "@/lib/calm";
 
 export const Route = createFileRoute("/chat")({
   validateSearch: (search: Record<string, unknown>): { conv?: string } => ({
@@ -77,7 +78,9 @@ function ChatPage() {
   const activeConvId = search.conv;
 
   const { data: convsData, error: convsErr, reload: reloadConvs } = useRead<{ conversations: ConversationItem[] }>("/conversations");
-  useLive("chat", reloadConvs);
+  // There is no "chat" topic: `filterAllowedTopics` only ever allowed
+  // "chat:<id>", so subscribing to the bare name was dropped on the server and
+  // this list has always been kept current by `notifications` alone.
   useLive("notifications", reloadConvs);
 
   const [activeConv, setActiveConv] = useState<ConversationItem | null>(null);
@@ -165,6 +168,15 @@ function ChatPage() {
       room: activeConvId,
       selfId: user.id,
       name: user.full_name,
+      // `/rtc` goes through `authFromRequest` like every other route, and these
+      // calls carried no token at all — so every poll, signal and leave came
+      // back 401 and the room never connected to anybody. Passed as a getter so
+      // the leave fired during teardown still uses a current token.
+      getAuthToken: getToken,
+      // Messages still go through the server relay, so there is nothing to tell
+      // the member — but the badge must not keep implying a direct link is
+      // being negotiated when the relay has shut us out.
+      onAuthError: () => setIsP2PDirect(false),
       onPeersChanged: (peers) => {
         const isConnected = peers.some((p) => p.connectionState === "connected");
         setIsP2PDirect(isConnected);
@@ -223,9 +235,17 @@ function ChatPage() {
     }
   });
 
-  // Scroll to bottom on new messages
+  // Keep the newest message in view.
+  //
+  // Unlike the assistant's thread, this column is `flex-1` with no height cap:
+  // it grows with the conversation and the scrolling happens on the document,
+  // so there is no inner scrollport to move. `block: "nearest"` is what stops
+  // the jumping — it scrolls only when the foot of the thread is actually out
+  // of view, and only as far as it must, where `block: "end"` (the default)
+  // re-aligned the page on every message. `behavior` was hardcoded "smooth",
+  // which animated regardless of `prefers-reduced-motion`.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ block: "nearest", behavior: scrollBehavior() });
   }, [messages, peerTyping]);
 
   // Handle typing notification
@@ -317,7 +337,7 @@ function ChatPage() {
           {/* Left Column: Conversations List */}
           <div
             className={cn(
-              "flex flex-col border-r border-line bg-surface/50 lg:col-span-5 xl:col-span-4",
+              "flex min-h-0 flex-col border-r border-line bg-surface/50 lg:col-span-5 xl:col-span-4",
               activeConvId ? "hidden lg:flex" : "flex",
             )}
           >
@@ -419,14 +439,14 @@ function ChatPage() {
           {/* Right Column: Chat Box */}
           <div
             className={cn(
-              "flex flex-col bg-surface lg:col-span-7 xl:col-span-8",
+              "flex min-h-0 flex-col bg-surface lg:col-span-7 xl:col-span-8",
               activeConvId ? "flex" : "hidden lg:flex",
             )}
           >
             {activeConv ? (
               <>
                 {/* Active Chat Header */}
-                <div className="flex h-16 items-center justify-between border-b border-line px-4">
+                <div className="flex h-16 shrink-0 items-center justify-between border-b border-line px-4">
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
@@ -476,7 +496,7 @@ function ChatPage() {
                 </div>
 
                 {/* Message Stream */}
-                <div className="flex-1 overflow-y-auto p-4">
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
                   {hasMore ? (
                     <div className="mb-3 text-center">
                       <Button
@@ -568,7 +588,7 @@ function ChatPage() {
                 </div>
 
                 {/* Message Input Box */}
-                <form onSubmit={handleSend} className="border-t border-line p-3">
+                <form onSubmit={handleSend} className="shrink-0 border-t border-line p-3">
                   <div className="flex items-center gap-2">
                     <Input
                       value={inputText}

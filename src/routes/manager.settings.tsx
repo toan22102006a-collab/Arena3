@@ -3,6 +3,7 @@ import { SectionTitle } from "@/components/section";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Shell } from "@/components/shell";
+import { MenuSettings } from "@/components/menu-settings";
 import { PageHero } from "@/components/page-hero";
 import { StatStrip } from "@/components/stat-strip";
 import { Button, Card, Check, Field, Input, LoadError, MoneyInput, Skeleton } from "@/components/ui";
@@ -294,6 +295,8 @@ function Page() {
         </div>
       </Card>
       </Reveal>
+
+      <MenuSettings />
     </Shell>
   );
 }

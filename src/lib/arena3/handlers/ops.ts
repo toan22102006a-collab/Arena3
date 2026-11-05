@@ -1,13 +1,13 @@
 import type { Sql } from "@/lib/db";
 import { err } from "../errors";
 import { flagsMap, requireFlag, type FlagKey } from "../flags";
-import { audit, classSubscription, enqueue, enqueueReceipt, getSettings, issueInvoice, nextCode, pageOf, readJson, str } from "../helpers";
+import { assertNoClassClash, audit, enqueue, enqueueReceipt, getSettings, issueInvoice, nextCode, pageOf, readJson, str } from "../helpers";
 import { limit, RULES } from "../ratelimit";
-import { requireRole, type PublicUser } from "../session";
+import { avatarUrlSql, requireRole, withAvatarUrl, type PublicUser } from "../session";
 import { isValidVnPhone, normalizePhone } from "../phone";
 import { generateAssistantReply, type ChatTurn } from "../gemini";
 import { COACHES } from "../coaches";
-import { ATTENDANCE_LOCK_HOURS, attendanceLocked, isAttResult, ticketBody } from "../rules";
+import { ATTENDANCE_LOCK_HOURS, attendanceLocked, isAttResult, isTicketMessage, ticketBody } from "../rules";
 import { checkAbsentStreaks, sessionScope } from "./training";
 import { openShift, pickMethod } from "./extras";
 import { addDays, ictDateString } from "../time";
@@ -16,6 +16,7 @@ import { payosConfigured } from "../payos";
 import { centreBank } from "../bank";
 import { pageParams, parseInteger } from "../validate";
 import { getActiveSportCodes } from "./sports";
+import { uiConfigFrom } from "@/lib/ui-config";
 
 export async function flagsGet(sql: Sql) {
   const settings = await getSettings(sql);
@@ -26,6 +27,8 @@ export async function flagsGet(sql: Sql) {
       // used to write "06:00-22:00" and "five minutes" in by hand. Not personal, not secret.
       venue: { open_time: settings.open_time, close_time: settings.close_time, hold_minutes: settings.hold_minutes },
       flags: await flagsMap(sql),
+      // Each role's menu and the short lists' lengths, as the manager set them.
+      ui: uiConfigFrom(settings.ui_config),
       /*
        * Whether online payment can be offered at all.
        *
@@ -120,6 +123,9 @@ export async function subscriptionUnfreeze(sql: Sql, id: string, user: PublicUse
   );
 
   let newEndOn = sub.end_on;
+  // Freeze charges the whole requested length up front. Days not used come back
+  // onto the yearly allowance; a freeze with no audit row is left as stored.
+  let frozenDays = sub.frozen_days;
   if (lastFreeze && lastFreeze.before?.end_on && lastFreeze.after?.days) {
     const freezeDate = String(lastFreeze.at).slice(0, 10);
     const today = ictDateString();
@@ -127,12 +133,17 @@ export async function subscriptionUnfreeze(sql: Sql, id: string, user: PublicUse
     const dToday = new Date(today);
     const maxDays = Number(lastFreeze.after.days) || 0;
     const actualDays = Math.min(maxDays, Math.max(0, Math.round((dToday.getTime() - dFreeze.getTime()) / (86400 * 1000))));
+    const unused = Math.max(0, maxDays - actualDays);
+    frozenDays = Math.max(0, sub.frozen_days - unused);
     const originalEndOn = String(lastFreeze.before.end_on).slice(0, 10);
     newEndOn = addDays(originalEndOn, actualDays);
   }
 
-  await sql.query(`update subscriptions set status = 'active', end_on = $2 where id = $1`, [id, newEndOn]);
-  await audit(sql, user.id, "unfreeze_sub", "subscription", id, sub, { end_on: newEndOn });
+  await sql.query(
+    `update subscriptions set status = 'active', end_on = $2, frozen_days = $3 where id = $1`,
+    [id, newEndOn, frozenDays],
+  );
+  await audit(sql, user.id, "unfreeze_sub", "subscription", id, sub, { end_on: newEndOn, frozen_days: frozenDays });
   return { status: 200, body: await one(sql, `select id, user_id, plan_id, sport_scope, start_on::text, end_on::text, status, frozen_days, court_hours_left, session_left from subscriptions where id = $1`, [id]) };
 }
 
@@ -145,85 +156,98 @@ export async function waitlistAccept(sql: Sql, offerId: string, user: PublicUser
     expires_at: string;
   }>(sql, `select * from waitlist_offers where id = $1 for update`, [offerId]);
   if (!offer) throw err.notFound();
+  if (offer.status === "skipped") throw err.br("BR-21", "The class just filled up.");
   if (offer.status !== "pending") throw err.conflictState();
   if (new Date(offer.expires_at) < new Date()) throw err.br("BR-23", "That offer has expired.");
+  // Same lock order as enrollment_hold: the class first, then the enrolment.
+  const pre = await one<{ class_id: string }>(sql, `select class_id from enrollments where id = $1`, [offer.enrollment_id]);
+  if (!pre) throw err.notFound();
+  const cl = await one<{ enrolled_count: number; capacity: number; price_vnd: number | null }>(
+    sql,
+    `select enrolled_count, capacity, price_vnd from classes where id = $1 for update`,
+    [pre.class_id],
+  );
+  if (!cl) throw err.notFound();
   const enr = await one<{ id: string; class_id: string; user_id: string; status: string }>(
     sql,
     `select * from enrollments where id = $1 for update`,
     [offer.enrollment_id],
   );
   if (!enr || enr.user_id !== user.id) throw err.forbidden();
-  const cl = await one<{ enrolled_count: number; capacity: number; sport: string }>(
-    sql,
-    `select enrolled_count, capacity, sport from classes where id = $1 for update`,
-    [enr.class_id],
-  );
-  if (!cl) throw err.notFound();
-  const found = await classSubscription(sql, user.id, cl.sport);
-  if (!found) throw err.br("BR-19", "You need an active plan covering this sport.");
-  const sub = await one<{ id: string; session_left: number | null }>(
-    sql,
-    `select id, session_left from subscriptions where id = $1 for update`,
-    [found.id],
-  );
-  if (!sub) throw err.br("BR-19", "You need an active plan covering this sport.");
-  if (sub.session_left != null && sub.session_left <= 0) {
-    throw err.br("BR-20", "You have no sessions left.");
-  }
+  if (enr.status !== "waitlisted") throw err.conflictState("You are no longer on the waitlist for this class.");
+  await assertNoClassClash(sql, user.id, enr.class_id);
   if (cl.enrolled_count >= cl.capacity) throw err.br("BR-21", "The class just filled up.");
+  if (cl.price_vnd == null) throw err.br("BR-53", "This class is not open for sale yet.");
+  const settings = await getSettings(sql);
+  // The seat is held, not confirmed: payment confirms it, and the price is locked now.
+  // A free class has nothing to pay, so the seat is confirmed at once (as classesEnroll does).
+  const free = cl.price_vnd === 0;
   await sql.query(
-    `update enrollments set status = 'confirmed', waitlist_pos = null where id = $1`,
-    [enr.id],
+    `update enrollments
+        set status = $4::enroll_status, waitlist_pos = null, price_vnd = $2,
+            hold_until = case when $5::boolean then null else now() + ($3::int * interval '1 minute') end
+      where id = $1`,
+    [enr.id, cl.price_vnd, settings.class_hold_minutes, free ? "confirmed" : "hold", free],
   );
   await sql.query(
     `update classes set enrolled_count = enrolled_count + 1 where id = $1 and enrolled_count < capacity`,
     [enr.class_id],
   );
   await sql.query(`update waitlist_offers set status = 'accepted' where id = $1`, [offerId]);
-  if (sub.session_left != null) {
-    const took = await sql.query(
-      `update subscriptions
-          set session_left = session_left - 1
-        where id = $1 and session_left > 0
-       returning id`,
-      [sub.id],
-    );
-    if (took.length === 0) {
-      throw err.br("BR-20", "You have no sessions left.");
-    }
-  }
-  return { status: 200, body: { ok: true } };
+  await sql.query(`select waitlist_compact($1::uuid)`, [enr.class_id]);
+  return { status: 200, body: { ok: true, status: free ? "confirmed" : "hold" } };
 }
 
 export async function inviteWaitlist(sql: Sql, classId: string) {
-  const pending = await one(
+  const cl = await one<{ capacity: number; enrolled_count: number }>(
     sql,
-    `select o.id from waitlist_offers o
+    `select capacity, enrolled_count from classes where id = $1 for update`,
+    [classId],
+  );
+  if (!cl) return;
+  const open = cl.capacity - cl.enrolled_count;
+  if (open <= 0) return;
+  const pending = await one<{ n: number }>(
+    sql,
+    `select count(*)::int as n
+       from waitlist_offers o
        join enrollments e on e.id = o.enrollment_id
-      where e.class_id = $1 and o.status = 'pending' and o.expires_at > now()
-      limit 1`,
+      where e.class_id = $1 and o.status = 'pending' and o.expires_at > now()`,
     [classId],
   );
-  if (pending) return;
-  const next = await one<{ id: string; user_id: string }>(
-    sql,
-    `select id, user_id from enrollments
-      where class_id = $1 and status = 'waitlisted'
-      order by waitlist_pos nulls last, id
-      limit 1`,
-    [classId],
+  const room = open - (pending?.n ?? 0);
+  if (room <= 0) return;
+  const next = await sql.query<{ id: string; user_id: string }>(
+    `select e.id, e.user_id from enrollments e
+      where e.class_id = $1 and e.status = 'waitlisted'
+        and not exists (
+          select 1 from waitlist_offers o
+           where o.enrollment_id = e.id and o.status = 'pending' and o.expires_at > now()
+        )
+      order by e.waitlist_pos nulls last, e.id
+      limit $2`,
+    [classId, room],
   );
-  if (!next) return;
+  if (next.length === 0) return;
   const settings = await getSettings(sql);
   const hours = settings.waitlist_offer_hours || 2;
-  const offer = await one<{ id: string }>(
-    sql,
-    `insert into waitlist_offers (enrollment_id, expires_at, status)
-     values ($1, now() + ($2 * interval '1 hour'), 'pending')
-     returning id`,
-    [next.id, hours],
-  );
-  await enqueue(sql, "inapp", "waitlist_offer", next.user_id, { offer_id: offer!.id, class_id: classId }, `wl|${offer!.id}`);
+  for (const row of next) {
+    const offer = await one<{ id: string }>(
+      sql,
+      `insert into waitlist_offers (enrollment_id, expires_at, status)
+       values ($1, now() + ($2 * interval '1 hour'), 'pending')
+       returning id`,
+      [row.id, hours],
+    );
+    await enqueue(
+      sql,
+      "inapp",
+      "waitlist_offer",
+      row.user_id,
+      { offer_id: offer!.id, class_id: classId },
+      `wl|${offer!.id}`,
+    );
+  }
 }
 
 export async function equipmentList(sql: Sql) {
@@ -356,6 +380,7 @@ export async function sessionAttendanceGet(sql: Sql, sessionId: string, user: Pu
   };
   const roster = await sql.query(
     `select u.id, u.full_name, u.member_code, u.health_notes,
+            ${avatarUrlSql("u")},
             a.result, a.at
        from enrollments e
        join users u on u.id = e.user_id
@@ -364,7 +389,7 @@ export async function sessionAttendanceGet(sql: Sql, sessionId: string, user: Pu
       order by u.full_name`,
     [sessionId, session.class_id],
   );
-  return { status: 200, body: { session, items: roster } };
+  return { status: 200, body: { session, items: roster.map(withAvatarUrl) } };
 }
 
 /**
@@ -460,6 +485,7 @@ export async function sessionAttendancePost(sql: Sql, sessionId: string, request
       [uid, session.id, result],
     );
   }
+
   await audit(
     sql,
     user.id,
@@ -472,7 +498,13 @@ export async function sessionAttendancePost(sql: Sql, sessionId: string, request
   // BR-36: only a fresh absence can start or extend a streak.
   const absent = [...marks].filter(([, r]) => r === "absent").map(([uid]) => uid);
   await checkAbsentStreaks(sql, session.class_id, absent);
-  return sessionAttendanceGet(sql, session.id, user);
+  const res = await sessionAttendanceGet(sql, session.id, user);
+  return {
+    status: 200,
+    body: {
+      ...res.body,
+    },
+  };
 }
 
 export async function trainingList(sql: Sql, request: Request, user: PublicUser) {
@@ -539,16 +571,44 @@ export async function trainingSuggest(sql: Sql, request: Request, user: PublicUs
 // importing it from this module has to change.
 export { ticketBody };
 
+/**
+ * The budget for opening a support request.
+ *
+ * One bucket for both doors into the queue — the support form and a `ticket:`
+ * message to the assistant — because to reception they are the same row.
+ * Counting them separately would let one member post a full allowance through
+ * each, which is the hole the assistant route was: it was covered only by
+ * `RULES.assistant`, and twenty a minute is a model-call budget, not a
+ * someone-has-to-read-this budget.
+ *
+ * Callers charge this before the insert, so a burst is refused rather than
+ * queued behind however long the write takes. A failed insert therefore costs
+ * the member one of their three: the alternative, `reset()` on error, empties
+ * the whole bucket and would let a real burst through on the back of one
+ * unlucky write.
+ */
+function ticketQuota(userId: string): void {
+  limit(`ticket:${userId}`, RULES.ticketCreate, "requests");
+  limit(`ticket:${userId}:hour`, RULES.ticketCreateHourly, "requests");
+}
+
 export async function assistantChat(sql: Sql, request: Request, user: PublicUser) {
   await requireFlag(sql, "F6");
   const body = await readJson(request);
   const message = (str(body.message) ?? "").trim().slice(0, 800);
   if (message.length < 2) throw err.validation("Type a question first.");
-  // Every turn that falls through to the model costs a call upstream.
+  // The ceiling on the endpoint itself (FR-A03), charged before the branch
+  // below rather than inside it: every turn costs a `requireFlag` query whether
+  // or not it reaches the model, so a turn that goes to the desk still has to
+  // be counted somewhere. A `ticket:` turn pays this and the desk's own,
+  // tighter budget.
   limit(`ai:${user.id}`, RULES.assistant, "questions");
-  const q = message.toLowerCase();
 
-  if (/ticket:|complaint|feedback|khiếu nại|góp ý/.test(q) || q.startsWith("ticket:")) {
+  // Only a marker at the very start goes to the desk (FR-S01). Matching
+  // "complaint", "feedback", "khiếu nại" or "góp ý" anywhere in the message
+  // turned "Is there a feedback form?" into a support request, so the one
+  // question the assistant was asked went unanswered.
+  if (isTicketMessage(message)) {
     const note = ticketBody(message);
     // "ticket:" and nothing else. Opening a blank request would put a row at the
     // desk that nobody can answer, so ask for the rest before writing anything.
@@ -556,11 +616,15 @@ export async function assistantChat(sql: Sql, request: Request, user: PublicUser
       return {
         status: 200,
         body: {
-          reply: "Tell me what happened after «ticket:» and I'll pass it to the front desk.",
+          reply: "Tell me what happened after ticket: and I'll pass it to the front desk.",
           source: "rules" as const,
         },
       };
     }
+    // Twenty a minute is a model-call budget; reception reads these by hand.
+    // After the blank check, so asking for the rest of a sentence costs only
+    // the endpoint ceiling above, not a slot in the desk's queue.
+    ticketQuota(user.id);
     const t = await one<{ id: string }>(
       sql,
       `insert into tickets (user_id, body) values ($1,$2) returning id`,
@@ -570,16 +634,18 @@ export async function assistantChat(sql: Sql, request: Request, user: PublicUser
     return {
       status: 200,
       body: {
-        reply: `Opened request ${t!.id.slice(0, 8)} for the front desk. Reception replies during opening hours.`,
+        // Where to read the answer, not just that one is coming: the request
+        // used to vanish into a confirmation, and Account › Support is the
+        // only screen that has it and its reply.
+        reply: `Opened request ${t!.id.slice(0, 8)} for the front desk. Reception replies during opening hours — you will find it, and the reply, under Account › Support.`,
         source: "rules" as const,
       },
     };
   }
 
+  const q = message.toLowerCase();
+
   const settings = await getSettings(sql);
-  const plans = await sql.query<{ name: string; price_vnd: number; sport_scope: string; court_hours: number }>(
-    `select name, price_vnd, sport_scope, court_hours from membership_plans where is_on_sale = true order by price_vnd`,
-  );
   const classes = await sql.query<{
     sport: string;
     level: string;
@@ -587,47 +653,80 @@ export async function assistantChat(sql: Sql, request: Request, user: PublicUser
     enrolled_count: number;
     capacity: number;
     coach_name: string | null;
+    price_vnd: number | null;
   }>(
-    `select cl.sport, cl.level, cl.rrule, cl.enrolled_count, cl.capacity, u.full_name as coach_name
+    `select cl.sport, cl.level, cl.rrule, cl.enrolled_count, cl.capacity, cl.price_vnd, u.full_name as coach_name
        from classes cl
        left join users u on u.id = cl.coach_id
-      where cl.status = 'open'`,
+      where cl.status = 'open'
+      order by cl.sport, cl.level`,
   );
-  const subs = await sql.query<{ plan_name: string; status: string; end_on: string; court_hours_left: string | number }>(
-    `select p.name as plan_name, s.status, s.end_on::text, s.court_hours_left
-       from subscriptions s join membership_plans p on p.id = s.plan_id
-      where s.user_id = $1 and s.status in ('active','frozen','pending')
-      order by s.end_on desc limit 3`,
-    [user.id],
-  );
+  const onSale = classes.filter((c): c is typeof c & { price_vnd: number } => c.price_vnd !== null).sort((a, b) => a.price_vnd - b.price_vnd);
   const todayBookings = await sql.query<{ court_code: string; start_at: string; status: string }>(
     `select c.court_code, b.start_at::text, b.status
        from court_bookings b join courts c on c.id = b.court_id
       where b.user_id = $1
         and b.status in ('hold','confirmed')
         and b.start_at >= now() - interval '12 hours'
-        and b.start_at < now() + interval '24 hours'
-      order by b.start_at`,
+        and b.start_at < now() + interval '7 days'
+      order by b.start_at
+      limit 20`,
+    [user.id],
+  );
+  const subs = await sql.query<{
+    plan: string; sport_scope: string; start_on: string; end_on: string; status: string;
+    court_hours_left: string; session_left: number | null; days_left: number;
+  }>(
+    `select p.name as plan, s.sport_scope::text, s.start_on::text, s.end_on::text, s.status::text,
+            s.court_hours_left::text, s.session_left,
+            (s.end_on - (now() at time zone 'Asia/Ho_Chi_Minh')::date)::int as days_left
+       from subscriptions s join membership_plans p on p.id = s.plan_id
+      where s.user_id = $1
+      -- Live plans first, then the latest expired one so "my plan ran out on…" can be answered.
+      order by (s.status = 'expired'), s.end_on desc
+      limit 4`,
+    [user.id],
+  );
+  const myClasses = await sql.query<{ sport: string; level: string; status: string; waitlist_pos: number | null; next_at: string | null }>(
+    `select cl.sport::text, cl.level::text, e.status::text, e.waitlist_pos,
+            (select min(se.start_at)::text from sessions se
+              where se.class_id = cl.id and se.status = 'scheduled' and se.start_at >= now()) as next_at
+       from enrollments e join classes cl on cl.id = e.class_id
+      where e.user_id = $1 and e.status in ('confirmed','waitlisted')
+      order by cl.sport, cl.level`,
+    [user.id],
+  );
+  const recentAtt = await sql.query<{ kind: string; result: string | null; at: string; label: string | null }>(
+    `select a.kind::text, a.result::text, a.at::text, cl.sport || ' ' || cl.level as label
+       from attendance a
+       left join sessions se on se.id = a.session_id
+       left join classes cl on cl.id = se.class_id
+      where a.user_id = $1
+      order by a.at desc
+      limit 5`,
     [user.id],
   );
 
   const facts = [
-    `Centre: Arena3. Open ${settings.open_time.slice(0, 5)}–${settings.close_time.slice(0, 5)} ICT every day.`,
+    `Centre: ${centreName(settings)}. Open ${settings.open_time.slice(0, 5)}–${settings.close_time.slice(0, 5)} ICT every day.`,
     `Court holds last ${settings.hold_minutes} minutes. Cancel a court at least ${settings.cancel_court_hours}h ahead, a class at least ${settings.cancel_class_hours}h ahead. No-shows are not refunded.`,
     `Waitlists are first-come; an offer stands for ${settings.waitlist_offer_hours}h. Under-${settings.minor_age}s cannot book or enrol on their own.`,
-    `Plans on sale:\n${plans.map((p) => `• ${p.name} (${p.sport_scope}): ${p.price_vnd.toLocaleString("en-US")}đ · ${p.court_hours} court hours`).join("\n") || "—"}`,
+    `Classes on sale:\n${onSale.map((c) => `• ${c.sport} ${c.level} · coach ${c.coach_name ?? "—"} · ${c.price_vnd.toLocaleString("en-US")}đ`).join("\n") || "—"}`,
     `Open classes:\n${classes.map((c) => `• ${c.sport} ${c.level} · coach ${c.coach_name ?? "—"} · ${c.enrolled_count}/${c.capacity}`).join("\n") || "No classes are open."}`,
     `Coaches:\n${COACHES.map((c) => `• ${c.name} — ${c.title}. ${c.blurb}`).join("\n")}`,
     `Member asking: ${user.full_name} (${user.member_code ?? "no member code yet"}).`,
-    `Their plans:\n${subs.map((s) => `• ${s.plan_name} · ${s.status} · through ${s.end_on.slice(0, 10)} · ${s.court_hours_left} court hours left`).join("\n") || "No plan yet."}`,
-    `Today / next 24h:\n${todayBookings.map((b) => `• ${b.court_code} ${b.start_at} (${b.status})`).join("\n") || "Nothing booked."}`,
+    `Today's date (ICT): ${ictDateString()}.`,
+    `Member's plans:\n${subs.map((s) => `• ${s.plan} (${s.sport_scope}) · ${s.status} · ${s.start_on} → ${s.end_on} (${s.days_left} days left) · court hours left ${s.court_hours_left}${s.session_left !== null ? ` · sessions left ${s.session_left}` : ""}`).join("\n") || "No plan ever bought."}`,
+    `Member's classes:\n${myClasses.map((c) => `• ${c.sport} ${c.level} · ${c.status}${c.waitlist_pos !== null ? ` #${c.waitlist_pos}` : ""} · next session ${c.next_at ?? "none scheduled"}`).join("\n") || "Not enrolled in any class."}`,
+    `Court bookings, next 7 days:\n${todayBookings.map((b) => `• ${b.court_code} ${b.start_at} (${b.status})`).join("\n") || "Nothing booked."}`,
+    `Recent attendance:\n${recentAtt.map((a) => `• ${a.at} ${a.kind}${a.label ? ` ${a.label}` : ""}${a.result ? ` · ${a.result}` : ""}`).join("\n") || "No records."}`,
   ].join("\n\n");
 
-  const system = `You are the Arena3 front-desk assistant inside the member app. Answer in English, keep it short (2–8 sentences), and stay strictly inside the DATA BLOCK.
-No medical advice, no discounts beyond the listed plans, never invent a free slot.
-Only name coaches, plans and classes that appear in the data block.
-If you do not know: tell them to ask the desk or type «ticket: …».
-You can walk them through Book / Classes / Plans in the app. Payment is taken at the desk after they order in the app.
+  const system = `You are the ${centreName(settings)} front-desk assistant inside the member app. Reply in the language of the member's latest message (Vietnamese if they write in Vietnamese, otherwise English), keep it short (2–8 sentences), and stay strictly inside the DATA BLOCK.
+No medical advice, no discounts beyond the listed prices, never invent a free slot.
+Only name coaches and classes that appear in the data block.
+If you do not know: tell them to ask the desk or start a message with "ticket:" followed by what happened.
+You can walk them through Book / Classes in the app. Payment is taken at the desk for each court booking or class they buy in the app.
 
 DATA BLOCK:
 ${facts}`;
@@ -636,7 +735,7 @@ ${facts}`;
   const turns: ChatTurn[] = [...history, { role: "user", text: message }];
 
   const ai = await generateAssistantReply(system, turns);
-  const reply = ai?.text ?? ruleReply(q, settings, plans, classes);
+  const reply = ai?.text ?? ruleReply(q, settings, onSale, classes);
   const source = ai?.source ?? "rules";
 
   await audit(sql, user.id, "assistant", "chat", user.id, null, {
@@ -646,32 +745,64 @@ ${facts}`;
   return { status: 200, body: { reply, source } };
 }
 
+/**
+ * The earlier turns the browser sends up with a question.
+ *
+ * Only the member's own turns are kept. The client used to be able to post
+ * turns as `role: "model"` too, which is the browser telling the model what the
+ * model supposedly already said — a free hand to write the assistant's past for
+ * it, and from there to talk it past the system prompt into quoting a discount
+ * or a free court that does not exist.
+ *
+ * The cost is real and worth naming: with no assistant turns to look back on, a
+ * follow-up that leans on the last answer ("what about the other one?") has
+ * less to go on. Fixing that properly means the server keeping the thread
+ * itself, which needs a table it does not have — this is the honest version
+ * until then, because a confident wrong answer the member themselves planted is
+ * worse than a vaguer right one.
+ */
 function parseHistory(raw: unknown): ChatTurn[] {
   if (!Array.isArray(raw)) return [];
   const out: ChatTurn[] = [];
   for (const item of raw.slice(-8)) {
     if (!item || typeof item !== "object") continue;
     const rec = item as { role?: unknown; text?: unknown };
-    const role =
-      rec.role === "me" || rec.role === "user" ? "user" : rec.role === "bot" || rec.role === "model" ? "model" : null;
+    if (rec.role !== "me" && rec.role !== "user") continue;
     const text = typeof rec.text === "string" ? rec.text.trim().slice(0, 800) : "";
-    if (!role || text.length < 1) continue;
-    out.push({ role, text });
+    if (text.length < 1) continue;
+    out.push({ role: "user", text });
   }
   return out;
+}
+
+/**
+ * What the assistant calls the centre when it talks to a member.
+ *
+ * Read from `center_settings` rather than written into the prompt: the centre
+ * was renamed to Lê Long Sport (migration 0041) and the assistant carried on
+ * introducing itself as Arena3 — to the one audience that would notice. The
+ * fallback matches the invoice header's (`desk.ts`), so a blank row never
+ * leaves a member reading "undefined".
+ */
+function centreName(settings: { legal_name: string | null }): string {
+  // `||`, not `??`: a settings row saved with the field cleared holds "", and
+  // `??` would hand that straight to the member as " is open 06:00-22:00".
+  return settings.legal_name?.trim() || "Lê Long Sport";
 }
 
 function ruleReply(
   q: string,
   settings: Awaited<ReturnType<typeof getSettings>>,
-  plans: Array<{ name: string; price_vnd: number }>,
+  onSale: Array<{ sport: string; level: string; price_vnd: number }>,
   classes: Array<{ sport: string; level: string; enrolled_count: number; capacity: number }>,
 ): string {
-  if (/price|cost|how much|plan|giá|gói/.test(q)) {
-    return `Plans on sale:\n${plans.map((p) => `• ${p.name}: ${p.price_vnd.toLocaleString("en-US")}đ`).join("\n")}\nPay at the desk after you order in the app.`;
+  if (/price|cost|how much|fee|giá/.test(q)) {
+    return onSale.length
+      ? `Classes on sale:\n${onSale.map((c) => `• ${c.sport} ${c.level}: ${c.price_vnd.toLocaleString("en-US")}đ`).join("\n")}\nPay at the desk after you enrol in the app.`
+      : "No class has a price listed right now — ask the desk.";
   }
   if (/hour|open|close|what time|giờ|mở cửa/.test(q)) {
-    return `Arena3 is open ${settings.open_time.slice(0, 5)}–${settings.close_time.slice(0, 5)} every day (ICT). Court holds last ${settings.hold_minutes} minutes, and you can cancel a court up to ${settings.cancel_court_hours}h before.`;
+    return `${centreName(settings)} is open ${settings.open_time.slice(0, 5)}–${settings.close_time.slice(0, 5)} every day (ICT). Court holds last ${settings.hold_minutes} minutes, and you can cancel a court up to ${settings.cancel_court_hours}h before.`;
   }
   if (/class|coach|lesson|lớp|hlv/.test(q)) {
     return classes.length
@@ -684,15 +815,17 @@ function ruleReply(
   if (/waitlist|full|queue|chờ|đầy/.test(q)) {
     return `When a class is full you join a first-come waitlist. If a seat frees up you get an offer that stands for ${settings.waitlist_offer_hours}h — claim it in the app.`;
   }
-  return "I can help with the timetable, plans, coaches, booking and cancelling, and waitlists at Arena3. Type «ticket: …» to send a note to the desk. I do not give medical advice.";
+  return `I can help with the timetable, classes, coaches, booking and cancelling, and waitlists at ${centreName(settings)}. Start a message with ticket: to send a note to the desk. I do not give medical advice.`;
 }
 
 
 export async function ticketsCreate(sql: Sql, request: Request, user: PublicUser) {
+  await requireFlag(sql, "F6");
   // Same stripping as the assistant route: a member who typed "ticket:" into
   // the support box is repeating the habit the assistant taught them.
   const body = ticketBody(str((await readJson(request)).body) ?? "").slice(0, 2000);
   if (body.length < 2) throw err.validation("The message is empty.");
+  ticketQuota(user.id);
   const row = await one(sql, `insert into tickets (user_id, body) values ($1,$2) returning *`, [user.id, body]);
   return { status: 201, body: row };
 }
@@ -755,17 +888,32 @@ export async function ticketsList(sql: Sql, request: Request, user: PublicUser) 
  * colleague will answer again. Reopening is the member's move — they send
  * another note — which is also the honest signal that the first answer did not
  * land.
+ *
+ * So each request carries exactly one answer. A second attempt is refused
+ * rather than written over the first, which is what used to happen and left
+ * nobody able to see what the member had already been told.
  */
 export async function ticketReply(sql: Sql, id: string, request: Request, user: PublicUser) {
   requireRole(user, ["receptionist", "manager"]);
   const reply = (str((await readJson(request)).reply) ?? "").trim().slice(0, 2000);
   if (reply.length < 2) throw err.validation("Write a reply first.");
-  const t = await one<{ id: string; user_id: string | null; status: string }>(
+  const t = await one<{ id: string; user_id: string | null; status: string; reply: string | null }>(
     sql,
-    `select id, user_id, status from tickets where id = $1 for update`,
+    `select id, user_id, status, reply from tickets where id = $1 for update`,
     [id],
   );
   if (!t) throw err.notFound();
+  // An answer already sent is not overwritten. It is what the member was told
+  // and what they can still read on their Support screen; replacing it would
+  // leave no record that the first answer was ever given. 409 rather than 422:
+  // the reply the desk typed is fine, the ticket is simply past this point.
+  //
+  // A ticket closed *without* an answer is still answerable — `ticketClose`
+  // leaves exactly that state, and refusing it would turn Close into a trap
+  // that swallows the request.
+  if (t.reply) {
+    throw err.conflictState("That request has already been answered. The member can reply to reopen it.");
+  }
   const row = await one(
     sql,
     `update tickets
@@ -782,18 +930,47 @@ export async function ticketReply(sql: Sql, id: string, request: Request, user: 
       "ticket_replied",
       t.user_id,
       { ticket_id: id, reply: reply.slice(0, 200) },
-      // Keyed on the reply, not the ticket: if the desk answers again after the
-      // member writes back, that second answer is its own notification.
-      `ticket_replied|${id}|${Date.now()}`,
+      // Keyed on the ticket alone. It used to carry `Date.now()`, which made
+      // every call a new key and so turned `enqueue`'s `on conflict do nothing`
+      // into a no-op — it was there for a second answer to the same ticket,
+      // which the guard above no longer allows. One request, one answer, one
+      // notification, even if Send is double-tapped.
+      `ticket_replied|${id}`,
     );
   }
   await audit(sql, user.id, "ticket_reply", "ticket", id);
   return { status: 200, body: { ticket: row } };
 }
 
+/**
+ * Reception closes a request without writing an answer.
+ *
+ * Used for the ones that need no reply — a duplicate, something already fixed,
+ * a note the member followed up in person. The member is still told: their
+ * Support screen showed "Waiting" for as long as the row existed, so closing
+ * in silence meant the wait simply never visibly ended.
+ *
+ * Closing leaves `reply` null, which `ticketReply` reads as "still answerable":
+ * the desk can change its mind and write back.
+ */
 export async function ticketClose(sql: Sql, id: string, user: PublicUser) {
   requireRole(user, ["receptionist", "manager"]);
+  const t = await one<{ id: string; user_id: string | null; status: string }>(
+    sql,
+    `select id, user_id, status from tickets where id = $1 for update`,
+    [id],
+  );
+  if (!t) throw err.notFound();
+  // Already closed. Answering `ok` is right — the caller wanted it closed and
+  // it is — but a second audit row and a second notification are not: two
+  // clicks on one button are still one decision.
+  if (t.status === "closed") return { status: 200, body: { ok: true } };
   await sql.query(`update tickets set status = 'closed' where id = $1`, [id]);
+  // A request the desk typed in for a walk-in has nobody to notify.
+  if (t.user_id) {
+    // Keyed on the ticket, not the moment: closing happens once.
+    await enqueue(sql, "inapp", "ticket_closed", t.user_id, { ticket_id: id }, `ticket_closed|${id}`);
+  }
   await audit(sql, user.id, "ticket_close", "ticket", id);
   return { status: 200, body: { ok: true } };
 }

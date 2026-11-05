@@ -147,6 +147,8 @@ export function SportThumbnail({
   const color = colorKey || code;
   const asset = useSportPhoto(code);
   const label = sportLabel(code) || code;
+  // A file that is missing shows the sport's colour and letters, not a broken picture.
+  const [broken, setBroken] = useState<string | null>(null);
 
   return (
     <div
@@ -155,9 +157,10 @@ export function SportThumbnail({
         className,
       )}
     >
-      {asset.enabled && asset.url ? (
+      {asset.enabled && asset.url && broken !== asset.url ? (
         <img
           src={asset.url}
+          onError={() => setBroken(asset.url)}
           alt={alt || label}
           className="h-full w-full object-cover"
         />

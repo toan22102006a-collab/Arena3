@@ -8,7 +8,7 @@
 import type { Sql } from "@/lib/db";
 import { err } from "../errors";
 import { audit, bool, readJson, str } from "../helpers";
-import { applyDiscount, lookupPrice, memberDiscount } from "../pricing";
+import { lookupPrice } from "../pricing";
 import { normalizeCode, quotePromo, type PromoScope } from "../promos";
 import { requireRole, type PublicUser } from "../session";
 import { getSettings } from "../helpers";
@@ -276,9 +276,9 @@ export async function promosValidate(sql: Sql, request: Request, user: PublicUse
     const start = new Date(startAt);
     if (Number.isNaN(start.getTime())) throw err.field("start_at", "That time is not valid.");
     const list = await lookupPrice(sql, { sport: court.sport, courtId, start });
-    const disc = await memberDiscount(sql, targetUser, court.sport);
-    const order = applyDiscount(list.price_vnd, disc.pct, settings.round_vnd);
-    const q = await quotePromo(sql, { code, userId: targetUser, scope, sport: court.sport, orderVnd: order, planDiscountPct: disc.pct, listVnd: list.price_vnd });
+    // Court bookings are charged the slot price; only the promo code moves it.
+    const order = list.price_vnd;
+    const q = await quotePromo(sql, { code, userId: targetUser, scope, sport: court.sport, orderVnd: order, listVnd: list.price_vnd });
     return { status: 200, body: { valid: true, order_vnd: order, ...q } };
   }
   throw err.field("scope", "scope must be plan or court.");

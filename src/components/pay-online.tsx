@@ -48,7 +48,7 @@ export function PayOnlineButton({
   variant = "outline",
   onPaid,
 }: {
-  refType: "booking" | "subscription";
+  refType: "booking" | "subscription" | "enrollment";
   refId: string;
   label?: string;
   size?: "sm" | "md";

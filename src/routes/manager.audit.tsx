@@ -51,6 +51,91 @@ function detail(v: unknown): string | null {
   }
 }
 
+// The before/after snapshots are rows as the handlers wrote them. A manager reads "Enabled: Yes → No",
+// not two JSON blocks to compare by eye, so the change is worked out field by field here and the raw
+// JSON stays one click away.
+const FIELD_LABEL: Record<string, string> = {
+  enabled: tk("Enabled"),
+  status: tk("Status"),
+  role: tk("Role"),
+  capacity: tk("Capacity"),
+  level: tk("Level"),
+  sport: tk("Sport"),
+  phone: tk("Phone"),
+  email: tk("Email"),
+  full_name: tk("Full name"),
+  name: tk("Name"),
+  name_en: tk("English name"),
+  name_vi: tk("Vietnamese name"),
+  note: tk("Note"),
+  reason: tk("Reason"),
+  points: tk("Points"),
+  price_vnd: tk("Price"),
+  amount_vnd: tk("Amount"),
+  code: tk("Code"),
+  court_code: tk("Court"),
+  sort_order: tk("Sort order"),
+  min_enrolled: tk("Minimum to run"),
+  src_path: tk("Photo"),
+  alt_en: tk("Photo description (English)"),
+  alt_vi: tk("Photo description (Vietnamese)"),
+  start_at: tk("Starts at"),
+  end_at: tk("Ends at"),
+};
+
+function fieldLabel(key: string): string {
+  const known = FIELD_LABEL[key];
+  if (known) return t(known);
+  // A nested field (`venue.open_hour`) or one nobody has named yet: its own name, tidied.
+  const tidy = key.replace(/[._]+/g, " ").trim();
+  return tidy.charAt(0).toUpperCase() + tidy.slice(1);
+}
+
+function isPlain(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** One level of nesting is opened up (`venue.open_hour`); deeper values are compared whole. */
+function flatten(v: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(v)) {
+    if (isPlain(val)) for (const [k2, v2] of Object.entries(val)) out[`${k}.${k2}`] = v2;
+    else out[k] = val;
+  }
+  return out;
+}
+
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+function showValue(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "boolean") return v ? t("Yes") : t("No");
+  if (typeof v === "number") return v.toLocaleString(locale());
+  if (typeof v === "string") return ISO_TIME.test(v) ? when(v) : v;
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+type Change = { key: string; label: string; from: string; to: string };
+
+/** The fields that differ between the two snapshots; a created or deleted row lists what it had. */
+function changesOf(before: unknown, after: unknown): Change[] {
+  if (before == null && after == null) return [];
+  if (!isPlain(before ?? {}) || !isPlain(after ?? {})) {
+    if (JSON.stringify(before) === JSON.stringify(after)) return [];
+    return [{ key: "value", label: t("Value"), from: showValue(before), to: showValue(after) }];
+  }
+  const a = flatten((before ?? {}) as Record<string, unknown>);
+  const b = flatten((after ?? {}) as Record<string, unknown>);
+  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])];
+  return keys
+    .filter((k) => JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null))
+    .map((k) => ({ key: k, label: fieldLabel(k), from: showValue(a[k]), to: showValue(b[k]) }));
+}
+
 // The action names are written for the handlers that record them. Known ones get a
 // friendly, translatable label; a new one falls back to its own name, tidied.
 const ACTION_LABEL: Record<string, string> = {
@@ -205,6 +290,8 @@ function Page() {
   const [to, setTo] = useState("");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<number | null>(null);
+  // The entry whose raw JSON is showing under its field-by-field changes.
+  const [raw, setRaw] = useState<number | null>(null);
   const [hidden, setHidden] = useState<number[]>([]);
   const [showHidden, setShowHidden] = useState(false);
   // The pickers keep the full set once known, so filtering to one value does
@@ -421,6 +508,9 @@ function Page() {
                         </p>
                       ) : null}
                       {before || after ? (
+                        <AuditChanges before={e.before} after={e.after} />
+                      ) : null}
+                      {(before || after) && raw === e.id ? (
                         <div className="grid gap-2 md:grid-cols-2">
                           {before ? (
                             <div>
@@ -435,16 +525,26 @@ function Page() {
                             </div>
                           ) : null}
                         </div>
-                      ) : (
+                      ) : before || after ? null : (
                         <p className="text-muted">{t("No before/after was recorded for this entry.")}</p>
                       )}
-                      {!hidden.includes(e.id) ? (
-                        <div>
+                      <div className="flex flex-wrap gap-1">
+                        {before || after ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-expanded={raw === e.id}
+                            onClick={() => setRaw(raw === e.id ? null : e.id)}
+                          >
+                            {raw === e.id ? t("Hide raw") : t("Show raw")}
+                          </Button>
+                        ) : null}
+                        {!hidden.includes(e.id) ? (
                           <Button size="sm" variant="ghost" onClick={() => hide(e.id)}>
                             {t("Hide from this screen")}
                           </Button>
-                        </div>
-                      ) : null}
+                        ) : null}
+                      </div>
                     </div>
                   ) : null}
                 </Card>
@@ -477,5 +577,32 @@ function Page() {
       ) : null}
       </div>
     </Shell>
+  );
+}
+
+/** Field, old value, new value: only what the action changed. */
+function AuditChanges({ before, after }: { before: unknown; after: unknown }) {
+  const changes = changesOf(before, after);
+  if (!changes.length) return <p className="text-muted">{t("Nothing changed in the recorded fields.")}</p>;
+  return (
+    <dl className="grid gap-1 rounded-[var(--radius-sm)] bg-wood p-2 sm:grid-cols-[minmax(8rem,auto)_1fr] sm:gap-x-4">
+      {changes.map((c) => (
+        <div key={c.key} className="contents">
+          <dt className="pt-1 text-muted sm:pt-0">{c.label}</dt>
+          <dd className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm">
+            <span className={cn("break-all", before != null && "text-muted line-through decoration-line-strong")}>
+              {before != null ? c.from : null}
+            </span>
+            {before != null ? (
+              <>
+                <span aria-hidden className="text-muted">→</span>
+                <span className="sr-only">{t("changed to")}</span>
+              </>
+            ) : null}
+            <span className="break-all font-medium text-fg">{c.to}</span>
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }

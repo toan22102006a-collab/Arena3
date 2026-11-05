@@ -37,7 +37,8 @@ const emptyForm = {
   price_vnd: "800000",
   duration_days: "30",
   session_quota: "",
-  court_hours: "2",
+  // Plan court hours cannot pay for a booking, so new plans carry none.
+  court_hours: "0",
   court_discount_pct: "10",
   is_on_sale: true,
   carry_over_hours: false,
@@ -141,7 +142,7 @@ function Page() {
       ) : !items ? (
         <Skeleton className="h-48" />
       ) : !items.length ? (
-        <EmptyState title={t("No plans yet")} hint={t("Create the first plan so members can buy court hours and class sessions in the app.")}>
+        <EmptyState title={t("No plans yet")} hint={t("Create the first plan so members can buy class sessions and court discounts in the app.")}>
           <Button onClick={() => setOpen(true)}>{t("New plan")}</Button>
         </EmptyState>
       ) : null}
@@ -170,7 +171,6 @@ function Page() {
               <p className="mt-2 text-sm text-muted">
                 {p.duration_days ? t("{n} days", { n: p.duration_days }) : t("Per session")}
                 {p.session_quota ? ` · ${t("{n} class sessions", { n: p.session_quota })}` : ""}
-                {p.court_hours > 0 ? ` · ${t("{n} court hours", { n: p.court_hours })}` : ""}
                 {p.court_discount_pct > 0 ? ` · ${t("{pct}% off courts", { pct: p.court_discount_pct })}` : ""}
               </p>
               <div className="mt-auto flex gap-2 pt-4">
@@ -244,13 +244,6 @@ function Page() {
                 onChange={(e) => setForm({ ...form, session_quota: e.target.value })}
               />
             </Field>
-            <Field label={t("Court hours")} hint={bad("court_hours")}>
-              <Input
-                inputMode="numeric"
-                value={form.court_hours}
-                onChange={(e) => setForm({ ...form, court_hours: e.target.value })}
-              />
-            </Field>
             <Field label={t("Court discount %")} hint={bad("court_discount_pct")}>
               <Input
                 inputMode="numeric"
@@ -263,11 +256,6 @@ function Page() {
             checked={form.is_on_sale}
             onChange={(e) => setForm({ ...form, is_on_sale: e.target.checked })}
             label={t("Put it on sale now (members see it in the app)")}
-          />
-          <Check
-            checked={form.carry_over_hours}
-            onChange={(e) => setForm({ ...form, carry_over_hours: e.target.checked })}
-            label={t("Carry unused court hours over on renewal")}
           />
         </div>
       </Modal>
@@ -304,14 +292,10 @@ function Page() {
               <dd>{sportLabel(detail.plan.sport_scope)}</dd>
               <dt className="text-muted">{t("Lasts")}</dt>
               <dd>{detail.plan.duration_days ? t("{n} days", { n: detail.plan.duration_days }) : t("Per session")}</dd>
-              <dt className="text-muted">{t("Court hours")}</dt>
-              <dd className="tabular-nums">{detail.plan.court_hours}</dd>
               <dt className="text-muted">{t("Class sessions")}</dt>
               <dd className="tabular-nums">{detail.plan.session_quota ?? t("Not included")}</dd>
               <dt className="text-muted">{t("Court discount")}</dt>
               <dd className="tabular-nums">{detail.plan.court_discount_pct}%</dd>
-              <dt className="text-muted">{t("Unused hours")}</dt>
-              <dd>{detail.plan.carry_over_hours ? t("Carried over on renewal") : t("Reset on renewal")}</dd>
             </dl>
             <p className="rounded-[var(--radius-md)] bg-wood px-3 py-2">
               <span className="font-medium tabular-nums">{detail.holders.active}</span> {t("active")} ·{" "}

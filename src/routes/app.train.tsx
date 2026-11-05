@@ -12,6 +12,8 @@ import { apiPut } from "@/lib/arena3/client";
 import { addDaysISO, formatDate, levelLabel, sportLabel, todayISO } from "@/lib/arena3/labels";
 import { t, tk } from "@/lib/i18n";
 import { useRead } from "@/lib/use-read";
+import { AddToCalendar } from "@/components/class-extras";
+import { CertificatesSection } from "@/components/member-certificates";
 
 export const Route = createFileRoute("/app/train")({ component: Page });
 
@@ -40,6 +42,7 @@ type Progress = {
   next_sessions: Array<{
     id: string;
     start_at: string;
+    end_at: string;
     sport: string;
     level: string;
     court_code: string;
@@ -233,6 +236,15 @@ function Page() {
                             </p>
                             <SessionCountdown startAt={s.start_at} />
                           </div>
+                          <AddToCalendar
+                            className="mt-1"
+                            event={{
+                              title: `${sportLabel(s.sport)} · ${levelLabel(s.level)}`,
+                              start: s.start_at,
+                              end: s.end_at,
+                              location: `Lê Long Sport · ${t("Court {court}", { court: s.court_code })}`,
+                            }}
+                          />
                           {s.plans.length ? (
                             s.plans.map((p) => (
                               <div key={p.id} className="mt-3">
@@ -329,6 +341,8 @@ function Page() {
               )}
             </div>
           </section>
+
+          <CertificatesSection />
 
           <section>
             <SectionTitle text={t("Recent sessions")}className="font-display text-2xl" />
