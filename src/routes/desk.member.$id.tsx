@@ -76,10 +76,6 @@ type Member = {
     status: string;
     plan_name: string;
     end_on: string;
-    sport_scope: string;
-    court_hours_left: number;
-    session_left: number | null;
-    plan_session_quota?: number | null;
     frozen_days?: number;
     /** What "Take payment" collects, worked out by the server: price less any code on the order. */
     due_vnd: number;
@@ -437,15 +433,7 @@ function Page() {
             <StatusBadge status={s.status} />
             <h2 className="mt-2 font-display text-2xl">{tData(s.plan_name)}</h2>
             <p className="text-sm text-muted">
-              {sportLabel(s.sport_scope)} · {t("through {date}", { date: formatDate(s.end_on) })}            </p>
-            {s.session_left != null ? (
-              <p className="mt-1 text-sm font-medium text-accent-2">
-                {t("{left} of {quota} sessions left", {
-                  left: s.session_left,
-                  quota: s.plan_session_quota ?? s.session_left,
-                })}
-              </p>
-            ) : null}
+              {t("through {date}", { date: formatDate(s.end_on) })}            </p>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
               <span>
                 {t("{n} days left", {
@@ -637,20 +625,25 @@ function Page() {
               onClick={() =>
                 picked &&
                 void act(async () => {
-                  const res = await apiPost<{ enrollment: { id: string; status: string }; waitlisted?: boolean }>(
+                  const res = await apiPost<{ enrollment: { id: string; status: string }; waitlisted?: boolean; quote?: { total_vnd: number } }>(
                     `/classes/${picked.id}/enroll`,
                     { user_id: id },
-                  );
+                  ).catch((e: { body?: { br?: string; class_end?: string } }) => {
+                    if (e?.body?.br === "BR-19" && e.body.class_end) {
+                      throw new Error(t("This member's plan must end after the class ends ({date}). Sell or extend a plan first.", { date: e.body.class_end }));
+                    }
+                    throw e;
+                  });
                   if (res.waitlisted) {
                     toast.success(t("Class is full: added to the waitlist"));
                   } else if (res.enrollment.status === "hold") {
                     // The seat is held until paid; the desk takes the money there and then.
                     const pay = await apiPost<PaymentCreateResponse>(
                       "/payments",
-                      { ref_type: "enrollment", ref_id: res.enrollment.id, method: "cash", amount_vnd: picked.price_vnd },
+                      { ref_type: "enrollment", ref_id: res.enrollment.id, method: "cash", amount_vnd: res.quote?.total_vnd ?? picked.price_vnd },
                       true,
                     );
-                    toast.success(t("Enrolled and paid {amount}", { amount: money(picked.price_vnd ?? 0) }));
+                    toast.success(t("Enrolled and paid {amount}", { amount: money(res.quote?.total_vnd ?? picked.price_vnd ?? 0) }));
                     if (pay.invoice?.id) await openInvoice(pay.invoice.id);
                   } else {
                     toast.success(t("Enrolled"));
@@ -662,7 +655,7 @@ function Page() {
               }
             >
               {picked?.price_vnd
-                ? t("Enrol and take cash · {amount}", { amount: money(picked.price_vnd) })
+                ? t("Enrol and take cash · tuition {amount}", { amount: money(picked.price_vnd) })
                 : t("Enrol")}
             </Button>
           </div>

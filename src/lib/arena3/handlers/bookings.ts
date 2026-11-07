@@ -34,7 +34,8 @@ import {
   str,
 } from "../helpers";
 import { isValidVnPhone, normalizePhone } from "../phone";
-import { depositFor, dueNow, quoteCancel } from "../policy";
+import { memberCourtFee } from "../membership";
+import { dueNow, quoteCancel } from "../policy";
 import { applyDiscount, lookupPrice } from "../pricing";
 import { quotePromo, redeemForBooking, restoreIfFullyRefunded } from "../promos";
 import { requireRole, type PublicUser } from "../session";
@@ -110,17 +111,26 @@ async function assertBookWindow(
   }
 }
 
-async function countSlotsToday(sql: Sql, userId: string, start: Date) {
-  const date = ictDateString(start);
-  const row = await one<{ n: number }>(
+/** Whether this person already has a court overlapping that time. Back-to-back slots do not overlap; holds are left out because a new hold replaces the old one. */
+export async function hasCourtOverlap(sql: Sql, userId: string, start: Date, end: Date, excludeId?: string) {
+  const clash = await one(
     sql,
-    `select count(*)::int as n from court_bookings
-      where user_id = $1
-        and status in ('confirmed','in_use')
-        and (start_at at time zone 'Asia/Ho_Chi_Minh')::date = $2::date`,
-    [userId, date],
+    `select 1 from court_bookings
+      where user_id = $1 and status in ('confirmed','in_use')
+        and start_at < $3 and end_at > $2
+        and ($4::uuid is null or id <> $4::uuid)
+      limit 1`,
+    [userId, start.toISOString(), end.toISOString(), excludeId ?? null],
   );
-  return row?.n ?? 0;
+  return !!clash;
+}
+
+/** One person, one court at a time. The lock makes two taps at the same moment queue up. */
+async function assertNoCourtOverlap(sql: Sql, userId: string, start: Date, end: Date, excludeId?: string) {
+  await sql.query(`select pg_advisory_xact_lock(hashtext($1))`, [userId]);
+  if (await hasCourtOverlap(sql, userId, start, end, excludeId)) {
+    throw err.br("BR-05", "You already have a court at that time.");
+  }
 }
 
 async function overlapClass(sql: Sql, userId: string, start: Date, end: Date) {
@@ -216,9 +226,7 @@ export async function availabilityGet(sql: Sql, request: Request, user?: PublicU
   const now = Date.now();
   const horizon = now + settings.book_ahead_days * 86400000;
   const step = settings.slot_minutes * 60_000;
-  // For a signed-in member, how many courts they already hold each day, counted exactly as the
-  // hold counts them (countSlotsToday), so the day strip can say "you have 2" before the tap
-  // instead of "84 free" and a refusal after it (BR-05).
+  // For a signed-in member, how many courts they already have each day.
   const mine = new Map<string, number>();
   if (user?.role === "member") {
     const rows = await sql.query<{ d: string; n: number }>(
@@ -255,7 +263,7 @@ export async function availabilityGet(sql: Sql, request: Request, user?: PublicU
   }
   return {
     status: 200,
-    body: { from: first, sport: sport ?? null, days: out, cap: settings.max_slots_per_day },
+    body: { from: first, sport: sport ?? null, days: out },
   };
 }
 
@@ -296,7 +304,7 @@ export async function meBookings(sql: Sql, user: PublicUser): Promise<Reply<MeBo
     status: 200,
     body: {
       window_hours: settings.cancel_court_hours,
-      cancel_tiers: settings.cancel_tiers,
+      cancel_tiers: [],
       class_sessions,
       items: rows.map((r) => ({
         ...r,
@@ -629,8 +637,7 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
   await assertBookWindow(sql, start, { walkIn: false, settings });
   const court = await courtById(sql, courtId);
   if (court.status !== "ready") throw err.br("BR-06", "That court is not available.");
-  const n = await countSlotsToday(sql, user.id, start);
-  if (n >= settings.max_slots_per_day) throw err.br("BR-05", `You can hold at most ${settings.max_slots_per_day} slots a day.`);
+  await assertNoCourtOverlap(sql, user.id, start, end);
   const overlap = await overlapClass(sql, user.id, start, end);
   if (overlap && b.confirm_overlap !== true) {
     throw err.br("BR-09", "This slot clashes with a class you are in. Confirm to hold it anyway.", {
@@ -638,10 +645,11 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
     });
   }
   const list = await lookupPrice(sql, { sport: court.sport, courtId, start });
-  // Every court booking is charged the slot's list price; only promo codes move it.
-  // A code is priced into the hold so the member sees what they will pay; the use
-  // is only counted when the money posts (BR-41).
-  const promoCode = str(b.promo_code);
+  // A membership covering the play date fixes the price at the member fee, and no code applies to
+  // it. Otherwise the list price, which a code can lower: priced into the hold so the member sees
+  // what they will pay, and only counted when the money posts (BR-41).
+  const covered = await memberCourtFee(sql, user.id, start, settings);
+  const promoCode = covered ? null : str(b.promo_code);
   const promo = promoCode
     ? await quotePromo(sql, {
         code: promoCode,
@@ -652,15 +660,9 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
         listVnd: list.price_vnd,
       })
     : null;
-  const price = promo ? promo.final_vnd : list.price_vnd;
-  // A peak slot asks for a deposit up front; the rest is paid at the desk (deposit_vnd = 0 means pay in full).
-  const deposit = depositFor({
-    priceVnd: price,
-    pct: settings.deposit_pct,
-    peakOnly: settings.deposit_peak_only,
-    isPeak: list.is_peak,
-    round: settings.round_vnd,
-  });
+  const price = covered ? covered.fee_vnd : promo ? promo.final_vnd : list.price_vnd;
+  // Courts are paid in full up front.
+  const deposit = 0;
   const bookingIdRow = await one<{ id: string }>(sql, `select gen_random_uuid() as id`);
   const bookingId = bookingIdRow!.id;
   const holdUntil = new Date(Date.now() + settings.hold_minutes * 60_000);
@@ -707,8 +709,9 @@ export async function bookingsHold(sql: Sql, request: Request, user: PublicUser)
       hold_until: holdUntil.toISOString(),
       price,
       deposit_vnd: deposit,
-      due_now_vnd: deposit > 0 ? deposit : price,
+      due_now_vnd: price,
       list_price: list.price_vnd,
+      membership: { covered: !!covered, end_on: covered?.end_on ?? null },
       promo: promo ? { code: promo.code, name: promo.name, discount_vnd: promo.discount_vnd } : null,
     },
   };
@@ -1057,14 +1060,14 @@ export async function bookingsCancelQuote(
   const staff = user.role === "receptionist" || user.role === "manager";
   const waived = staff && new URL(request.url).searchParams.get("waive") === "1";
   const quote = quoteCancel({
-    tiers: settings.cancel_tiers,
+    tiers: [],
     startAt: booking.start_at,
     paidVnd: booking.status === "hold" ? 0 : booking.paid_vnd,
     waived,
   });
   return {
     status: 200,
-    body: { ...quote, tiers: settings.cancel_tiers, quota_hours: Number(booking.quota_hours) || 0 },
+    body: { ...quote, tiers: [], quota_hours: Number(booking.quota_hours) || 0 },
   };
 }
 
@@ -1092,7 +1095,7 @@ export async function bookingsCancel(
   const waived = staff && body.waive === true;
   const reason = str(body.reason) ?? null;
   const quote = quoteCancel({
-    tiers: settings.cancel_tiers,
+    tiers: [],
     startAt: booking.start_at,
     paidVnd: booking.paid_vnd,
     waived,
@@ -1279,13 +1282,7 @@ export async function bookingsReschedule(
   const { end } = slotBounds(start, settings.slot_minutes);
   await assertBookWindow(sql, start, { walkIn: false, settings });
 
-  const sameDay = ictDateString(start) === ictDateString(new Date(booking.start_at));
-  if (!sameDay) {
-    const n = await countSlotsToday(sql, user.id, start);
-    if (n >= settings.max_slots_per_day) {
-      throw err.br("BR-05", `You can hold at most ${settings.max_slots_per_day} slots a day.`);
-    }
-  }
+  await assertNoCourtOverlap(sql, user.id, start, end, booking.id);
   const overlap = await overlapClass(sql, user.id, start, end);
   if (overlap && b.confirm_overlap !== true) {
     throw err.br("BR-09", "This slot clashes with a class you are in. Confirm to move it anyway.", {
@@ -1295,8 +1292,10 @@ export async function bookingsReschedule(
   // Plan hours pay for any slot; money only moves between slots of equal price.
   if (!(Number(booking.quota_hours) > 0)) {
     const list = await lookupPrice(sql, { sport: court.sport, courtId, start });
-    const price =
-      applyDiscount(list.price_vnd, booking.discount_pct, settings.round_vnd) - (booking.promo_discount_vnd ?? 0);
+    const covered = await memberCourtFee(sql, user.id, start, settings);
+    const price = covered
+      ? covered.fee_vnd
+      : applyDiscount(list.price_vnd, booking.discount_pct, settings.round_vnd) - (booking.promo_discount_vnd ?? 0);
     if (price !== booking.price_vnd) {
       throw err.conflictState(
         "That slot is priced differently from the one you paid for. Cancel this booking and book the new slot instead.",
@@ -1394,8 +1393,10 @@ export async function walkIn(sql: Sql, request: Request, user: PublicUser): Prom
     [guest_phone],
   );
   const list = await lookupPrice(sql, { sport: court.sport, courtId, start });
-  // Every court booking is charged the slot price, member or not.
-  const price = roundVnd(list.price_vnd, settings.round_vnd);
+  // A known member whose membership covers the date pays the member fee; everyone else the slot price.
+  if (member) await assertNoCourtOverlap(sql, member.id, start, end);
+  const covered = member ? await memberCourtFee(sql, member.id, start, settings) : null;
+  const price = covered ? covered.fee_vnd : roundVnd(list.price_vnd, settings.round_vnd);
   const discount = 0;
   const bookingId = (await one<{ id: string }>(sql, `select gen_random_uuid() as id`))!.id;
   let occId: string;

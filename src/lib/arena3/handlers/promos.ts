@@ -5,6 +5,7 @@
  * used is never deleted, and editing it only changes orders priced afterwards:
  * orders already quoted keep the discount written onto them.
  */
+import { memberCourtFee } from "../membership";
 import type { Sql } from "@/lib/db";
 import { err } from "../errors";
 import { audit, bool, readJson, str } from "../helpers";
@@ -17,8 +18,8 @@ import { parseInteger } from "../validate";
 import { getActiveSportCodes } from "./sports";
 
 const INT4 = 2_147_483_647;
-// Class sign-ups carry no price in Arena3, so a code can only apply to plans and courts.
-const SCOPES: PromoScope[] = ["plan", "court"];
+// On a class a code lowers the tuition only, never the membership extension.
+const SCOPES: PromoScope[] = ["plan", "court", "class"];
 const CODE_RE = /^[A-Z0-9_-]{3,24}$/;
 
 function isBlank(v: unknown) {
@@ -38,7 +39,7 @@ function optDate(field: string, v: unknown): string | null {
 
 function parseScopes(v: unknown): string[] {
   if (v === undefined) return ["plan", "court"];
-  if (!Array.isArray(v) || v.length === 0) throw err.field("applies_to", "Pick plans, courts or both.");
+  if (!Array.isArray(v) || v.length === 0) throw err.field("applies_to", "Pick plans, courts or classes.");
   const out = [...new Set(v.map(String))];
   for (const s of out) {
     if (!(SCOPES as string[]).includes(s)) throw err.field("applies_to", `"${s}" is not something a code can apply to.`);
@@ -248,7 +249,7 @@ export async function promosRedemptions(sql: Sql, id: string, user: PublicUser) 
 export async function promosValidate(sql: Sql, request: Request, user: PublicUser) {
   const b = await readJson(request);
   const scope = str(b.scope) as PromoScope | undefined;
-  if (!scope || !SCOPES.includes(scope)) throw err.field("scope", "scope must be plan or court.");
+  if (!scope || !SCOPES.includes(scope)) throw err.field("scope", "scope must be plan, court or class.");
   const code = str(b.code);
   if (!code) throw err.field("promo_code", "Enter a promo code.");
   const staff = user.role === "receptionist" || user.role === "manager";
@@ -266,6 +267,18 @@ export async function promosValidate(sql: Sql, request: Request, user: PublicUse
     const q = await quotePromo(sql, { code, userId: targetUser, scope, sport: plan.sport_scope, planId, orderVnd: plan.price_vnd });
     return { status: 200, body: { valid: true, order_vnd: plan.price_vnd, ...q } };
   }
+  if (scope === "class") {
+    const classId = str(b.class_id);
+    if (!classId) throw err.field("class_id", "class_id is required.");
+    const cl = await one<{ price_vnd: number; sport: string }>(
+      sql,
+      `select price_vnd, sport::text as sport from classes where id = $1`,
+      [classId],
+    );
+    if (!cl) throw err.notFound("No such class.");
+    const q = await quotePromo(sql, { code, userId: targetUser, scope, sport: cl.sport, orderVnd: cl.price_vnd });
+    return { status: 200, body: { valid: true, order_vnd: cl.price_vnd, ...q } };
+  }
   {
     const courtId = str(b.court_id);
     const startAt = str(b.start_at);
@@ -276,10 +289,12 @@ export async function promosValidate(sql: Sql, request: Request, user: PublicUse
     const start = new Date(startAt);
     if (Number.isNaN(start.getTime())) throw err.field("start_at", "That time is not valid.");
     const list = await lookupPrice(sql, { sport: court.sport, courtId, start });
-    // Court bookings are charged the slot price; only the promo code moves it.
+    if (await memberCourtFee(sql, targetUser, start, settings)) {
+      throw err.br("BR-41", "The member court fee takes no promo code.");
+    }
     const order = list.price_vnd;
     const q = await quotePromo(sql, { code, userId: targetUser, scope, sport: court.sport, orderVnd: order, listVnd: list.price_vnd });
     return { status: 200, body: { valid: true, order_vnd: order, ...q } };
   }
-  throw err.field("scope", "scope must be plan or court.");
+  throw err.field("scope", "scope must be plan, court or class.");
 }

@@ -1,4 +1,5 @@
 import type { Sql } from "@/lib/db";
+import { assertMembershipOutlastsClass, hasRunningClass } from "../membership";
 import { err } from "../errors";
 import { flagsMap, requireFlag, type FlagKey } from "../flags";
 import { assertNoClassClash, audit, enqueue, enqueueReceipt, getSettings, issueInvoice, nextCode, pageOf, readJson, str } from "../helpers";
@@ -92,6 +93,9 @@ export async function subscriptionFreeze(sql: Sql, id: string, request: Request,
   }>(sql, `select id, status, frozen_days, end_on::text, user_id from subscriptions where id = $1 for update`, [id]);
   if (!sub) throw err.notFound();
   if (sub.status !== "active") throw err.br("BR-14", "Only an active plan can be frozen.");
+  if (await hasRunningClass(sql, sub.user_id)) {
+    throw err.br("BR-14", "This member has a class running or coming up, so the plan cannot be frozen.");
+  }
   if (sub.frozen_days + days > settings.freeze_max_days_year) {
     throw err.br("BR-15", `Over the limit of ${settings.freeze_max_days_year} freeze days a year.`);
   }
@@ -162,9 +166,9 @@ export async function waitlistAccept(sql: Sql, offerId: string, user: PublicUser
   // Same lock order as enrollment_hold: the class first, then the enrolment.
   const pre = await one<{ class_id: string }>(sql, `select class_id from enrollments where id = $1`, [offer.enrollment_id]);
   if (!pre) throw err.notFound();
-  const cl = await one<{ enrolled_count: number; capacity: number; price_vnd: number | null }>(
+  const cl = await one<{ enrolled_count: number; capacity: number; price_vnd: number | null; start_on: string; end_on: string }>(
     sql,
-    `select enrolled_count, capacity, price_vnd from classes where id = $1 for update`,
+    `select enrolled_count, capacity, price_vnd, start_on::text as start_on, end_on::text as end_on from classes where id = $1 for update`,
     [pre.class_id],
   );
   if (!cl) throw err.notFound();
@@ -181,13 +185,15 @@ export async function waitlistAccept(sql: Sql, offerId: string, user: PublicUser
   const settings = await getSettings(sql);
   // The seat is held, not confirmed: payment confirms it, and the price is locked now.
   // A free class has nothing to pay, so the seat is confirmed at once (as classesEnroll does).
-  const free = cl.price_vnd === 0;
+  await assertMembershipOutlastsClass(sql, user.id, cl.end_on);
+  const total = cl.price_vnd;
+  const free = total === 0;
   await sql.query(
     `update enrollments
         set status = $4::enroll_status, waitlist_pos = null, price_vnd = $2,
             hold_until = case when $5::boolean then null else now() + ($3::int * interval '1 minute') end
       where id = $1`,
-    [enr.id, cl.price_vnd, settings.class_hold_minutes, free ? "confirmed" : "hold", free],
+    [enr.id, total, settings.class_hold_minutes, free ? "confirmed" : "hold", free],
   );
   await sql.query(
     `update classes set enrolled_count = enrolled_count + 1 where id = $1 and enrolled_count < capacity`,
@@ -709,14 +715,14 @@ export async function assistantChat(sql: Sql, request: Request, user: PublicUser
 
   const facts = [
     `Centre: ${centreName(settings)}. Open ${settings.open_time.slice(0, 5)}–${settings.close_time.slice(0, 5)} ICT every day.`,
-    `Court holds last ${settings.hold_minutes} minutes. Cancel a court at least ${settings.cancel_court_hours}h ahead, a class at least ${settings.cancel_class_hours}h ahead. No-shows are not refunded.`,
+    `Court holds last ${settings.hold_minutes} minutes. A customer who cancels a court or a class, or does not show up, gets no refund. If the centre cancels, the money comes back in cash at the desk. One membership covers every sport; plans differ only by length. Covered on the day, a court costs ${settings.member_court_fee_vnd.toLocaleString("en-US")}đ an hour at any time; otherwise the list price. A class charges tuition, and can be joined only when the membership ends after the class ends; otherwise buy or extend a plan first.`,
     `Waitlists are first-come; an offer stands for ${settings.waitlist_offer_hours}h. Under-${settings.minor_age}s cannot book or enrol on their own.`,
     `Classes on sale:\n${onSale.map((c) => `• ${c.sport} ${c.level} · coach ${c.coach_name ?? "—"} · ${c.price_vnd.toLocaleString("en-US")}đ`).join("\n") || "—"}`,
     `Open classes:\n${classes.map((c) => `• ${c.sport} ${c.level} · coach ${c.coach_name ?? "—"} · ${c.enrolled_count}/${c.capacity}`).join("\n") || "No classes are open."}`,
     `Coaches:\n${COACHES.map((c) => `• ${c.name} — ${c.title}. ${c.blurb}`).join("\n")}`,
     `Member asking: ${user.full_name} (${user.member_code ?? "no member code yet"}).`,
     `Today's date (ICT): ${ictDateString()}.`,
-    `Member's plans:\n${subs.map((s) => `• ${s.plan} (${s.sport_scope}) · ${s.status} · ${s.start_on} → ${s.end_on} (${s.days_left} days left) · court hours left ${s.court_hours_left}${s.session_left !== null ? ` · sessions left ${s.session_left}` : ""}`).join("\n") || "No plan ever bought."}`,
+    `Member's plans:\n${subs.map((s) => `• ${s.plan} · ${s.status} · ${s.start_on} → ${s.end_on} (${s.days_left} days left)`).join("\n") || "No plan ever bought."}`,
     `Member's classes:\n${myClasses.map((c) => `• ${c.sport} ${c.level} · ${c.status}${c.waitlist_pos !== null ? ` #${c.waitlist_pos}` : ""} · next session ${c.next_at ?? "none scheduled"}`).join("\n") || "Not enrolled in any class."}`,
     `Court bookings, next 7 days:\n${todayBookings.map((b) => `• ${b.court_code} ${b.start_at} (${b.status})`).join("\n") || "Nothing booked."}`,
     `Recent attendance:\n${recentAtt.map((a) => `• ${a.at} ${a.kind}${a.label ? ` ${a.label}` : ""}${a.result ? ` · ${a.result}` : ""}`).join("\n") || "No records."}`,
@@ -802,7 +808,7 @@ function ruleReply(
       : "No class has a price listed right now — ask the desk.";
   }
   if (/hour|open|close|what time|giờ|mở cửa/.test(q)) {
-    return `${centreName(settings)} is open ${settings.open_time.slice(0, 5)}–${settings.close_time.slice(0, 5)} every day (ICT). Court holds last ${settings.hold_minutes} minutes, and you can cancel a court up to ${settings.cancel_court_hours}h before.`;
+    return `${centreName(settings)} is open ${settings.open_time.slice(0, 5)}–${settings.close_time.slice(0, 5)} every day (ICT). Court holds last ${settings.hold_minutes} minutes. Cancelling a court gives no refund.`;
   }
   if (/class|coach|lesson|lớp|hlv/.test(q)) {
     return classes.length
@@ -810,7 +816,7 @@ function ruleReply(
       : "No classes are open right now — ask the desk.";
   }
   if (/cancel|book|hold|hủy|đặt sân/.test(q)) {
-    return `Book in the app and the slot is held for ${settings.hold_minutes} minutes. Cancel a court at least ${settings.cancel_court_hours}h before you play, a class at least ${settings.cancel_class_hours}h before. No-shows are not refunded.`;
+    return `Book in the app and the slot is held for ${settings.hold_minutes} minutes. Cancelling a court or a class gives no refund, so check the time first. If the centre cancels, you get the money back in cash at the desk. No-shows are not refunded.`;
   }
   if (/waitlist|full|queue|chờ|đầy/.test(q)) {
     return `When a class is full you join a first-come waitlist. If a seat frees up you get an offer that stands for ${settings.waitlist_offer_hours}h — claim it in the app.`;

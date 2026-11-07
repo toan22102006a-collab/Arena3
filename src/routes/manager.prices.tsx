@@ -9,7 +9,7 @@ import { Badge, Button, Card, EmptyState, LoadError, MoneyInput, Skeleton } from
 import { Stagger, StaggerItem } from "@/components/motion";
 import { StarBorder } from "@/components/fx";
 import { ApiClientError, apiPut } from "@/lib/arena3/client";
-import { DAY_KIND_LABEL, sportLabel } from "@/lib/arena3/labels";
+import { DAY_KIND_LABEL, sportLabel, monthsLabel } from "@/lib/arena3/labels";
 import { t, tk, tServer, tData } from "@/lib/i18n";
 import { useRead } from "@/lib/use-read";
 import { SectionTitle } from "@/components/section";
@@ -33,12 +33,11 @@ type Rule = {
 type Plan = {
   id: string;
   name: string;
-  sport_scope: string;
   price_vnd: number;
   is_on_sale: boolean;
   duration_days: number | null;
+  duration_months: number | null;
   court_hours: number;
-  court_discount_pct: number;
 };
 
 /**
@@ -243,8 +242,7 @@ function Page() {
                 <span>
                   <span className="block text-sm font-medium">{tData(p.name)}</span>
                   <span className="block text-xs text-muted">
-                    {sportLabel(p.sport_scope)} · {p.duration_days ? t("{n} days", { n: p.duration_days }) : t("per session")} ·{" "}
-                    {t("{pct}% off courts", { pct: p.court_discount_pct })}
+                    {p.duration_months ? monthsLabel(p.duration_months) : t("{n} days", { n: p.duration_days ?? 30 })}
                   </span>
                 </span>
                 <span className="text-sm tabular-nums">{money(p.price_vnd)}</span>

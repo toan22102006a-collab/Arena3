@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Badge, Button, Card, DateField, EmptyState, Input, LoadError, Pagination, Skeleton } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/motion";
-import { roleLabel } from "@/lib/arena3/labels";
+import { levelLabel, methodLabel, roleLabel, sportLabel, statusLabel } from "@/lib/arena3/labels";
+import { formatVnd } from "@/lib/arena3/time";
 import { cn } from "@/lib/cn";
 import { locale, t, tk } from "@/lib/i18n";
 import { usePageState } from "@/lib/use-page-state";
@@ -23,6 +24,8 @@ type Entry = {
   action: string;
   entity: string;
   entity_id: string | null;
+  subject?: string | null;
+  subject_vnd?: number | null;
   before?: unknown;
   after?: unknown;
 };
@@ -81,6 +84,27 @@ const FIELD_LABEL: Record<string, string> = {
   alt_vi: tk("Photo description (Vietnamese)"),
   start_at: tk("Starts at"),
   end_at: tk("Ends at"),
+  sessions: tk("Sessions cancelled"),
+  members_refunded: tk("Members to refund"),
+  refunded_vnd: tk("Total to refund"),
+  refunded: tk("Refunded"),
+  prepaid_returned: tk("Prepaid returned"),
+  prepaid_kept_no_plan: tk("Prepaid kept, no plan"),
+  method: tk("Method"),
+  days: tk("Days"),
+  frozen_days: tk("Days frozen"),
+  end_on: tk("Ends on"),
+  period: tk("Period"),
+  closed: tk("Payouts closed"),
+  qty: tk("Quantity"),
+  title: tk("Title"),
+  priority: tk("Priority"),
+  weeks: tk("Weeks"),
+  from: tk("From"),
+  to: tk("To"),
+  q: tk("Question"),
+  credit_days: tk("Days credited"),
+  kept: tk("Kept"),
 };
 
 function fieldLabel(key: string): string {
@@ -107,6 +131,34 @@ function flatten(v: Record<string, unknown>): Record<string, unknown> {
 
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Nothing worth a line: absent, blank, or an empty list. */
+function isEmpty(v: unknown): boolean {
+  return v === null || v === undefined || v === "" || (Array.isArray(v) && v.length === 0);
+}
+
+/** Ids mean nothing to a reader; they stay in the raw view. */
+function isInternal(key: string, a: unknown, b: unknown): boolean {
+  if (key === "seed") return true;
+  return /(^|\.|_)id$/.test(key) || [a, b].some((v) => typeof v === "string" && UUID.test(v));
+}
+
+function showField(key: string, v: unknown): string {
+  if (isEmpty(v)) return "—";
+  const name = key.split(".").pop() ?? key;
+  if (name.endsWith("_vnd") && typeof v === "number") return formatVnd(v);
+  if (typeof v === "string") {
+    if (name === "status" || name === "from_status") return statusLabel(v);
+    if (name === "method") return methodLabel(v);
+    if (name === "role") return roleLabel(v);
+    if (name === "level") return levelLabel(v);
+    if (name === "sport") return sportLabel(v);
+  }
+  if (Array.isArray(v)) return t("{n} items", { n: v.length });
+  return showValue(v);
+}
+
 function showValue(v: unknown): string {
   if (v === null || v === undefined || v === "") return "—";
   if (typeof v === "boolean") return v ? t("Yes") : t("No");
@@ -119,7 +171,7 @@ function showValue(v: unknown): string {
   }
 }
 
-type Change = { key: string; label: string; from: string; to: string };
+type Change = { key: string; label: string; from: string | null; to: string };
 
 /** The fields that differ between the two snapshots; a created or deleted row lists what it had. */
 function changesOf(before: unknown, after: unknown): Change[] {
@@ -133,7 +185,9 @@ function changesOf(before: unknown, after: unknown): Change[] {
   const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])];
   return keys
     .filter((k) => JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null))
-    .map((k) => ({ key: k, label: fieldLabel(k), from: showValue(a[k]), to: showValue(b[k]) }));
+    .filter((k) => !(isEmpty(a[k]) && isEmpty(b[k])) && !isInternal(k, a[k], b[k]))
+    // A value with nothing before it is a plain fact of the action, not a change.
+    .map((k) => ({ key: k, label: fieldLabel(k), from: isEmpty(a[k]) ? null : showField(k, a[k]), to: showField(k, b[k]) }));
 }
 
 // The action names are written for the handlers that record them. Known ones get a
@@ -143,6 +197,25 @@ const ACTION_LABEL: Record<string, string> = {
   assistant: tk("Assistant question"),
   attendance: tk("Attendance recorded"),
   attendance_correct: tk("Attendance corrected"),
+  add_coach_certification: tk("Add coach certification"),
+  avatar_removed: tk("Remove profile photo"),
+  avatar_set: tk("Change profile photo"),
+  collect_balance: tk("Collect balance"),
+  create_court: tk("Create court"),
+  create_sport: tk("Create sport"),
+  delete_sport: tk("Delete sport"),
+  issue_certificate: tk("Issue certificate"),
+  login_google: tk("Sign in with Google"),
+  refund_paid_out: tk("Refund paid out"),
+  remove_coach_certification: tk("Remove coach certification"),
+  replace_asset: tk("Replace site image"),
+  restore_court: tk("Restore court"),
+  restore_sport: tk("Restore sport"),
+  retire_court: tk("Retire court"),
+  retire_sport: tk("Retire sport"),
+  revert_asset: tk("Restore default image"),
+  sign_out_other_sessions: tk("Sign out other devices"),
+  update_sport: tk("Update sport"),
   cancel_booking: tk("Cancel booking"),
   cancel_class: tk("Cancel class"),
   cancel_series: tk("Cancel fixed booking"),
@@ -153,6 +226,7 @@ const ACTION_LABEL: Record<string, string> = {
   close_commission: tk("Close commission period"),
   close_shift: tk("Close shift"),
   contact_logged: tk("Contact logged"),
+  convert_membership: tk("Convert membership"),
   create_class: tk("Create class"),
   create_member: tk("Create member"),
   create_payment: tk("Create payment"),
@@ -242,6 +316,10 @@ const ENTITY_LABEL: Record<string, string> = {
   user: tk("user"),
   work_order: tk("work order"),
   // Older rows (and the seeded history) were written with the table's own name.
+  sport: tk("sport"),
+  feature_flag: tk("features"),
+  site_asset: tk("site image"),
+  enrollment: tk("enrollment"),
   price_rule: tk("price rules"),
   cashier_shift: tk("shift"),
   equipment_loan: tk("equipment loan"),
@@ -490,28 +568,33 @@ function Page() {
                     type="button"
                     aria-expanded={isOpen}
                     onClick={() => setOpen(isOpen ? null : e.id)}
-                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left"
+                    className="grid w-full gap-1 px-3 py-2 text-left"
                   >
-                    <Badge tone={toneFor(e.action)}>{actionLabel(e.action)}</Badge>
-                    <span className="text-sm font-medium">{e.actor_name ?? t("System")}</span>
-                    {e.actor_role ? (
-                      <span className="text-2xs text-muted">{roleLabel(e.actor_role)}</span>
-                    ) : null}
-                    <span className="text-sm text-muted">{entityLabel(e.entity)}</span>
-                    <span className="ml-auto text-xs tabular-nums text-muted">{when(e.at)}</span>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <Badge tone={toneFor(e.action)}>{actionLabel(e.action)}</Badge>
+                      <span className="min-w-0 text-sm font-medium">{e.subject || entityLabel(e.entity)}</span>
+                      {e.subject_vnd != null ? (
+                        <span className="text-sm tabular-nums">{formatVnd(e.subject_vnd)}</span>
+                      ) : null}
+                      <span className="ml-auto text-xs tabular-nums text-muted">{when(e.at)}</span>
+                    </span>
+                    <span className="text-xs text-muted">
+                      {t("By {name}", { name: e.actor_name ?? t("System") })}
+                      {e.actor_role ? ` · ${roleLabel(e.actor_role)}` : ""}
+                    </span>
                   </button>
                   {isOpen ? (
                     <div className="grid gap-2 border-t border-line px-3 py-2 text-xs">
-                      {e.entity_id ? (
-                        <p className="text-muted">
-                          {t("Record")}: <span className="font-mono">{e.entity_id}</span>
-                        </p>
-                      ) : null}
                       {before || after ? (
                         <AuditChanges before={e.before} after={e.after} />
                       ) : null}
                       {(before || after) && raw === e.id ? (
                         <div className="grid gap-2 md:grid-cols-2">
+                          {e.entity_id ? (
+                            <p className="text-muted md:col-span-2">
+                              {t("Record")}: <span className="break-all font-mono">{e.entity_id}</span>
+                            </p>
+                          ) : null}
                           {before ? (
                             <div>
                               <p className="mb-1 text-muted">{t("Before")}</p>
@@ -526,7 +609,7 @@ function Page() {
                           ) : null}
                         </div>
                       ) : before || after ? null : (
-                        <p className="text-muted">{t("No before/after was recorded for this entry.")}</p>
+                        <p className="text-muted">{t("No further details were recorded.")}</p>
                       )}
                       <div className="flex flex-wrap gap-1">
                         {before || after ? (
@@ -583,18 +666,16 @@ function Page() {
 /** Field, old value, new value: only what the action changed. */
 function AuditChanges({ before, after }: { before: unknown; after: unknown }) {
   const changes = changesOf(before, after);
-  if (!changes.length) return <p className="text-muted">{t("Nothing changed in the recorded fields.")}</p>;
+  if (!changes.length) return <p className="text-muted">{t("No further details were recorded.")}</p>;
   return (
     <dl className="grid gap-1 rounded-[var(--radius-sm)] bg-wood p-2 sm:grid-cols-[minmax(8rem,auto)_1fr] sm:gap-x-4">
       {changes.map((c) => (
         <div key={c.key} className="contents">
           <dt className="pt-1 text-muted sm:pt-0">{c.label}</dt>
           <dd className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm">
-            <span className={cn("break-all", before != null && "text-muted line-through decoration-line-strong")}>
-              {before != null ? c.from : null}
-            </span>
-            {before != null ? (
+            {c.from !== null ? (
               <>
+                <span className="break-all text-muted line-through decoration-line-strong">{c.from}</span>
                 <span aria-hidden className="text-muted">→</span>
                 <span className="sr-only">{t("changed to")}</span>
               </>

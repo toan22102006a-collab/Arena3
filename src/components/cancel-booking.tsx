@@ -83,7 +83,6 @@ export function CancelBookingDialog({
     }
   }
 
-  const tiers = quote ? [...quote.tiers].sort((a, b) => b.hours - a.hours) : [];
 
   return (
     <Modal
@@ -116,49 +115,25 @@ export function CancelBookingDialog({
           >
             {quote.paid_vnd === 0 ? (
               <p>{t("Nothing has been paid on this booking, so nothing is charged.")}</p>
-            ) : quote.quota_hours > 0 ? (
-              <p>
-                {quote.refund_pct >= 50
-                  ? t("Your plan hour goes back to your balance.")
-                  : t("Too close to the start: the plan hour is not given back.")}
-              </p>
-            ) : (
-              <>
-                <p>
-                  {t("Starts in {h} hours. You paid {paid}.", {
-                    h: String(Math.max(0, Math.floor(quote.hours_left))),
-                    paid: money(quote.paid_vnd),
-                  })}
-                </p>
-                <div className="rounded-[var(--radius-md)] bg-wood/60 p-3">
-                  <div className="flex items-center justify-between">
-                    <span>{t("Refund")}</span>
-                    <span className="font-display text-xl tabular-nums">{money(quote.refund_vnd)}</span>
-                  </div>
-                  {quote.fee_vnd > 0 ? (
-                    <div className="mt-1 flex items-center justify-between text-danger">
-                      <span>{t("Late-cancel fee kept")}</span>
-                      <span className="tabular-nums">{money(quote.fee_vnd)}</span>
-                    </div>
-                  ) : null}
-                  {quote.waived ? <Badge tone="accent" className="mt-2">{t("Fee waived")}</Badge> : null}
+            ) : quote.refund_vnd > 0 ? (
+              <div className="rounded-[var(--radius-md)] bg-wood/60 p-3">
+                <div className="flex items-center justify-between">
+                  <span>{t("Refund")}</span>
+                  <span className="font-display text-xl tabular-nums">{money(quote.refund_vnd)}</span>
                 </div>
-              </>
+                {quote.waived ? <Badge tone="accent" className="mt-2">{t("Fee waived")}</Badge> : null}
+              </div>
+            ) : (
+              <p className="rounded-[var(--radius-md)] bg-wood/60 p-3">
+                {t("You paid {paid}. Cancelling gives no refund.", { paid: money(quote.paid_vnd) })}
+              </p>
             )}
-            <ul className="grid gap-1 text-xs text-muted">
-              {tiers.map((tier) => (
-                <li key={tier.hours} className="flex justify-between gap-3">
-                  <span>{tier.hours > 0 ? t("{n}h or more before start", { n: tier.hours }) : t("Any later than that")}</span>
-                  <span className="tabular-nums">{t("{pct}% back", { pct: tier.refund_pct })}</span>
-                </li>
-              ))}
-            </ul>
           </div>
           {staff ? (
             <Check
               checked={waive}
               onChange={(e) => setWaive(e.target.checked)}
-              label={t("Waive the fee")}
+              label={t("The centre is cancelling: refund in full")}
               hint={t("For cancellations that are not the customer's doing: centre closed, flood, accident.")}
             />
           ) : null}

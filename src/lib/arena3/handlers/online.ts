@@ -23,6 +23,7 @@ import {
 import { requireRole, type PublicUser } from "../session";
 import { one } from "../tx";
 import { dueNow } from "../policy";
+import { enrollmentAmountDue, enrollmentInvoiceLines } from "../membership";
 import { redeemPromo } from "../promos";
 import { HELD_COLS, settleHeldBooking } from "./bookings";
 import { activateSubscription, describePayment } from "./desk";
@@ -192,6 +193,7 @@ export async function settleOnline(
       vatRate: Number(settings.vat_rate ?? 0),
       description: item.description,
       unit: item.unit,
+      lines: await enrollmentInvoiceLines(sql, pay.ref_id, pay.amount_vnd, item),
       settings,
     });
     if (pay.user_id) {
@@ -366,6 +368,11 @@ export async function onlineCreate(sql: Sql, request: Request, user: PublicUser)
   }
 
   const settings = await getSettings(sql);
+  // A link already live keeps its figure (returned above); a new one prices the seat as of now.
+  if (refType === "enrollment") {
+    amount = await enrollmentAmountDue(sql, refId);
+    if (amount <= 0) throw err.validation("There is nothing to pay.");
+  }
   const shiftId = staff
     ? (
         await one<{ id: string }>(

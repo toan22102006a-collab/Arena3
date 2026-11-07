@@ -143,7 +143,7 @@ export function notificationContent(n: Pick<Notification, "template" | "payload"
         case "class_cancelled":
           return {
             title: t("A class was cancelled"),
-            body: `${t("The class has been cancelled and any session you had in it is given back.")}${reason}`,
+            body: `${typeof p.refund_vnd === "number" && p.refund_vnd > 0 ? t("The class has been cancelled. Collect your {amount} refund in cash at the front desk.", { amount: money(p.refund_vnd) }) : t("The class has been cancelled.")}${reason}`,
             link,
           };
         default:

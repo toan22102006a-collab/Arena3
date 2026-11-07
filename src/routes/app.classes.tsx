@@ -6,13 +6,13 @@ import { MyAttendance } from "@/components/my-attendance";
 import { Shell, money, when } from "@/components/shell";
 import { PayOnlineButton } from "@/components/pay-online";
 import { HoldCountdown } from "@/components/moments/hold-countdown";
-import { Badge, Button, ButtonLink, Card, EmptyState, LoadError, Modal, PageHero, Seg, Select, ShowMore, Skeleton, SportBadge, useSports } from "@/components/ui";
+import { Badge, Button, ButtonLink, Card, EmptyState, Input, LoadError, Modal, PageHero, Seg, Select, ShowMore, Skeleton, SportBadge, useSports } from "@/components/ui";
 import { Lift, Stagger, StaggerItem, motion } from "@/components/motion";
 import { GlareHover, SpotlightCard } from "@/components/fx";
 import { cn } from "@/lib/cn";
-import { apiDelete, apiPost } from "@/lib/arena3/client";
+import { apiDelete, apiGet, apiPost } from "@/lib/arena3/client";
 import { classSlotMatches, levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
-import { locale, t, tServer } from "@/lib/i18n";
+import { locale, t, tData, tServer } from "@/lib/i18n";
 import { useRead } from "@/lib/use-read";
 import { HighlightBadge, useLive } from "@/lib/use-live";
 
@@ -49,6 +49,16 @@ type Cl = {
     price_vnd: number | null;
     transfer_requested_at: string | null;
   } | null;
+};
+
+type EnrolQuote = {
+  tuition_vnd: number;
+  promo: { code: string; discount_vnd: number } | null;
+  total_vnd: number;
+  eligible: boolean;
+  current_end: string | null;
+  class_end: string;
+  suggested_plan: { name: string; price_vnd: number } | null;
 };
 
 type Enr = {
@@ -99,6 +109,56 @@ function Page() {
   const byClass = Object.fromEntries(mine.map((e) => [e.class_id, e]));
   // Leaving a class (or the waitlist) is asked twice: one tap used to give the seat away.
   const [leaving, setLeaving] = useState<{ enr: Enr; cls: Cl } | null>(null);
+  // The class being enrolled in, with what it will cost said before anything is held.
+  const [enrolling, setEnrolling] = useState<{ cls: Cl; quote: EnrolQuote } | null>(null);
+  const [enrolCode, setEnrolCode] = useState("");
+  const [enrolBusy, setEnrolBusy] = useState(false);
+
+  async function openQuote(cls: Cl, code = "") {
+    setEnrolBusy(true);
+    try {
+      const qs = code.trim() ? `?promo_code=${encodeURIComponent(code.trim())}` : "";
+      const quote = await apiGet<EnrolQuote>(`/classes/${cls.id}/quote${qs}`);
+      setEnrolling({ cls, quote });
+    } catch (e) {
+      toast.error(enrolError(e));
+    } finally {
+      setEnrolBusy(false);
+    }
+  }
+
+  /** The gate's refusal is shown from here, so it reads in the member's language. */
+  function enrolError(e: unknown): string {
+    const body = (e as { body?: { br?: string; class_end?: string } } | null)?.body;
+    if (body?.br === "BR-19" && body.class_end) {
+      return t("Your membership must end after this class ends ({date}). Buy or extend a plan first.", { date: body.class_end });
+    }
+    return e instanceof Error ? tServer(e.message) : t("Could not enrol");
+  }
+
+  async function enrol(cls: Cl, code = "") {
+    setEnrolBusy(true);
+    try {
+      const r = await apiPost<{ waitlisted?: boolean; enrollment?: { status?: string } }>(
+        `/classes/${cls.id}/enroll`,
+        code.trim() ? { promo_code: code.trim() } : {},
+      );
+      toast.success(
+        r.waitlisted
+          ? t("Added to the waitlist")
+          : r.enrollment?.status === "hold"
+            ? t("Seat held. Pay before the timer runs out.")
+            : t("You are enrolled"),
+      );
+      setEnrolling(null);
+      setEnrolCode("");
+      load();
+    } catch (e) {
+      toast.error(enrolError(e));
+    } finally {
+      setEnrolBusy(false);
+    }
+  }
   const [leaveBusy, setLeaveBusy] = useState(false);
   // One seat action at a time: asking for a transfer or releasing a hold both settle on the server.
   const [seatBusy, setSeatBusy] = useState<string | null>(null);
@@ -422,21 +482,10 @@ function Page() {
                           <Button
                             className="w-full"
                             variant={full ? "outline" : "primary"}
-                            disabled={c.price_vnd == null}
-                            onClick={async () => {
-                              try {
-                                const r = await apiPost<{ waitlisted?: boolean; enrollment?: { status?: string } }>(`/classes/${c.id}/enroll`, {});
-                                toast.success(
-                                  r.waitlisted
-                                    ? t("Added to the waitlist")
-                                    : r.enrollment?.status === "hold"
-                                      ? t("Seat held. Pay before the timer runs out.")
-                                      : t("You are enrolled"),
-                                );
-                                load();
-                              } catch (e) {
-                                toast.error(e instanceof Error ? tServer(e.message) : t("Could not enrol"));
-                              }
+                            disabled={c.price_vnd == null || enrolBusy}
+                            onClick={() => {
+                              setEnrolCode("");
+                              void (full ? enrol(c) : openQuote(c));
                             }}
                           >
                             {c.price_vnd == null
@@ -487,8 +536,83 @@ function Page() {
         <p className="text-sm text-muted">
           {leaving?.enr.status === "waitlisted"
             ? t("You lose your place in the queue. Joining again puts you at the back.")
-            : t("Your seat goes to the next person on the waitlist.")}
+            : t("Your seat goes to the next person on the waitlist. No refund: tuition and membership days already paid stay paid.")}
         </p>
+      </Modal>
+      <Modal
+        open={!!enrolling}
+        onClose={() => setEnrolling(null)}
+        title={t("Before you enrol")}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEnrolling(null)}>
+              {t("Cancel")}
+            </Button>
+            {enrolling && !enrolling.quote.eligible ? (
+              <ButtonLink to="/app/plans">{t("See plans")}</ButtonLink>
+            ) : (
+              <Button disabled={enrolBusy} onClick={() => enrolling && void enrol(enrolling.cls, enrolCode)}>
+                {enrolling ? t("Hold my seat · {price}", { price: money(enrolling.quote.total_vnd) }) : null}
+              </Button>
+            )}
+          </>
+        }
+      >
+        {enrolling ? (
+          <div className="grid gap-3 text-sm">
+            <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2">
+              <dt className="text-muted">{t("Class tuition")}</dt>
+              <dd className="text-right tabular-nums">
+                {money(enrolling.quote.tuition_vnd)}
+                {enrolling.quote.promo ? (
+                  <span className="ml-2 text-xs text-accent-2">
+                    {enrolling.quote.promo.code}: −{money(enrolling.quote.promo.discount_vnd)}
+                  </span>
+                ) : null}
+              </dd>
+              <dt className="font-medium">{t("Total")}</dt>
+              <dd className="text-right font-display text-xl tabular-nums">{money(enrolling.quote.total_vnd)}</dd>
+            </dl>
+            {enrolling.quote.eligible ? (
+              <p className="text-muted">
+                {t("Your membership runs through {end}, after this class ends on {date}.", {
+                  end: enrolling.quote.current_end ?? "",
+                  date: enrolling.quote.class_end,
+                })}
+              </p>
+            ) : (
+              <p className="rounded-[var(--radius-md)] bg-wood px-3 py-2">
+                {enrolling.quote.current_end
+                  ? t("Your membership ends on {end}. It must end after this class ends on {date}.", {
+                      end: enrolling.quote.current_end,
+                      date: enrolling.quote.class_end,
+                    })
+                  : t("You need an active membership that ends after this class ends on {date}.", {
+                      date: enrolling.quote.class_end,
+                    })}
+                {enrolling.quote.suggested_plan
+                  ? ` ${t("The {name} plan, at {price}, is the cheapest that is long enough.", {
+                      name: tData(enrolling.quote.suggested_plan.name),
+                      price: money(enrolling.quote.suggested_plan.price_vnd),
+                    })}`
+                  : ""}
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              <Input
+                value={enrolCode}
+                onChange={(e) => setEnrolCode(e.target.value.toUpperCase())}
+                placeholder={t("Promo code (optional)")}
+                aria-label={t("Promo code")}
+                maxLength={32}
+              />
+              <Button variant="outline" disabled={enrolBusy || !enrolCode.trim()} onClick={() => void openQuote(enrolling.cls, enrolCode)}>
+                {t("Apply")}
+              </Button>
+            </div>
+            <p className="text-xs text-muted">{t("A code lowers the tuition only.")}</p>
+          </div>
+        ) : null}
       </Modal>
       <ClassDetailModal cls={detail} onClose={() => setDetail(null)} />
       <div id="attendance" className="scroll-mt-20">

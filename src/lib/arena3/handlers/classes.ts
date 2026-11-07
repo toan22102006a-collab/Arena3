@@ -1,15 +1,17 @@
 import type { Sql } from "@/lib/db";
 import { err, isConflictSlot } from "../errors";
-import { assertNoClassClash, audit, enqueue, isUuid, returnPrepaidSession, getSettings, num, readJson, str, type ClassPattern, classPatternsClash } from "../helpers";
+import { assertNoClassClash, audit, enqueue, isUuid, getSettings, nextCode, num, readJson, str, type ClassPattern, classPatternsClash } from "../helpers";
 import { classCode, parseWeeklyRrule } from "../labels";
 import { expandWeekly } from "../rrule";
 import { avatarUrlSql, requireRole, withAvatarUrl, type PublicUser } from "../session";
 import { addDays, classMinutes, ictDateString, ictDateTime, slotSpan } from "../time";
+import { quotePromo, redeemPromo } from "../promos";
 import { one } from "../tx";
 import { inviteWaitlist } from "./ops";
 import { lockEnrollmentLinks, withdrawLinks } from "../payos";
 import { assertClassStaff } from "./training";
 import { assertSlotGrid } from "./bookings";
+import { activeMembershipEnd, applyExtension, assertMembershipOutlastsClass, carryMembersToClassEnd, outlastsClass, planToOutlast, rollbackExtension } from "../membership";
 
 export const MAX_CLASS_CAPACITY = 200;
 export const MAX_CLASS_PRICE_VND = 100_000_000;
@@ -347,6 +349,56 @@ export async function classesPublish(sql: Sql, id: string, user: PublicUser) {
   return { status: 200, body: { sessions: result.created, skipped: result.skipped } };
 }
 
+/** The tuition, and whether this person's membership ends after the class. */
+async function enrollmentQuote(
+  sql: Sql,
+  userId: string,
+  cl: { end_on: string },
+  tuition: number,
+  promo: { code: string; name: string; discount_vnd: number } | null,
+) {
+  const currentEnd = await activeMembershipEnd(sql, userId);
+  const eligible = outlastsClass(currentEnd, cl.end_on);
+  const plans = eligible
+    ? []
+    : await sql.query<{ id: string; name: string; price_vnd: number; duration_months: number | null }>(
+        `select id, name, price_vnd, duration_months from membership_plans
+          where is_on_sale and duration_months is not null`,
+      );
+  return {
+    tuition_vnd: tuition,
+    promo: promo ? { code: promo.code, name: promo.name, discount_vnd: promo.discount_vnd } : null,
+    total_vnd: tuition,
+    eligible,
+    current_end: currentEnd,
+    class_end: cl.end_on,
+    suggested_plan: eligible ? null : planToOutlast(plans, currentEnd ?? ictDateString(), cl.end_on),
+  };
+}
+
+/** The same figures enrolment will charge, without holding a seat. */
+export async function classQuote(sql: Sql, id: string, request: Request, user: PublicUser) {
+  if (!["member", "receptionist", "manager"].includes(user.role)) throw err.forbidden();
+  const params = new URL(request.url).searchParams;
+  const userId = user.role === "member" ? user.id : (str(params.get("user_id")) ?? user.id);
+  const cl = await one<{ status: string; sport: string; price_vnd: number | null; start_on: string; end_on: string }>(
+    sql,
+    `select status::text, sport::text as sport, price_vnd, start_on::text as start_on, end_on::text as end_on
+       from classes where id = $1`,
+    [id],
+  );
+  if (!cl) throw err.notFound();
+  if (cl.status !== "open") throw err.br("BR-18", "That class is not open yet.");
+  if (cl.price_vnd == null) throw err.br("BR-53", "This class is not open for sale yet.");
+  await assertNoClassClash(sql, userId, id);
+  const code = cl.price_vnd > 0 ? str(params.get("promo_code")) : null;
+  const promo = code
+    ? await quotePromo(sql, { code, userId, scope: "class", sport: cl.sport, orderVnd: cl.price_vnd })
+    : null;
+  const tuition = promo ? promo.final_vnd : cl.price_vnd;
+  return { status: 200, body: await enrollmentQuote(sql, userId, cl, tuition, promo) };
+}
+
 export async function classesEnroll(sql: Sql, id: string, request: Request, user: PublicUser) {
   if (!["member", "receptionist", "manager"].includes(user.role)) throw err.forbidden();
   const b = await request.headers.get("content-type") ? await readJson(request) : {};
@@ -362,12 +414,20 @@ export async function classesEnroll(sql: Sql, id: string, request: Request, user
     capacity: number;
     enrolled_count: number;
     price_vnd: number | null;
-  }>(sql, `select * from classes where id = $1`, [id]);
+    start_on: string;
+    end_on: string;
+  }>(sql, `select *, start_on::text as start_on, end_on::text as end_on from classes where id = $1`, [id]);
   if (!cl) throw err.notFound();
   if (cl.status !== "open") throw err.br("BR-18", "That class is not open yet.");
   if (cl.price_vnd == null) throw err.br("BR-53", "This class is not open for sale yet.");
   const settings = await getSettings(sql);
   await assertNoClassClash(sql, userId, id);
+  await assertMembershipOutlastsClass(sql, userId, cl.end_on);
+  const promoCode = cl.price_vnd > 0 ? str(b.promo_code) : null;
+  const promo = promoCode
+    ? await quotePromo(sql, { code: promoCode, userId, scope: "class", sport: cl.sport, orderVnd: cl.price_vnd })
+    : null;
+  const tuition = promo ? promo.final_vnd : cl.price_vnd;
   await sql.query("savepoint sp_enroll");
   try {
     const row = await one<{ enrollment_hold: string }>(
@@ -375,8 +435,15 @@ export async function classesEnroll(sql: Sql, id: string, request: Request, user
       `select enrollment_hold($1::uuid, $2::uuid, $3::int, $4::int) as enrollment_hold`,
       [id, userId, settings.class_hold_minutes, cl.price_vnd],
     );
-    if (cl.price_vnd === 0) {
-      // A free class has nothing to pay: the seat is confirmed at once.
+    const quote = await enrollmentQuote(sql, userId, cl, tuition, promo);
+    const total = quote.total_vnd;
+    await sql.query(
+      `update enrollments set price_vnd = $2, promo_id = $3, promo_discount_vnd = $4
+        where id = $1`,
+      [row!.enrollment_hold, total, promo?.promo_id ?? null, promo?.discount_vnd ?? 0],
+    );
+    if (total === 0) {
+      // Nothing to pay: the seat is confirmed at once.
       await sql.query(`update enrollments set status = 'confirmed', hold_until = null where id = $1`, [row!.enrollment_hold]);
     }
     await sql.query("release savepoint sp_enroll");
@@ -399,7 +466,7 @@ export async function classesEnroll(sql: Sql, id: string, request: Request, user
       }
     }
     const enr = await one(sql, `select * from enrollments where id = $1`, [row!.enrollment_hold]);
-    return { status: 201, body: { enrollment: enr } };
+    return { status: 201, body: { enrollment: enr, quote } };
   } catch (e) {
     try {
       await sql.query("rollback to savepoint sp_enroll");
@@ -503,6 +570,19 @@ async function flagSeatPayment(
  * A flagged outcome still leaves the payment posted (money did arrive); the
  * audit row and a notification to the desk make it a by-hand exception.
  */
+/** The code priced into the seat counts as used once the money for it has posted (BR-41). */
+async function redeemEnrollmentPromo(sql: Sql, enrollmentId: string, paymentId: string | null | undefined) {
+  if (!paymentId) return;
+  const e = await one<{ user_id: string; promo_id: string | null; promo_discount_vnd: number }>(
+    sql,
+    `select user_id, promo_id, promo_discount_vnd from enrollments where id = $1`,
+    [enrollmentId],
+  );
+  if (e?.promo_id) {
+    await redeemPromo(sql, { promoId: e.promo_id, userId: e.user_id, paymentId, discountVnd: e.promo_discount_vnd });
+  }
+}
+
 export async function settleEnrollment(
   sql: Sql,
   enrollmentId: string,
@@ -535,6 +615,8 @@ export async function settleEnrollment(
       `update enrollments set status = 'confirmed', hold_until = null, transfer_requested_at = null where id = $1`,
       [enrollmentId],
     );
+    await applyExtension(sql, enrollmentId);
+    await redeemEnrollmentPromo(sql, enrollmentId, paymentId);
     return { outcome: "confirmed" };
   }
   if (enr.status === "confirmed") {
@@ -557,6 +639,8 @@ export async function settleEnrollment(
       `update enrollments set status = 'confirmed', hold_until = null, transfer_requested_at = null, waitlist_pos = null where id = $1`,
       [enrollmentId],
     );
+    await applyExtension(sql, enrollmentId);
+    await redeemEnrollmentPromo(sql, enrollmentId, paymentId);
     return { outcome: "late_confirmed" };
   }
   return done("late_no_seat");
@@ -604,7 +688,6 @@ export async function enrollmentDelete(sql: Sql, id: string, user: PublicUser) {
     class_id: string;
     user_id: string;
     status: string;
-    prepaid_sessions: number;
   }>(sql, `select * from enrollments where id = $1`, [id]);
   if (!enr) throw err.notFound();
   if (user.role === "member" && enr.user_id !== user.id) throw err.forbidden();
@@ -655,14 +738,8 @@ export async function enrollmentDelete(sql: Sql, id: string, user: PublicUser) {
       throw err.br("BR-24", `Cancel at least ${settings.cancel_class_hours} hours before the next session.`);
     }
   }
-  // A prepaid session goes back to the member's session plan whatever its balance, status or dates.
-  // With no session plan at all it stays on the cancelled enrolment row, where the desk can see it.
-  let keepPrepaid = enr.prepaid_sessions;
-  if (enr.prepaid_sessions > 0) {
-    const cl = await one<{ sport: string }>(sql, `select sport from classes where id = $1`, [enr.class_id]);
-    if (cl && (await returnPrepaidSession(sql, enr.user_id, cl.sport))) keepPrepaid = 0;
-  }
-  await sql.query(`update enrollments set status = 'cancelled', waitlist_pos = null, prepaid_sessions = $2 where id = $1`, [id, keepPrepaid]);
+  // A member leaving a class gets nothing back: tuition and extension stay paid, the end date stays.
+  await sql.query(`update enrollments set status = 'cancelled', waitlist_pos = null where id = $1`, [id]);
   await sql.query(
     `update classes set enrolled_count = greatest(enrolled_count - 1, 0) where id = $1`,
     [enr.class_id],
@@ -1103,9 +1180,12 @@ export async function classesPatch(sql: Sql, classId: string, request: Request, 
     min_enrolled: number | null;
     coach_id: string;
     assistant_id: string | null;
+    start_on: string;
+    end_on: string;
   }>(
     sql,
-    `select id, sport::text as sport, level, status::text as status, capacity, enrolled_count, min_enrolled, coach_id, assistant_id
+    `select id, sport::text as sport, level, status::text as status, capacity, enrolled_count, min_enrolled, coach_id, assistant_id,
+            start_on::text as start_on, end_on::text as end_on
        from classes where id = $1 for update`,
     [classId],
   );
@@ -1138,11 +1218,32 @@ export async function classesPatch(sql: Sql, classId: string, request: Request, 
   if (!minSet && min_enrolled != null && min_enrolled > capacity) {
     throw err.field("capacity", "Capacity cannot go below the class's minimum.");
   }
+  const end_on = b.end_on === undefined ? cl.end_on : str(b.end_on);
+  if (!end_on || !/^\d{4}-\d{2}-\d{2}$/.test(end_on) || Number.isNaN(Date.parse(end_on))) {
+    throw err.field("end_on", "That date is not valid.");
+  }
+  if (end_on < cl.start_on) throw err.field("end_on", "A class cannot end before it starts.");
+  if (end_on < cl.end_on) {
+    const beyond = await one(
+      sql,
+      `select 1 from sessions
+        where class_id = $1 and status = 'scheduled'
+          and (start_at at time zone 'Asia/Ho_Chi_Minh')::date > $2::date limit 1`,
+      [classId, end_on],
+    );
+    if (beyond) throw err.conflictState("Sessions are still scheduled after that date. Cancel them first.");
+  }
   await sql.query(
     `update classes set capacity = $2, level = $3, status = coalesce($4::class_status, status),
             price_vnd = case when $5::boolean then $6::int else price_vnd end, min_enrolled = $7 where id = $1`,
     [classId, capacity, level, status ?? null, priceSet, price_vnd ?? null, min_enrolled],
   );
+  let membersCarried = 0;
+  if (end_on !== cl.end_on) {
+    await sql.query(`update classes set end_on = $2 where id = $1`, [classId, end_on]);
+    // The centre moved the date, so members already enrolled are carried there for free.
+    if (end_on > cl.end_on) membersCarried = await carryMembersToClassEnd(sql, classId, end_on);
+  }
   // Each text changes only when sent; an empty string clears it.
   const textEdits: Partial<Record<ClassTextKey, string | null>> = {};
   for (const key of Object.keys(CLASS_TEXT_LIMITS) as ClassTextKey[]) {
@@ -1151,14 +1252,14 @@ export async function classesPatch(sql: Sql, classId: string, request: Request, 
     await sql.query(`update classes set ${key} = $2 where id = $1`, [classId, textEdits[key]]);
   }
   if (capacity > cl.capacity && (status ?? cl.status) === "open") await inviteWaitlist(sql, classId);
-  const after = { capacity, level, status: status ?? cl.status, min_enrolled, ...(priceSet ? { price_vnd } : {}), ...textEdits };
+  const after = { capacity, level, status: status ?? cl.status, min_enrolled, end_on, members_carried: membersCarried, ...(priceSet ? { price_vnd } : {}), ...textEdits };
   await audit(
     sql,
     user.id,
     "edit_class",
     "class",
     classId,
-    { capacity: cl.capacity, level: cl.level, status: cl.status, min_enrolled: cl.min_enrolled },
+    { capacity: cl.capacity, level: cl.level, status: cl.status, min_enrolled: cl.min_enrolled, end_on: cl.end_on },
     after,
   );
   return { status: 200, body: { ok: true, class: { id: classId, ...after } } };
@@ -1188,23 +1289,37 @@ async function cancelClass(
   const holding = (
     await sql.query(`select user_id from enrollments where class_id = $1 and status = 'hold'`, [cl.id])
   ).map((r) => String(r.user_id));
-  // Return prepaid sessions if any (4.5)
-  // Only sessions actually returned are counted and cleared. A member with no session plan keeps
-  // prepaid_sessions on the cancelled row (and is named in the audit payload) so the desk can see it.
+  // The centre cancelled: each member gets back the tuition paid and the extension days no other
+  // class needs, less anything already sent back. Refunds are cash, so each row waits at the desk
+  // until a receptionist hands the money over: only then is it posted, into that person's till.
+  // created_by stays empty because nobody at the desk raised it; the audit row names the manager.
+  const settings = await getSettings(sql);
   let refunded = 0;
-  const returnedEnrs: string[] = [];
-  const unreturned: string[] = [];
-  const prepaidEnrs = await sql.query<{ id: string; user_id: string }>(
-    `select id, user_id from enrollments where class_id = $1 and status = 'confirmed' and prepaid_sessions > 0`,
+  let refundedVnd = 0;
+  const refundByUser = new Map<string, number>();
+  const seats = await sql.query<{ id: string; user_id: string; price_vnd: number | null; extension_vnd: number; paid_vnd: number; returned_vnd: number }>(
+    `select e.id, e.user_id, e.price_vnd, e.extension_vnd,
+            coalesce((select sum(p.amount_vnd) from payments p
+                       where p.ref_type = 'enrollment' and p.ref_id = e.id and p.status = 'posted' and p.amount_vnd > 0), 0)::int as paid_vnd,
+            coalesce((select sum(-p.amount_vnd) from payments p
+                       where p.ref_type = 'enrollment' and p.ref_id = e.id and p.status in ('posted','refund_pending') and p.amount_vnd < 0), 0)::int as returned_vnd
+       from enrollments e where e.class_id = $1 and e.status = 'confirmed'`,
     [cl.id],
   );
-  for (const pe of prepaidEnrs) {
-    if (await returnPrepaidSession(sql, pe.user_id, cl.sport)) {
-      refunded += 1;
-      returnedEnrs.push(String(pe.id));
-    } else {
-      unreturned.push(String(pe.user_id));
-    }
+  for (const seat of seats) {
+    const tuition = Math.min(seat.paid_vnd, Math.max(0, (seat.price_vnd ?? 0) - seat.extension_vnd));
+    const extension = await rollbackExtension(sql, seat.id, settings.member_day_rate_vnd);
+    const refund = Math.min(tuition + extension.refund_vnd, Math.max(0, seat.paid_vnd - seat.returned_vnd));
+    if (refund <= 0) continue;
+    const code = await nextCode(sql, "PAY");
+    await sql.query(
+      `insert into payments (code, user_id, method, amount_vnd, vat_rate, status, ref_type, ref_id, created_by)
+       values ($1,$2,'cash',$3,0,'refund_pending','enrollment',$4,null)`,
+      [code, seat.user_id, -refund, seat.id],
+    );
+    refundByUser.set(seat.user_id, (refundByUser.get(seat.user_id) ?? 0) + refund);
+    refunded += 1;
+    refundedVnd += refund;
   }
   await sql.query(
     `update waitlist_offers set status = 'expired'
@@ -1213,10 +1328,9 @@ async function cancelClass(
   );
   await sql.query(
     `update enrollments
-        set status = 'cancelled', waitlist_pos = null, hold_until = null, transfer_requested_at = null,
-            prepaid_sessions = case when id = any($2::uuid[]) then 0 else prepaid_sessions end
+        set status = 'cancelled', waitlist_pos = null, hold_until = null, transfer_requested_at = null
       where class_id = $1 and status in ('confirmed','waitlisted','hold')`,
-    [cl.id, returnedEnrs],
+    [cl.id],
   );
   // No hold can be paid any more: withdraw its link at payOS so the money never moves.
   await withdrawLinks(sql, links, "Class cancelled", "CLASS_CANCELLED");
@@ -1227,16 +1341,19 @@ async function cancelClass(
   await notifyClass(
     sql,
     cl.id,
-    [...members, ...waiting, ...holding, cl.coach_id, ...(cl.assistant_id ? [cl.assistant_id] : [])],
+    [...members, ...waiting, ...holding, cl.coach_id, ...(cl.assistant_id ? [cl.assistant_id] : [])].filter((id) => !refundByUser.has(id)),
     { kind: "class_cancelled", reason },
     `class_cancel|${cl.id}`,
   );
+  for (const [uid, refund_vnd] of refundByUser) {
+    await notifyClass(sql, cl.id, [uid], { kind: "class_cancelled", reason, refund_vnd }, `class_cancel|${cl.id}`);
+  }
   await audit(sql, user.id, "cancel_class", "class", cl.id, { status: cl.status }, {
     status: "cancelled",
     reason,
     sessions: upcoming.length,
-    prepaid_returned: refunded,
-    prepaid_kept_no_plan: unreturned,
+    members_refunded: refunded,
+    refunded_vnd: refundedVnd,
   });
   return {
     status: 200,
@@ -1245,6 +1362,7 @@ async function cancelClass(
       sessions_cancelled: upcoming.length,
       notified: members.length + waiting.length + holding.length,
       refunded,
+      refunded_vnd: refundedVnd,
     },
   };
 }

@@ -12,6 +12,7 @@ import {
   readJson,
   str,
 } from "../helpers";
+import { memberCourtFee } from "../membership";
 import { isValidVnPhone, normalizePhone } from "../phone";
 import { seriesDates, seriesWeekday } from "../policy";
 import { applyDiscount, lookupPrice } from "../pricing";
@@ -19,7 +20,7 @@ import { requireRole, type PublicUser } from "../session";
 import { ictClock, ictDateString, ictDateTime, ictStamp, roundVnd } from "../time";
 import { one } from "../tx";
 import { pageParams } from "../validate";
-import { bookingsCancel } from "./bookings";
+import { bookingsCancel, hasCourtOverlap } from "./bookings";
 
 /**
  * The extras the scope benchmark asked for: fixed weekly bookings,
@@ -136,7 +137,10 @@ async function planSeries(
     const start = ictDateTime(date, input.startLocal);
     const end = new Date(start.getTime() + settings.slot_minutes * 60_000);
     const list = await lookupPrice(sql, { sport: input.court.sport, courtId: input.courtId, start });
-    const price = roundVnd(applyDiscount(list.price_vnd, disc, settings.round_vnd), settings.round_vnd);
+    const covered = who.userId ? await memberCourtFee(sql, who.userId, start, settings) : null;
+    const price = covered
+      ? covered.fee_vnd
+      : roundVnd(applyDiscount(list.price_vnd, disc, settings.round_vnd), settings.round_vnd);
     const line: SeriesLine = {
       date,
       start_at: start.toISOString(),
@@ -149,6 +153,9 @@ async function planSeries(
     if (start < new Date()) {
       line.available = false;
       line.reason = "past";
+    } else if (who.userId && (await hasCourtOverlap(sql, who.userId, start, end))) {
+      line.available = false;
+      line.reason = "taken";
     } else {
       const bookingId = (await one<{ id: string }>(sql, `select gen_random_uuid() as id`))!.id;
       await sql.query("savepoint sp_series");

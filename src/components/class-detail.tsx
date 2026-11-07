@@ -411,8 +411,12 @@ function ActionForm({
         await apiPatch(`/classes/${classData.id}`, about);
         toast.success(t("Description saved"));
       } else {
-        await apiPatch(`/classes/${classData.id}`, { status: "cancelled", reason });
-        toast.success(t("Class cancelled: everyone enrolled was told"));
+        const res = await apiPatch<{ refunded?: number; refunded_vnd?: number }>(`/classes/${classData.id}`, { status: "cancelled", reason });
+        toast.success(
+          res.refunded
+            ? t("Class cancelled. {n} members can collect {amount} in cash at the desk.", { n: res.refunded, amount: money(res.refunded_vnd ?? 0) })
+            : t("Class cancelled: everyone enrolled was told"),
+        );
       }
       onDone();
     } catch (e) {

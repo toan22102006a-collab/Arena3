@@ -436,12 +436,15 @@ function useDropdown() {
     if (!open) return;
     const away = (e: MouseEvent) => {
       const el = e.target as Element;
-      // A notification opened from the bell shows in a dialog; clicking in it must not close the bell.
-      if (el.closest?.("[role=dialog]")) return;
+      // A notification opened from the bell shows in a dialog; clicking in it, or on the dimmed page
+      // behind it, closes at most the dialog.
+      if (el.closest?.("[role=dialog],[role=presentation]")) return;
       if (!ref.current?.contains(el)) setOpen(false);
     };
     const esc = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // Escape belongs to the dialog while one is up; the panel it was opened from stays.
+      if (document.querySelector("[role=dialog]")) return;
       setOpen(false);
       button.current?.focus();
     };
@@ -453,10 +456,13 @@ function useDropdown() {
     };
   }, [open]);
   // Only a Tab that lands somewhere else counts: some browsers report no target when a mouse
-  // press moves focus onto a link, and closing then would swallow the click.
+  // press moves focus onto a link, and closing then would swallow the click. Focus moving into a
+  // dialog does not count either: the dialog is opened from inside the panel and takes focus as it
+  // appears, and closing the panel then would unmount the dialog a moment after it opened.
   const onBlur = (e: FocusEvent<HTMLDivElement>) => {
     const next = e.relatedTarget;
-    if (open && next instanceof Node && !e.currentTarget.contains(next)) setOpen(false);
+    if (!open || !(next instanceof Element) || e.currentTarget.contains(next)) return;
+    if (!next.closest("[role=dialog]")) setOpen(false);
   };
   return { open, setOpen, ref, button, panelId, onBlur };
 }

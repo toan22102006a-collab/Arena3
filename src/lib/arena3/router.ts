@@ -403,6 +403,9 @@ async function dispatch(request: Request): Promise<Response | Result> {
   if (method === "POST" && p0 === "classes" && p1 && p2 === "enroll") {
     return authed((sql, user) => classH.classesEnroll(sql, p1, request, user));
   }
+  if (method === "GET" && p0 === "classes" && p1 && p2 === "quote") {
+    return authedRead((sql, user) => classH.classQuote(sql, p1, request, user));
+  }
   if (method === "GET" && p0 === "classes" && p1 && !p2) {
     return authedRead((sql, user) => classH.classDetail(sql, p1, user));
   }
@@ -458,6 +461,9 @@ async function dispatch(request: Request): Promise<Response | Result> {
   }
   if (method === "POST" && p0 === "payments" && p1 && p2 === "approve-refund") {
     return authed((sql, user) => deskH.paymentsApproveRefund(sql, p1, request, user));
+  }
+  if (method === "POST" && p0 === "payments" && p1 && p2 === "pay-out-refund") {
+    return authed((sql, user) => deskH.paymentsPayOutRefund(sql, p1, user));
   }
   if (method === "POST" && p0 === "payments" && p1 && p2 === "reject-refund") {
     return authed((sql, user) => deskH.paymentsRejectRefund(sql, p1, request, user));

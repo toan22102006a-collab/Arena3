@@ -159,9 +159,9 @@ export type HoldResponse = {
   hold_until: Iso;
   price: number;
   deposit_vnd: number;
-  /** The deposit when one is due, the full price otherwise. */
   due_now_vnd: number;
   list_price: number;
+  membership: { covered: boolean; end_on: string | null };
   promo: { code: string; name: string; discount_vnd: number } | null;
 };
 

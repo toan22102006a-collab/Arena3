@@ -28,7 +28,7 @@ import { GLBackground, SpotlightCard, StarBorder } from "@/components/fx";
 import { freeHours, useNowMinute, type Court, type OccSlot } from "@/components/court-grid";
 import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
 import type { PaymentCreateResponse } from "@/lib/arena3/contracts";
-import { sportLabel, todayISO } from "@/lib/arena3/labels";
+import { sportLabel, todayISO, monthsLabel } from "@/lib/arena3/labels";
 import { ageYears } from "@/lib/arena3/time";
 import { UserAvatar } from "@/components/user-avatar";
 import { t, tData, tServer } from "@/lib/i18n";
@@ -54,10 +54,9 @@ type Hit = {
 type Plan = {
   id: string;
   name: string;
-  sport_scope: string;
   price_vnd: number;
   duration_days: number | null;
-  court_hours: number;
+  duration_months: number | null;
 };
 
 type Ticket = {
@@ -439,11 +438,10 @@ function Page() {
                       picked?.id === p.id ? "border-accent bg-accent/10" : "border-line hover:bg-wood"
                     }`}
                   >
-                    <p className="text-2xs text-muted">{sportLabel(p.sport_scope)}</p>
                     <p className="font-medium">{tData(p.name)}</p>
                     <p className="text-sm tabular-nums text-muted">
                       {money(p.price_vnd)}
-                      {p.duration_days ? ` · ${t("{n} days", { n: p.duration_days })}` : ""}
+                      {p.duration_months ? ` · ${monthsLabel(p.duration_months)}` : p.duration_days ? ` · ${t("{n} days", { n: p.duration_days })}` : ""}
                     </p>
                   </button>
                 ))}

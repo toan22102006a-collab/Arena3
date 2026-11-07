@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { SHORTEST_PLAN_ID } from "./membership";
 import { describe, it, before, after } from "node:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,7 +23,7 @@ const { KeepWrites, setOverridePglite, withTx } = await import("./tx.ts");
 const authH = await import("./handlers/auth.ts");
 const { readJson, withIdempotency } = await import("./helpers.ts");
 const opsH = await import("./handlers/ops.ts");
-const { classesCreate, enrollmentDelete, classesEnroll, sessionReschedule, sessionCancel, classDetail, classRoster, classesPatch } = await import("./handlers/classes.ts");
+const { classesCreate, enrollmentDelete, classesEnroll, sessionReschedule, sessionCancel, classDetail, classRoster, classesPatch, classQuote } = await import("./handlers/classes.ts");
 const { bookingGet, bookingsReschedule, walkIn, bookingsHold, bookingsConfirm, bookingsCancel } = await import("./handlers/bookings.ts");
 const { shiftClose, paymentsCreate, shiftCurrent, paymentsRefund, paymentsApproveRefund, paymentsRejectRefund } = await import("./handlers/desk.ts");
 const { waitlistAccept, inviteWaitlist, sessionAttendancePost } = await import("./handlers/ops.ts");
@@ -1104,6 +1105,13 @@ describe("Round 6: F-06, F-07, F-26, F-04 unit tests", () => {
           [m.id, m.phone, m.name, m.name.toLowerCase()]
         );
       }
+      await db.query("delete from subscriptions where user_id = any($1::uuid[])", [[mem1.id, mem2.id, mem3.id, mem4.id]]);
+      await db.query(
+        `insert into subscriptions (user_id, plan_id, sport_scope, start_on, end_on, status)
+         select u, (select id from membership_plans order by price_vnd limit 1), 'all', current_date - 1, current_date + 400, 'active'
+           from unnest($1::uuid[]) as u`,
+        [[mem1.id, mem2.id, mem3.id, mem4.id]],
+      );
 
       // 1. mem1 enrolls -> hold (1/1)
       const enr1 = await withTx(async (sql) => classesEnroll(sql, classId, new Request("http://localhost"), mem1));
@@ -2706,6 +2714,12 @@ describe("Round 10: Two-way Chat unit tests", () => {
                 ($13, '+84999999015', $14, 'coach w', 'coach', 'hash')`,
         [memA.id, memA.phone, memA.full_name, memH.id, memH.phone, memH.full_name, memN.id, memN.phone, memN.full_name, memL.id, memL.phone, memL.full_name, coachW.id, coachW.full_name],
       );
+      await db.query(
+        `insert into subscriptions (user_id, plan_id, sport_scope, start_on, end_on, status)
+         select u, (select id from membership_plans order by price_vnd limit 1), 'all', current_date - 1, current_date + 400, 'active'
+           from unnest($1::uuid[]) as u`,
+        [[memA.id, memH.id, memN.id, memL.id]],
+      );
 
       await db.query(
         `insert into classes (id, sport, level, coach_id, court_id, rrule, start_on, end_on, duration_min, capacity, status, enrolled_count, price_vnd)
@@ -3422,8 +3436,20 @@ async function seedClass(opts: { price: number | null; capacity: number; courtId
   return rows.rows[0].id;
 }
 
-/** A member user with a fixed id 0000...0500 + n, shaped like a PublicUser. */
+/** A member whose membership already covers every seeded class, so the price is the tuition alone. */
 async function seedMember(n: number) {
+  const member = await seedPlainUser(n);
+  await db.query(
+    `insert into subscriptions (user_id, plan_id, sport_scope, start_on, end_on, status)
+     select $1, $2, 'all', current_date - 1, current_date + 400, 'active'
+      where not exists (select 1 from subscriptions where user_id = $1 and status = 'active')`,
+    [member.id, SHORTEST_PLAN_ID],
+  );
+  return member;
+}
+
+/** A user with a fixed id 0000...0500 + n, shaped like a PublicUser. */
+async function seedPlainUser(n: number) {
   const id = `00000000-0000-0000-0000-0000000005${String(n).padStart(2, "0")}`;
   const phone = `+8490000${String(500 + n)}`;
   const name = `Sell Member ${n}`;
@@ -3435,6 +3461,51 @@ async function seedMember(n: number) {
   );
   return { id, phone, full_name: name, role: "member" } as any;
 }
+
+describe("One membership: class quote", () => {
+  it("MB-quote: with no membership the quote refuses, and holds no seat", async () => {
+    const classId = await seedClass({ price: 300000, capacity: 1 });
+    const m = await seedPlainUser(90);
+    const res = await withTx((sql) =>
+      classQuote(sql, classId, new Request(`http://localhost/v1/classes/${classId}/quote`), m),
+    );
+    const q = (res as any).body;
+    assert.equal(q.eligible, false);
+    assert.equal(q.total_vnd, 300000);
+    const held = await db.query("select 1 from enrollments where class_id = $1", [classId]);
+    assert.equal(held.rows.length, 0);
+  });
+  it("MB-covered: a membership past the class end can enrol and pays tuition only", async () => {
+    const classId = await seedClass({ price: 300000, capacity: 1 });
+    const m = await seedMember(91);
+    const res = await withTx((sql) =>
+      classQuote(sql, classId, new Request(`http://localhost/v1/classes/${classId}/quote`), m),
+    );
+    const q = (res as any).body;
+    assert.equal(q.eligible, true);
+    assert.equal(q.total_vnd, 300000);
+  });
+  it("MB-gate: enrolling without a membership that outlasts the class is refused", async () => {
+    const classId = await seedClass({ price: 300000, capacity: 1 });
+    const m = await seedPlainUser(92);
+    await assert.rejects(
+      withTx((sql) => classesEnroll(sql, classId, new Request("http://localhost"), m)),
+      (e: any) => e.extra?.br === "BR-19",
+    );
+    const held = await db.query("select 1 from enrollments where class_id = $1", [classId]);
+    assert.equal(held.rows.length, 0);
+  });
+  it("MB-gate-equal: a membership ending the same day as the class is refused", async () => {
+    const classId = await seedClass({ price: 300000, capacity: 1 });
+    const m = await seedMember(93);
+    const cl = await db.query<{ end_on: string }>("select end_on::text from classes where id = $1", [classId]);
+    await db.query("update subscriptions set end_on = $2 where user_id = $1", [m.id, cl.rows[0].end_on]);
+    await assert.rejects(
+      withTx((sql) => classesEnroll(sql, classId, new Request("http://localhost"), m)),
+      (e: any) => e.extra?.br === "BR-19",
+    );
+  });
+});
 
 describe("Sell classes: schema", () => {
   it("SC-schema-hold: enrollment_hold writes a priced, timed hold", async () => {
@@ -4021,7 +4092,7 @@ describe("Sell classes: attendance", () => {
       [court],
     );
     const classId = await seedClass({ price: 300000, capacity: 3, courtId: court });
-    const m = await seedMember(70);
+    const m = await seedPlainUser(92);
     const manager = { id: "00000000-0000-0000-0000-000000000001", role: "manager", full_name: "Sell Manager" } as any;
     const subId = (
       await db.query<{ id: string }>(
@@ -4140,6 +4211,62 @@ describe("Sell classes: final fixes", () => {
   after(() => {
     setOverridePaymentLinkCreator(null);
     setOverridePaymentLinkCanceller(null);
+  });
+
+  it("SC-cancel-refund: cancelling a class owes the paid tuition until the desk hands it over", async () => {
+    const { paymentsPayOutRefund, paymentsApproveRefund } = await import("./handlers/desk.ts");
+    const classId = await seedClass({ price: 300000, capacity: 5 });
+    const m = await seedMember(84);
+    const id = await holdFor(classId, m);
+    await payDesk(id, 300000);
+    await db.query(
+      "insert into payments (code, user_id, method, amount_vnd, vat_rate, status, ref_type, ref_id) values ('PAY-SC84', $1, 'cash', -100000, 0, 'posted', 'enrollment', $2)",
+      [m.id, id],
+    );
+    await withTx((sql) => classesPatch(sql, classId, jsonReq("PATCH", { status: "cancelled", reason: "Coach is away" }), mgr));
+    const row = (
+      await db.query<{ id: string; amount_vnd: number; status: string; shift_id: string | null }>(
+        "select id, amount_vnd, status::text as status, shift_id from payments where ref_id = $1 and status = 'refund_pending'",
+        [id],
+      )
+    ).rows[0];
+    assert.equal(row.amount_vnd, -200000);
+    assert.equal(row.shift_id, null);
+    const told = await db.query<{ payload: any }>(
+      "select payload from outbox where user_id = $1 and template = 'class_changed' and payload->>'class_id' = $2",
+      [m.id, classId],
+    );
+    assert.equal(told.rows[0].payload.refund_vnd, 200000);
+    await assert.rejects(() => withTx((sql) => paymentsApproveRefund(sql, row.id, jsonReq("POST", {}), { ...mgr, id: "00000000-0000-0000-0000-000000000009" })));
+    const desk = { id: "00000000-0000-0000-0000-000000000002", role: "receptionist" } as any;
+    const open = await db.query<{ id: string }>("select id from cashier_shifts where receptionist_id = $1 and closed_at is null", [desk.id]);
+    const shiftId = open.rows[0]?.id ?? (await db.query<{ id: string }>("insert into cashier_shifts (receptionist_id) values ($1) returning id", [desk.id])).rows[0].id;
+    await withTx((sql) => paymentsPayOutRefund(sql, row.id, desk));
+    const paid = (await db.query<{ status: string; shift_id: string }>("select status::text as status, shift_id from payments where id = $1", [row.id])).rows[0];
+    assert.equal(paid.status, "posted");
+    assert.equal(paid.shift_id, shiftId);
+    await assert.rejects(() => withTx((sql) => paymentsPayOutRefund(sql, row.id, desk)));
+    await db.query("update cashier_shifts set closed_at = now() where id = $1", [shiftId]);
+  });
+
+  it("SC-cancel-refund-manager: a manager hands the refund over without a till, a receptionist without a shift cannot", async () => {
+    const { paymentsPayOutRefund } = await import("./handlers/desk.ts");
+    const classId = await seedClass({ price: 300000, capacity: 5 });
+    const m = await seedMember(85);
+    const id = await holdFor(classId, m);
+    await payDesk(id, 300000);
+    await withTx((sql) => classesPatch(sql, classId, jsonReq("PATCH", { status: "cancelled", reason: "Coach is away" }), mgr));
+    const row = (await db.query<{ id: string }>("select id from payments where ref_id = $1 and status = 'refund_pending'", [id])).rows[0];
+    const desk = { id: "00000000-0000-0000-0000-000000000002", role: "receptionist" } as any;
+    await db.query("update cashier_shifts set closed_at = now() where receptionist_id = $1 and closed_at is null", [desk.id]);
+    await assert.rejects(
+      () => withTx((sql) => paymentsPayOutRefund(sql, row.id, desk)),
+      (e: any) => e.extra?.br === "BR-44",
+    );
+    await withTx((sql) => paymentsPayOutRefund(sql, row.id, mgr));
+    const paid = (await db.query<{ status: string; shift_id: string | null }>("select status::text as status, shift_id from payments where id = $1", [row.id])).rows[0];
+    assert.equal(paid.status, "posted");
+    assert.equal(paid.shift_id, null);
   });
 
   it("SC-cancel-class-hold: cancelling a class ends its holds and links, and a late payment is flagged, not seated", async () => {
@@ -4322,14 +4449,15 @@ describe("Remove plans: courts", () => {
   }
 
   // RP-full-price: a plan with a 20% court discount and hours left no longer changes the price.
-  it("RP-full-price: a member with a plan pays the list price and the hold has no plan hours", async () => {
+  it("RP-member-fee: a member covered on the day pays the member fee and the hold has no plan hours", async () => {
     const member = await seedMember("00000000-0000-0000-0000-000000000241", "Member RP1");
     await seedPlanSubscription(member.id, 5);
 
     const res = await withTx(async (sql) => bookingsHold(sql, holdReq("09:00"), member));
     assert.equal(res.status, 201);
     const body = res.body as any;
-    assert.equal(body.price, body.list_price);
+    assert.equal(body.price, 30000);
+    assert.equal(body.membership.covered, true);
     assert.equal("plan_hours_left" in body, false);
 
     const shift = (await db.query<{ id: string }>("insert into cashier_shifts (receptionist_id) values ($1) returning id", [receptionistUser.id])).rows[0];

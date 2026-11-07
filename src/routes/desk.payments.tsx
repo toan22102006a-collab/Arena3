@@ -38,7 +38,6 @@ export const Route = createFileRoute("/desk/payments")({
 
 type Order = {
   id: string;
-  sport_scope: string;
   ordered_on: string;
   end_on: string;
   user_id: string;
@@ -64,6 +63,7 @@ type Refund = {
   member_name: string | null;
   member_code: string | null;
   raised_by: string | null;
+  centre_owed?: boolean;
 };
 
 /** A payment that has been posted — money the centre has actually taken. */
@@ -217,7 +217,9 @@ function Page() {
 
   const awaiting = data?.awaiting ?? [];
   const orders = data?.orders ?? [];
-  const refunds = data?.refunds ?? [];
+  const allRefunds = data?.refunds ?? [];
+  const refunds = allRefunds.filter((r) => !r.centre_owed);
+  const payouts = allRefunds.filter((r) => r.centre_owed);
   // The server filters and pages the receipts across the whole window, so every row in it can be
   // reached when the list is read back against a bank statement; this is one page of them.
   const receiptPage = data?.receipts ?? [];
@@ -369,6 +371,19 @@ function Page() {
     try {
       await apiPost(`/payments/${r.id}/${approve ? "approve-refund" : "reject-refund"}`);
       toast.success(approve ? t("Refund approved") : t("Refund rejected"));
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function payOut(r: Refund) {
+    setBusy(r.id);
+    try {
+      await apiPost(`/payments/${r.id}/pay-out-refund`);
+      toast.success(t("Refund paid out"));
       refresh();
     } catch (e) {
       toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
@@ -531,7 +546,7 @@ function Page() {
                         </div>
                         <div className="text-right">
                           <p className="font-display text-2xl tabular-nums">
-                            {money(a.deposit_vnd > 0 && a.deposit_vnd < a.price_vnd ? a.deposit_vnd : a.price_vnd)}
+                            {money(a.price_vnd)}
                           </p>
                           {a.deposit_vnd > 0 && a.deposit_vnd < a.price_vnd ? (
                             <p className="text-xs text-muted">
@@ -592,7 +607,6 @@ function Page() {
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-display text-xl">{o.full_name}</h3>
-                            <Badge tone="accent">{sportLabel(o.sport_scope)}</Badge>
                             {waited >= 3 ? (
                               <Badge tone="hold">{t("Waiting {n} days", { n: waited })}</Badge>
                             ) : null}
@@ -692,6 +706,34 @@ function Page() {
           <EmptyState title={t("Nothing to collect")} hint={t("Every plan ordered in the app has been paid for.")} />
         </div>
       )}
+
+      {payouts.length ? (
+        <div className="mt-10">
+          <SectionTitle text={t("Cash to hand back")} className="font-display text-2xl" />
+          <p className="mt-1 text-sm text-muted">
+            {t("The centre cancelled these classes. Mark a refund paid when the member has the cash.")} {canTake ? null : t("Open a till shift first.")}
+          </p>
+          <div className="mt-3 grid gap-3">
+            {payouts.map((r) => (
+              <Card key={r.id} className="flex flex-wrap items-center justify-between gap-3 p-5">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Undo2 className="size-4 text-muted" />
+                    <span className="font-medium">{r.member_name ?? t("Walk-in")}</span>
+                    <Badge tone="danger">{money(Math.abs(r.amount_vnd))}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs tabular-nums text-muted">
+                    {r.code} · {refTypeLabel(r.ref_type)} · {when(r.created_at)}
+                  </p>
+                </div>
+                <Button disabled={!canTake || busy === r.id} onClick={() => void payOut(r)}>
+                  {t("Mark as paid")}
+                </Button>
+              </Card>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {refunds.length ? (
         <div className="mt-10">

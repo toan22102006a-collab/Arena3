@@ -44,6 +44,10 @@ export type Settings = {
   loyalty_redeem_vnd: number;
   /** How long a seat is held while a member pays for a class. */
   class_hold_minutes: number;
+  /** What a covered member pays per court hour, at every hour. */
+  member_court_fee_vnd: number;
+  /** What one extra membership day costs when a class outruns the plan. */
+  member_day_rate_vnd: number;
   /** Menus and list lengths as the manager set them; read through `uiConfigFrom`. */
   ui_config: unknown;
 };
@@ -60,7 +64,7 @@ export async function getSettings(sql: Sql): Promise<Settings> {
             tax_code, legal_name, address,
             deposit_pct, deposit_peak_only, cancel_tiers, series_min_weeks, series_max_weeks,
             series_discount_pct, loyalty_earn_vnd, loyalty_redeem_vnd,
-            class_hold_minutes, ui_config
+            class_hold_minutes, member_court_fee_vnd, member_day_rate_vnd, ui_config
        from center_settings where id = 1`,
   );
   if (!row) throw err.validation("center_settings is missing.");
@@ -241,6 +245,8 @@ export async function issueInvoice(
     vatRate: number;
     description: string;
     unit: string;
+    /** Separate lines that add up to the amount, when one payment bought two things. */
+    lines?: { description: string; unit: string; amount_vnd: number }[];
     settings: Pick<Settings, "legal_name" | "tax_code" | "address">;
   },
 ): Promise<string> {
@@ -268,11 +274,14 @@ export async function issueInvoice(
       args.buyerPhone ?? null,
     ],
   );
-  await sql.query(
-    `insert into invoice_lines (invoice_id, description, unit, qty, unit_vnd, amount_vnd)
-     values ($1,$2,$3,1,$4,$4)`,
-    [inv!.id, args.description, args.unit, args.amountVnd],
-  );
+  const lines = args.lines ?? [{ description: args.description, unit: args.unit, amount_vnd: args.amountVnd }];
+  for (const line of lines) {
+    await sql.query(
+      `insert into invoice_lines (invoice_id, description, unit, qty, unit_vnd, amount_vnd)
+       values ($1,$2,$3,1,$4,$4)`,
+      [inv!.id, line.description, line.unit, line.amount_vnd],
+    );
+  }
   return inv!.id;
 }
 

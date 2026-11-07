@@ -26,7 +26,6 @@ type Row = {
   date_of_birth: string | null;
   avatar_url?: string | null;
   plan_name: string | null;
-  sport_scope: string | null;
   end_on: string | null;
   plan_state: "active" | "expiring" | "expired" | "none";
   classes: number;
@@ -195,9 +194,6 @@ function Page() {
                       <Badge tone={m.plan_state === "active" ? "accent" : m.plan_state === "expiring" ? "hold" : "muted"}>
                         {t(PLAN_LABEL[m.plan_state])}
                       </Badge>
-                      {m.sport_scope ? (
-                        <SportBadge sport={m.sport_scope} />
-                      ) : null}
                       {m.plan_name ? (
                         <span className="break-words text-xs text-muted">
                           {tData(m.plan_name)}

@@ -24,7 +24,7 @@ type Result = {
   flagged?: boolean;
   checked_in_at: string | null;
   duplicate: boolean;
-  plans: Array<{ id: string; name: string; end_on: string; session_left: number | null; status: string }>;
+  plans: Array<{ id: string; name: string; end_on: string; status: string }>;
   warnings: Array<{ kind: string; message: string }>;
   today: {
     bookings: Array<{ id: string; code: string; start_at: string; court_code: string }>;
@@ -292,7 +292,6 @@ function Page() {
                   <span className="text-muted">
                     {" "}
                     · {t("until {date}", { date: p.end_on })}
-                    {p.session_left != null ? ` · ${t("{n} sessions left", { n: p.session_left })}` : ""}
                   </span>
                 </p>
               ))}

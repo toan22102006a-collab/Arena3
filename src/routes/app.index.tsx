@@ -32,12 +32,6 @@ type Me = {
     status: string;
     end_on: string;
     plan_name: string;
-    court_hours_left: string | number;
-    session_left: number | null;
-    plan_court_hours: number;
-    plan_session_quota: number | null;
-    court_discount_pct: number;
-    sport_scope: string;
   }>;
   inbox: Notification[];
   offers?: Array<{ id: string; expires_at: string; sport: string; level: string }>;

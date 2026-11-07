@@ -1,4 +1,6 @@
+import { classCode } from "../labels";
 import type { Sql } from "@/lib/db";
+import { addMonths, enrollmentAmountDue, enrollmentInvoiceLines } from "../membership";
 import { INVOICE_COLS, PAYMENT_COLS } from "../columns";
 import type { Invoice, Payment, PaymentCreateResponse, Reply } from "../contracts";
 import { err } from "../errors";
@@ -104,97 +106,48 @@ export async function shiftClose(sql: Sql, id: string, request: Request, user: P
   };
 }
 
+/** Still running: add to the current end. Expired or new: count from today. One account, one membership. */
 export async function activateSubscription(sql: Sql, subId: string) {
-  const sub = await one<{
-    id: string;
-    status: string;
-    end_on: string;
-    start_on: string;
-    sport_scope: string;
-    plan_id: string;
-    user_id: string;
-    court_hours_left: string | number;
-    session_left: number | null;
-  }>(sql, `select * from subscriptions where id = $1 for update`, [subId]);
+  const sub = await one<{ id: string; status: string; end_on: string; plan_id: string; user_id: string }>(
+    sql,
+    `select id, status::text, end_on::text, plan_id, user_id from subscriptions where id = $1 for update`,
+    [subId],
+  );
   if (!sub) throw err.notFound();
-  const plan = await one<{
-    duration_days: number | null;
-    court_hours: number;
-    session_quota: number | null;
-    carry_over_hours: boolean;
-    price_vnd: number;
-  }>(sql, `select * from membership_plans where id = $1`, [sub.plan_id]);
+  const plan = await one<{ duration_months: number | null; duration_days: number | null }>(
+    sql,
+    `select duration_months, duration_days from membership_plans where id = $1`,
+    [sub.plan_id],
+  );
   if (!plan) throw err.notFound();
   const today = ictDateString();
-  const duration = plan.duration_days ?? 365;
+  const extend = (from: string) =>
+    plan.duration_months ? addMonths(from, plan.duration_months) : addDays(from, plan.duration_days ?? 30);
 
   if (sub.status === "active" && sub.end_on >= today) {
-    const end = addDays(sub.end_on, duration);
-    await sql.query(
-      `update subscriptions
-          set end_on = $2,
-              court_hours_left = court_hours_left + $3,
-              session_left = case when session_left is null and $4::int is null then null
-                                  else coalesce(session_left,0) + coalesce($4,0) end
-        where id = $1`,
-      [sub.id, end, plan.court_hours, plan.session_quota],
-    );
+    await sql.query(`update subscriptions set end_on = $2 where id = $1`, [sub.id, extend(sub.end_on)]);
     return;
   }
 
-  // Check whether there is an existing live subscription for (user_id, sport_scope)
-  const live = await one<{
-    id: string;
-    status: string;
-    end_on: string;
-    plan_id: string;
-    court_hours_left: string | number;
-    session_left: number | null;
-  }>(
+  const live = await one<{ id: string; end_on: string }>(
     sql,
-    `select id, status, end_on::text, plan_id, court_hours_left, session_left from subscriptions
-      where user_id = $1 and sport_scope = $2 and status in ('active','frozen') and id <> $3
-      limit 1`,
-    [sub.user_id, sub.sport_scope, sub.id],
+    `select id, end_on::text from subscriptions
+      where user_id = $1 and status in ('active','frozen') and id <> $2
+      limit 1 for update`,
+    [sub.user_id, sub.id],
   );
-
-  if (live) {
-    if (live.end_on < today) {
-      // The previous plan has expired; mark it expired so the new one can become active
-      await sql.query(`update subscriptions set status = 'expired' where id = $1`, [live.id]);
-    } else if (live.plan_id === sub.plan_id) {
-      // Same plan renewal: extend live subscription directly
-      const end = addDays(live.end_on, duration);
-      await sql.query(
-        `update subscriptions
-            set end_on = $2,
-                court_hours_left = court_hours_left + $3,
-                session_left = case when session_left is null and $4::int is null then null
-                                    else coalesce(session_left,0) + coalesce($4,0) end
-          where id = $1`,
-        [live.id, end, plan.court_hours, plan.session_quota],
-      );
-      // Repoint any payments on sub to live and clean up sub
-      await sql.query(`update payments set ref_id = $1 where ref_type = 'subscription' and ref_id = $2`, [live.id, sub.id]);
-      await sql.query(`delete from subscriptions where id = $1`, [sub.id]);
-      return;
-    } else {
-      // Different plan: mark old plan expired, carry over hours if configured
-      await sql.query(`update subscriptions set status = 'expired' where id = $1`, [live.id]);
-      if (plan.carry_over_hours) {
-        sub.court_hours_left = Number(live.court_hours_left) + Number(sub.court_hours_left);
-      }
-    }
+  if (live && live.end_on >= today) {
+    await sql.query(`update subscriptions set end_on = $2 where id = $1`, [live.id, extend(live.end_on)]);
+    await sql.query(`update payments set ref_id = $1 where ref_type = 'subscription' and ref_id = $2`, [live.id, sub.id]);
+    await sql.query(`delete from subscriptions where id = $1`, [sub.id]);
+    return;
   }
-
-  const end = addDays(today, duration);
-  const hours = plan.carry_over_hours ? Number(sub.court_hours_left) + plan.court_hours : plan.court_hours;
+  if (live) await sql.query(`update subscriptions set status = 'expired' where id = $1`, [live.id]);
   await sql.query(
     `update subscriptions
-        set status = 'active', start_on = $2, end_on = $3,
-            court_hours_left = $4, session_left = $5
+        set status = 'active', start_on = $2, end_on = $3, court_hours_left = 0, session_left = null
       where id = $1`,
-    [sub.id, today, end, hours, plan.session_quota],
+    [sub.id, today, extend(today)],
   );
 }
 
@@ -341,7 +294,7 @@ export async function paymentsCreate(
     );
     if (!enr) throw err.notFound("Enrollment does not exist.");
     if (enr.status !== "hold") throw err.br("BR-28", "That seat is not on hold, so there is nothing to pay.");
-    const expected = enr.price_vnd ?? 0;
+    const expected = await enrollmentAmountDue(sql, ref_id);
     if (amount !== expected) {
       throw err.field(
         "amount_vnd",
@@ -458,6 +411,7 @@ export async function paymentsCreate(
     vatRate: Number(settings.vat_rate ?? 0),
     description: item.description,
     unit: item.unit,
+    lines: ref_type === "enrollment" ? await enrollmentInvoiceLines(sql, ref_id, amount, item) : undefined,
     settings,
   });
   await enqueueReceipt(sql, userId, {
@@ -585,6 +539,8 @@ async function lockPendingRefund(sql: Sql, id: string, user: PublicUser): Promis
   if (p.status !== "refund_pending" || p.amount_vnd >= 0) {
     throw err.conflictState("That refund is no longer waiting for a decision.");
   }
+  // No one at the desk raised it: the centre cancelled a class and owes this. Nothing to decide.
+  if (!p.created_by) throw err.conflictState("The centre owes this refund: the front desk pays it out.");
   // A role can change after the refund was raised, so "managers only" is not
   // enough on its own: whoever asked for the money back does not also release it.
   if (p.created_by && p.created_by === user.id) {
@@ -679,6 +635,42 @@ export async function paymentsApproveRefund(sql: Sql, id: string, request: Reque
 
 export async function paymentsRejectRefund(sql: Sql, id: string, request: Request, user: PublicUser) {
   return decideRefund(sql, id, user, request, false);
+}
+
+/**
+ * The desk hands over cash the centre owes for a cancelled class.
+ *
+ * The refund only counts as paid from this moment, and it comes out of the till of whoever paid it.
+ */
+export async function paymentsPayOutRefund(sql: Sql, id: string, user: PublicUser) {
+  requireRole(user, ["receptionist", "manager"]);
+  const p = await one<PendingRefund & { ref_type: string; ref_id: string }>(
+    sql,
+    `select id, code, user_id, amount_vnd, status, created_by, shift_id, ref_type, ref_id from payments where id = $1 for update`,
+    [id],
+  );
+  if (!p) throw err.notFound("That refund does not exist.");
+  if (p.status !== "refund_pending" || p.amount_vnd >= 0 || p.created_by) {
+    throw err.conflictState("That refund is no longer waiting to be paid out.");
+  }
+  // A manager has no till, as when taking a payment: the row stays off any shift and the audit names them.
+  let shiftId: string | null = null;
+  if (user.role === "receptionist") {
+    const shift = await one<{ id: string }>(
+      sql,
+      `select id from cashier_shifts where receptionist_id = $1 and closed_at is null for update`,
+      [user.id],
+    );
+    if (!shift) throw err.br("BR-44", "The front desk needs an open shift.");
+    shiftId = shift.id;
+  }
+  await sql.query(`update payments set status = 'posted', shift_id = $2 where id = $1`, [id, shiftId]);
+  await restoreIfFullyRefunded(sql, p.ref_type, p.ref_id);
+  await audit(sql, user.id, "refund_paid_out", "payment", id, { status: "refund_pending", amount_vnd: p.amount_vnd }, { status: "posted", shift_id: shiftId });
+  if (p.user_id) {
+    await enqueue(sql, "inapp", "refund_approved", p.user_id, { payment_id: p.id, code: p.code, amount_vnd: Math.abs(p.amount_vnd) }, `refund_approved|${p.id}`);
+  }
+  return { status: 200, body: { status: "posted" } };
 }
 
 /** How many receipts the reconciliation list will show at once. */
@@ -794,7 +786,7 @@ export async function paymentsPending(sql: Sql, request: Request, user: PublicUs
   const refunds = await sql.query(
     `select p.id, p.code, p.amount_vnd, p.created_at, p.ref_type, p.ref_id,
             u.full_name as member_name, u.member_code,
-            r.full_name as raised_by
+            r.full_name as raised_by, p.created_by is null as centre_owed
        from payments p
        left join users u on u.id = p.user_id
        left join users r on r.id = p.created_by
@@ -1208,7 +1200,7 @@ export async function settingsPatch(sql: Sql, request: Request, user: PublicUser
             cancel_court_hours, cancel_class_hours, noshow_grace_minutes, checkin_before_minutes,
             refund_manager_vnd, self_checkin_enabled, gate_dedup_minutes, at_risk_idle_days, minor_age, vat_rate, legal_name, tax_code, address,
             freeze_max_days_year, waitlist_offer_hours, deposit_pct, deposit_peak_only, cancel_tiers::text,
-            series_min_weeks, series_max_weeks, series_discount_pct, loyalty_earn_vnd, loyalty_redeem_vnd, ui_config::text
+            series_min_weeks, series_max_weeks, series_discount_pct, loyalty_earn_vnd, loyalty_redeem_vnd, member_court_fee_vnd, member_day_rate_vnd, ui_config::text
        from center_settings where id = 1`,
   );
   if (keys.length === 0) {
@@ -1273,6 +1265,47 @@ export async function priceRulesPut(sql: Sql, request: Request, user: PublicUser
   return priceRulesGet(sql);
 }
 
+// The log stores a table and an id. A manager needs the booking code or the member's name, so each page
+// looks them up by kind. A record deleted since simply has no name and the row falls back to its kind.
+const AUDIT_SUBJECT_SQL: Record<string, string> = {
+  user: `select t.id, t.full_name as subject from users t where t.id = any($1::uuid[])`,
+  payment: `select t.id, concat_ws(' · ', t.code, u.full_name) as subject, t.amount_vnd as subject_vnd
+              from payments t left join users u on u.id = t.user_id where t.id = any($1::uuid[])`,
+  booking: `select t.id, concat_ws(' · ', t.code, u.full_name) as subject
+              from court_bookings t left join users u on u.id = t.user_id where t.id = any($1::uuid[])`,
+  booking_series: `select t.id, concat_ws(' · ', t.code, u.full_name) as subject
+                     from booking_series t left join users u on u.id = t.user_id where t.id = any($1::uuid[])`,
+  court: `select t.id, t.court_code as subject from courts t where t.id = any($1::uuid[])`,
+  plan: `select t.id, t.name as subject from membership_plans t where t.id = any($1::uuid[])`,
+  promotion: `select t.id, t.code as subject from promotions t where t.id = any($1::uuid[])`,
+  equipment: `select t.id, t.name as subject from equipment_items t where t.id = any($1::uuid[])`,
+  work_order: `select t.id, concat_ws(' · ', t.code, t.title) as subject from work_orders t where t.id = any($1::uuid[])`,
+  ticket: `select t.id, u.full_name as subject from tickets t left join users u on u.id = t.user_id where t.id = any($1::uuid[])`,
+  subscription: `select t.id, concat_ws(' · ', u.full_name, p.name) as subject
+                   from subscriptions t join users u on u.id = t.user_id
+                   join membership_plans p on p.id = t.plan_id where t.id = any($1::uuid[])`,
+};
+
+async function auditSubjects(sql: Sql, rows: { entity: string; entity_id: string | null }[]) {
+  const out = new Map<string, { subject: string; subject_vnd?: number }>();
+  const idsOf = (kind: string) => [...new Set(rows.filter((r) => r.entity === kind && r.entity_id).map((r) => r.entity_id!))];
+  for (const [kind, text] of Object.entries(AUDIT_SUBJECT_SQL)) {
+    const ids = idsOf(kind);
+    if (!ids.length) continue;
+    const found = await sql.query<{ id: string; subject: string; subject_vnd?: number }>(text, [ids]);
+    for (const f of found) out.set(`${kind}:${f.id}`, { subject: f.subject, subject_vnd: f.subject_vnd });
+  }
+  const classIds = idsOf("class");
+  if (classIds.length) {
+    const found = await sql.query<{ id: string; sport: string; level: string }>(
+      `select id, sport, level from classes where id = any($1::uuid[])`,
+      [classIds],
+    );
+    for (const c of found) out.set(`class:${c.id}`, { subject: classCode(c.sport, c.level, c.id) });
+  }
+  return out;
+}
+
 export async function auditList(sql: Sql, request: Request, user: PublicUser) {
   requireRole(user, ["manager"]);
   const sp = new URL(request.url).searchParams;
@@ -1314,6 +1347,8 @@ export async function auditList(sql: Sql, request: Request, user: PublicUser) {
   const rows = await page(limit, offset);
   const { items, total } = await pageOf(rows, { limit, offset }, async () => Number((await page(1, 0))[0]?.total ?? 0));
   const more = offset + items.length < total;
+  const subjects = await auditSubjects(sql, items as unknown as { entity: string; entity_id: string | null }[]);
+  const named = items.map((it) => ({ ...it, ...subjects.get(`${it.entity}:${it.entity_id}`) }));
   // What the filters can offer: only what actually exists, so the pickers never
   // drift from the handlers that write the log.
   const actions = await sql.query<{ action: string }>(`select distinct action from audit_logs order by action`);
@@ -1324,7 +1359,7 @@ export async function auditList(sql: Sql, request: Request, user: PublicUser) {
   return {
     status: 200,
     body: {
-      items,
+      items: named,
       more,
       total,
       limit,

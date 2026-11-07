@@ -101,8 +101,6 @@ function Page() {
   const [showAllMine, setShowAllMine] = useState(false);
   type MySub = {
     plan_name: string;
-    sport_scope: string;
-    court_hours_left: string | number;
     end_on: string;
   };
   const [mySubs, setMySubs] = useState<MySub[]>([]);
@@ -450,7 +448,7 @@ function Page() {
             <li key={idx} className="py-2 text-sm">
               <span className="font-medium text-fg">{sub.plan_name}</span>
               <p className="mt-0.5 text-xs text-muted">
-                {sportLabel(sub.sport_scope)} · {t("Ends {date}", { date: sub.end_on })}
+                {t("Ends {date}", { date: sub.end_on })}
               </p>
             </li>
           ))}
@@ -838,14 +836,12 @@ function Page() {
                         </span>
                       ) : null}
                     </p>
-                    {hold.due_now_vnd != null && hold.due_now_vnd < hold.price ? (
-                      <p className="mt-1 text-xs text-muted">
-                        {t("Peak hour: pay a {deposit} deposit now, the other {rest} at the desk when you arrive.", {
-                          deposit: money(hold.due_now_vnd),
-                          rest: money(hold.price - hold.due_now_vnd),
-                        })}
-                      </p>
-                    ) : null}
+                    <p className="mt-1 text-xs text-muted">
+                      {hold.membership.covered && hold.membership.end_on
+                        ? t("Member fee: your membership covers this day, through {date}.", { date: hold.membership.end_on })
+                        : t("Normal price: no membership covers this day. Extend it to play at the member fee.")}
+                    </p>
+                    <p className="mt-1 text-xs text-muted">{t("No refund if you cancel or do not show up.")}</p>
                   </div>
                   {(() => {
                     // Only the ways this member can actually pay are offered (B-4), and only the first
