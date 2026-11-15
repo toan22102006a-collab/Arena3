@@ -1,17 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 import { useState } from "react";
-import { monthsLabel } from "@/lib/arena3/labels";
 import { toast } from "sonner";
-import { Cover } from "@/components/media";
-import { Shell, money } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Input, LoadError, PageHero, Skeleton } from "@/components/ui";
-import { Lift, Stagger, StaggerItem } from "@/components/motion";
-import { GlareHover, SpotlightCard, StarBorder } from "@/components/fx";
-import { cn } from "@/lib/cn";
-import { apiPost } from "@/lib/arena3/client";
-import { t, tData } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
+import { Cover } from "@/client/components/media";
+import { Shell, money } from "@/client/components/shell";
+import { Badge, Button, Card, EmptyState, Input, LoadError, PageHero, Skeleton } from "@/client/components/ui";
+import { Lift, Stagger, StaggerItem } from "@/client/components/motion";
+import { GlareHover, SpotlightCard } from "@/client/components/fx";
+import { cn } from "@/client/lib/cn";
+import { apiPost } from "@/client/arena3/client";
+import { t, tData } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
 
 export const Route = createFileRoute("/app/plans")({
   component: Page,
@@ -44,6 +43,11 @@ function Page() {
   // request the rate limiter will reject.
   const [ordered, setOrdered] = useState<Record<string, string>>({});
   const [promoCode, setPromoCode] = useState("");
+  // The plan that costs least per month is the one filled button on the page.
+  const bestId = (items ?? []).reduce<Plan | null>(
+    (b, p) => (!b || p.price_vnd / months(p) < b.price_vnd / months(b) ? p : b),
+    null,
+  )?.id;
 
   async function order(p: Plan) {
     if (busy) return;
@@ -119,6 +123,7 @@ function Page() {
         </div>
         <Stagger className="grid gap-3 md:grid-cols-3" gap={0.08}>
           {items.map((p) => {
+            const best = items.length > 1 && p.id === bestId;
             return (
               <StaggerItem key={p.id} className="h-full">
               <Lift className="h-full">
@@ -128,12 +133,15 @@ function Page() {
                   <Cover slot="plan.default" alt="" scrim="none" className="h-36" />
                 </GlareHover>
                 <div className="flex flex-1 flex-col p-5">
-                  <h2 className="font-display text-2xl">{tData(p.name)}</h2>
+                  <div className="flex items-start justify-between gap-2">
+                    <h2 className="font-display text-2xl">{tData(p.name)}</h2>
+                    {best ? <Badge tone="accent">{t("Lowest per month")}</Badge> : null}
+                  </div>
                   <p className="mt-3 font-display text-3xl tabular-nums text-fg">{money(p.price_vnd)}</p>
                   <ul className="mt-4 grid gap-2 text-sm text-muted">
                     <li className="flex items-center gap-2">
                       <Check className="size-4 text-accent" strokeWidth={1.75} />
-                      {monthsLabel(months(p))}
+                      {t("{price} a month", { price: money(Math.round(p.price_vnd / months(p))) })}
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="size-4 text-accent" strokeWidth={1.75} />
@@ -147,7 +155,7 @@ function Page() {
                   <div className="mt-auto pt-5">
                     <Button
                       className="w-full"
-                      variant={activeSub ? "outline" : "primary"}
+                      variant="primary"
                       disabled={busy !== null || ordered[p.id] !== undefined}
                       onClick={() => void order(p)}
                     >
@@ -173,34 +181,6 @@ function Page() {
           {!items.length ? <EmptyState title={t("No plans on sale right now")} /> : null}
         </Stagger>
 
-        {/* Quick comparison strip */}
-        {items.length > 0 ? (
-          <div className="mt-8 rounded-[var(--radius-xl)] border border-line bg-surface p-5 shadow-[var(--shadow-soft)]">
-            <h3 className="font-display text-lg font-bold text-fg mb-3">{t("Quick compare")}</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs sm:text-sm">
-                <thead>
-                  <tr className="border-b border-line text-muted">
-                    <th className="pb-2.5 font-semibold">{t("Plan")}</th>
-                    <th className="pb-2.5 font-semibold">{t("Validity")}</th>
-                    <th className="pb-2.5 font-semibold text-right">{t("Per month")}</th>
-                    <th className="pb-2.5 font-semibold text-right">{t("Price")}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line/60">
-                  {items.map((p) => (
-                    <tr key={p.id} className="transition-colors hover:bg-wood/30">
-                      <td className="py-2.5 font-semibold text-fg">{tData(p.name)}</td>
-                      <td className="py-2.5 text-muted">{monthsLabel(months(p))}</td>
-                      <td className="py-2.5 text-right tabular-nums text-muted">{money(Math.round(p.price_vnd / months(p)))}</td>
-                      <td className="py-2.5 text-right font-bold tabular-nums text-fg">{money(p.price_vnd)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : null}
         </>
       )}
     </Shell>

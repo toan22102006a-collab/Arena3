@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Award, CalendarDays, ChevronRight, ClipboardCheck, MapPin, Users } from "lucide-react";
-import { sessionDay } from "@/components/class-detail";
-import { ArenaIcon, SportIcon } from "@/components/arena-icons";
-import { Shell, hhmm } from "@/components/shell";
-import { UserAvatar } from "@/components/user-avatar";
-import { PageHero } from "@/components/page-hero";
-import { SportBadge } from "@/components/sports-ui";
-import { SessionCountdown } from "@/components/training-progress";
-import { SpotlightCard } from "@/components/fx";
-import { cn } from "@/lib/cn";
+import { sessionDay } from "@/client/components/class-detail";
+import { ArenaIcon, SportIcon } from "@/client/components/arena-icons";
+import { Shell, hhmm } from "@/client/components/shell";
+import { UserAvatar } from "@/client/components/user-avatar";
+import { PageHero } from "@/client/components/page-hero";
+import { SportBadge } from "@/client/components/sports-ui";
+import { SessionCountdown } from "@/client/components/training-progress";
+import { SpotlightCard } from "@/client/components/fx";
+import { cn } from "@/client/lib/cn";
 import {
   Badge,
   Button,
@@ -18,14 +18,14 @@ import {
   LoadError,
   Skeleton,
   StatusBadge,
-} from "@/components/ui";
-import { levelLabel, sportLabel } from "@/lib/arena3/labels";
-import { locale, t } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
-import { useLimits } from "@/lib/use-centre";
-import { AddToCalendar, MinSizeBadge } from "@/components/class-extras";
-import { CertificationsModal } from "@/components/coach-certifications";
-import { getStoredUser } from "@/lib/arena3/client";
+} from "@/client/components/ui";
+import { levelLabel, sportLabel } from "@/shared/arena3/labels";
+import { locale, t } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
+import { useLimits } from "@/client/lib/use-centre";
+import { AddToCalendar, MinSizeBadge } from "@/client/components/class-extras";
+import { CertificationsModal } from "@/client/components/coach-certifications";
+import { getStoredUser } from "@/client/arena3/client";
 
 export const Route = createFileRoute("/coach/")({
   component: Page,
@@ -73,6 +73,8 @@ function Page() {
   const items = read.data?.items ?? null;
 
   const [certsOpen, setCertsOpen] = useState(false);
+  // Two weeks of sessions is a wall; the next few days answer "what am I teaching", the rest on demand.
+  const [daysShown, setDaysShown] = useState(DAYS_STEP);
   const me = getStoredUser();
 
   const take = (id: string) => void navigate({ to: "/coach/attendance", search: { session: id } });
@@ -221,7 +223,7 @@ function Page() {
                 <p className="font-mono text-2xs font-semibold uppercase tracking-[0.18em] text-muted">
                   {t("Coming up")}
                 </p>
-                {[...days.entries()].map(([k, list]) => (
+                {[...days.entries()].slice(0, daysShown).map(([k, list]) => (
                   <div key={k}>
                     <h2 className="mb-2 flex items-baseline justify-between gap-3 font-display text-lg font-bold tracking-tight">
                       {dayName(list[0]!.start_at)}
@@ -236,6 +238,13 @@ function Page() {
                     </ol>
                   </div>
                 ))}
+                {days.size > daysShown ? (
+                  <div>
+                    <Button variant="outline" onClick={() => setDaysShown((n) => n + DAYS_STEP)}>
+                      {t("Show more days")}
+                    </Button>
+                  </div>
+                ) : null}
               </section>
             ) : null}
           </div>
@@ -248,6 +257,8 @@ function Page() {
     </Shell>
   );
 }
+
+const DAYS_STEP = 4;
 
 function TimelineRow({ s, onOpen }: { s: CoachSession; onOpen: () => void }) {
   const need = shortBy(s);

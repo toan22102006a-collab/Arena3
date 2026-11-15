@@ -1,16 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { AssistantMark } from "@/components/mark";
-import { Shell, useSessionUser } from "@/components/shell";
-import { Button, LoadError } from "@/components/ui";
+import { AssistantMark } from "@/client/components/mark";
+import { Shell, useSessionUser } from "@/client/components/shell";
+import { Button, LoadError } from "@/client/components/ui";
 import { AnimatePresence, motion } from "motion/react";
-import { GLBackground, Magnet, ShinyText } from "@/components/fx";
-import { apiPost } from "@/lib/arena3/client";
-import { type ChatMsg, useChatLog } from "@/lib/chat-log";
-import { cn } from "@/lib/cn";
-import { scrollBehavior } from "@/lib/calm";
-import { t, tk } from "@/lib/i18n";
+import { GLBackground, Magnet, ShinyText } from "@/client/components/fx";
+import { apiPost } from "@/client/arena3/client";
+import { type ChatMsg, useChatLog } from "@/client/lib/chat-log";
+import { cn } from "@/client/lib/cn";
+import { scrollBehavior } from "@/client/lib/calm";
+import { t, tk } from "@/client/lib/i18n";
 
 export const Route = createFileRoute("/app/assistant")({ component: Page });
 

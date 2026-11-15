@@ -1,22 +1,22 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Shell, money } from "@/components/shell";
-import { PageHero } from "@/components/page-hero";
-import { StatStrip } from "@/components/stat-strip";
-import { SportBadge, useSports } from "@/components/sports-ui";
-import { Button, Card, DateField, EmptyState, Field, Input, LoadError, Select, ShowMore, Skeleton, StatusBadge } from "@/components/ui";
-import { Lift, Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
-import { SpotlightCard } from "@/components/fx";
-import { ClassDetailModal } from "@/components/class-detail";
-import { MinSizeBadge } from "@/components/class-extras";
-import { apiPost } from "@/lib/arena3/client";
-import { classSlotMatches, composeWeeklyRrule, levelLabel, rruleLabel, sportLabel, todayISO, addDaysISO } from "@/lib/arena3/labels";
-import { t, tk, tServer } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
-import { useCentre } from "@/lib/use-centre";
-import { hoursOf } from "@/lib/venue";
-import { HighlightBadge, useLive } from "@/lib/use-live";
+import { Shell, money } from "@/client/components/shell";
+import { PageHero } from "@/client/components/page-hero";
+import { StatStrip } from "@/client/components/stat-strip";
+import { SportBadge, useSports } from "@/client/components/sports-ui";
+import { Badge, Button, Card, DateField, EmptyState, Field, Input, LoadError, Select, ShowMore, Skeleton, StatusBadge } from "@/client/components/ui";
+import { Lift, Reveal, Stagger, StaggerItem, motion } from "@/client/components/motion";
+import { SpotlightCard } from "@/client/components/fx";
+import { ClassDetailModal } from "@/client/components/class-detail";
+import { MinSizeBadge } from "@/client/components/class-extras";
+import { apiPost } from "@/client/arena3/client";
+import { classSlotMatches, composeWeeklyRrule, levelLabel, rruleLabel, sportLabel, todayISO, addDaysISO } from "@/shared/arena3/labels";
+import { t, tk, tServer } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
+import { useCentre } from "@/client/lib/use-centre";
+import { hoursOf } from "@/client/lib/venue";
+import { HighlightBadge, useLive } from "@/client/lib/use-live";
 
 export const Route = createFileRoute("/manager/classes")({
   component: Page,
@@ -44,6 +44,8 @@ type ClassRow = {
   court_code: string;
   coach_name: string;
   enrolled_count: number;
+  confirmed_count: number;
+  running_below_minimum: boolean;
   capacity: number;
   rrule?: string;
   duration_min?: number;
@@ -146,7 +148,9 @@ function Page() {
       : t("The minimum must be a whole number from 1 up to the capacity.");
   const priceError =
     form.price.trim() === "" || Number.isInteger(whole(form.price)) ? null : t("Price must be a whole number of dong, or empty.");
-  const invalid = !!(capacityError || minError || priceError);
+  const startError =
+    form.start_on && form.start_on < todayISO() ? t("A class cannot start or end in the past. Pick today or a later first day.") : null;
+  const invalid = !!(capacityError || minError || priceError || startError);
 
   function toggleDay(k: string) {
     setDays((prev) => (prev.includes(k) ? prev.filter((d) => d !== k) : [...prev, k]));
@@ -267,8 +271,13 @@ function Page() {
             ))}
           </Select>
         </Field>
-        <Field label={t("First day")}>
-          <DateField value={form.start_on} onChange={(v) => setForm({ ...form, start_on: v })} aria-label={t("Start date")} />
+        <Field label={t("First day")} hint={startError ?? undefined} tone={startError ? "danger" : "muted"}>
+          {/* The class runs 60 days from its first day, so the end moves with it. */}
+          <DateField
+            value={form.start_on}
+            onChange={(v) => setForm({ ...form, start_on: v, end_on: v ? addDaysISO(v, 60) : form.end_on })}
+            aria-label={t("Start date")}
+          />
         </Field>
         <Field label={t("Capacity")} hint={capacityError ?? undefined}>
           <Input
@@ -400,10 +409,15 @@ function Page() {
               <div className="flex items-center gap-2">
                 <SportBadge sport={c.sport} />
                 <StatusBadge status={c.status} />
-                <MinSizeBadge enrolled={c.enrolled_count} min={c.min_enrolled} status={c.status} />
+                {!c.running_below_minimum && <MinSizeBadge enrolled={c.confirmed_count} min={c.min_enrolled} status={c.status} />}
               </div>
               <span className="text-2xs tabular-nums text-muted">{c.code}</span>
             </div>
+            {c.running_below_minimum && (
+              <Badge tone="hold" className="mt-2 max-w-full whitespace-normal">
+                {t("Running below minimum · {count}/{minimum} confirmed", { count: c.confirmed_count, minimum: c.min_enrolled ?? 0 })}
+              </Badge>
+            )}
             <h2 className="mt-2 font-display text-2xl">
               {sportLabel(c.sport)} · {levelLabel(c.level)}
             </h2>

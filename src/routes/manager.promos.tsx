@@ -1,15 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Shell, money } from "@/components/shell";
-import { PageHero } from "@/components/page-hero";
-import { StatStrip } from "@/components/stat-strip";
-import { SportBadge, useSports } from "@/components/sports-ui";
-import { Badge, Button, Card, Check, EmptyState, Field, Input, LoadError, Modal, MoneyInput, Select, Skeleton } from "@/components/ui";
-import { ApiClientError, apiGet, apiPatch, apiPost } from "@/lib/arena3/client";
-import { formatDate, sportLabel } from "@/lib/arena3/labels";
-import { t, tk, tServer, tData } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
+import { Shell, money } from "@/client/components/shell";
+import { PageHero } from "@/client/components/page-hero";
+import { StatStrip } from "@/client/components/stat-strip";
+import { SportBadge, useSports } from "@/client/components/sports-ui";
+import { Badge, Button, Card, Check, EmptyState, Field, Input, LoadError, Modal, MoneyInput, Select, Skeleton } from "@/client/components/ui";
+import { ApiClientError, apiGet, apiPatch, apiPost } from "@/client/arena3/client";
+import { formatDate, sportLabel } from "@/shared/arena3/labels";
+import { t, tk, tServer, tData } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
 
 export const Route = createFileRoute("/manager/promos")({ component: Page });
 

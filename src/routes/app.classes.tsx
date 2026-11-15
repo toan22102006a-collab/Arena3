@@ -1,20 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Cover, MediaCaption, sportPhoto } from "@/components/media";
-import { MyAttendance } from "@/components/my-attendance";
-import { Shell, money, when } from "@/components/shell";
-import { PayOnlineButton } from "@/components/pay-online";
-import { HoldCountdown } from "@/components/moments/hold-countdown";
-import { Badge, Button, ButtonLink, Card, EmptyState, Input, LoadError, Modal, PageHero, Seg, Select, ShowMore, Skeleton, SportBadge, useSports } from "@/components/ui";
-import { Lift, Stagger, StaggerItem, motion } from "@/components/motion";
-import { GlareHover, SpotlightCard } from "@/components/fx";
-import { cn } from "@/lib/cn";
-import { apiDelete, apiGet, apiPost } from "@/lib/arena3/client";
-import { classSlotMatches, levelLabel, rruleLabel, sportLabel } from "@/lib/arena3/labels";
-import { locale, t, tData, tServer } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
-import { HighlightBadge, useLive } from "@/lib/use-live";
+import { Cover, MediaCaption, sportPhoto } from "@/client/components/media";
+import { MyAttendance } from "@/client/components/my-attendance";
+import { Shell, money, when } from "@/client/components/shell";
+import { PayOnlineButton } from "@/client/components/pay-online";
+import { HoldCountdown } from "@/client/components/moments/hold-countdown";
+import { Badge, Button, ButtonLink, Card, EmptyState, Input, LoadError, Modal, PageHero, Seg, Select, ShowMore, Skeleton, SportBadge } from "@/client/components/ui";
+import { Lift, Stagger, StaggerItem, motion } from "@/client/components/motion";
+import { GlareHover, SpotlightCard } from "@/client/components/fx";
+import { cn } from "@/client/lib/cn";
+import { apiPost } from "@/client/arena3/client";
+import { levelLabel, rruleLabel, sportLabel } from "@/shared/arena3/labels";
+import { locale, t, tData, tServer } from "@/client/lib/i18n";
+import { HighlightBadge } from "@/client/lib/use-live";
+import { useMemberClasses, type Cl } from "@/client/lib/pages/app.classes";
+
 
 export const Route = createFileRoute("/app/classes")({
   validateSearch: (s: Record<string, unknown>): { sport?: string } => ({
@@ -23,185 +23,13 @@ export const Route = createFileRoute("/app/classes")({
   component: Page,
 });
 
-type Cl = {
-  id: string;
-  sport: string;
-  level: string;
-  capacity: number;
-  enrolled_count: number;
-  court_code: string;
-  coach_name: string;
-  rrule: string;
-  duration_min: number;
-  status: string;
-  price_vnd: number | null;
-  min_enrolled?: number | null;
-  start_on?: string;
-  end_on?: string;
-  description?: string | null;
-  syllabus?: string | null;
-  who_for?: string | null;
-  bring?: string | null;
-  my_enrollment: {
-    id: string;
-    status: string;
-    hold_until: string | null;
-    price_vnd: number | null;
-    transfer_requested_at: string | null;
-  } | null;
-};
-
-type EnrolQuote = {
-  tuition_vnd: number;
-  promo: { code: string; discount_vnd: number } | null;
-  total_vnd: number;
-  eligible: boolean;
-  current_end: string | null;
-  class_end: string;
-  suggested_plan: { name: string; price_vnd: number } | null;
-};
-
-type Enr = {
-  id: string;
-  class_id: string;
-  status: string;
-  waitlist_pos: number | null;
-  /** The class's next scheduled session, and the last moment leaving is allowed (BR-24). */
-  next_session_at?: string | null;
-  leave_until?: string | null;
-};
-type Offer = { id: string; class_id: string; expires_at: string; sport: string; level: string };
-
 function Page() {
-  const classesRead = useRead<{ items: Cl[] }>("/classes");
-  const meRead = useRead<{ enrollments?: Enr[]; offers?: Offer[] }>("/me");
-  // The list is only shown once the member's own enrolments are known too: without them every class would read "Enrol".
-  const items = classesRead.data && meRead.data ? classesRead.data.items : null;
-  const mine = meRead.data?.enrollments ?? [];
-  const offers = meRead.data?.offers ?? [];
-  const failure = classesRead.error ?? meRead.error;
-  const [sport, setSport] = useState(Route.useSearch().sport ?? "");
-  const load = () => {
-    classesRead.reload();
-    meRead.reload();
-  };
-  useLive("classes", load);
-
-  const sports = useSports();
-  const [limit, setLimit] = useState(6);
-  const [detail, setDetail] = useState<Cl | null>(null);
-  // The member's own classes come first (C-4): they are what someone opens this page to manage.
-  const enrolledIds = new Set(mine.map((e) => e.class_id));
-  // Narrowing by coach, weekday and part of the day saves scrolling through every class.
-  const [coach, setCoach] = useState("");
-  const [day, setDay] = useState("");
-  const [part, setPart] = useState("");
-  const coachNames = [...new Set((items ?? []).filter((c) => !sport || c.sport === sport).map((c) => c.coach_name))].sort((a, b) =>
-    a.localeCompare(b, "vi"),
-  );
-  const matching = (items ?? [])
-    .filter((c) => !sport || c.sport === sport)
-    .filter((c) => !coach || c.coach_name === coach)
-    .filter((c) => classSlotMatches(c.rrule, day, part))
-    .sort((a, b) => Number(enrolledIds.has(b.id)) - Number(enrolledIds.has(a.id)));
-  const shown = matching.slice(0, limit);
-  useEffect(() => setLimit(6), [sport, coach, day, part]);
-  const byClass = Object.fromEntries(mine.map((e) => [e.class_id, e]));
-  // Leaving a class (or the waitlist) is asked twice: one tap used to give the seat away.
-  const [leaving, setLeaving] = useState<{ enr: Enr; cls: Cl } | null>(null);
-  // The class being enrolled in, with what it will cost said before anything is held.
-  const [enrolling, setEnrolling] = useState<{ cls: Cl; quote: EnrolQuote } | null>(null);
-  const [enrolCode, setEnrolCode] = useState("");
-  const [enrolBusy, setEnrolBusy] = useState(false);
-
-  async function openQuote(cls: Cl, code = "") {
-    setEnrolBusy(true);
-    try {
-      const qs = code.trim() ? `?promo_code=${encodeURIComponent(code.trim())}` : "";
-      const quote = await apiGet<EnrolQuote>(`/classes/${cls.id}/quote${qs}`);
-      setEnrolling({ cls, quote });
-    } catch (e) {
-      toast.error(enrolError(e));
-    } finally {
-      setEnrolBusy(false);
-    }
-  }
-
-  /** The gate's refusal is shown from here, so it reads in the member's language. */
-  function enrolError(e: unknown): string {
-    const body = (e as { body?: { br?: string; class_end?: string } } | null)?.body;
-    if (body?.br === "BR-19" && body.class_end) {
-      return t("Your membership must end after this class ends ({date}). Buy or extend a plan first.", { date: body.class_end });
-    }
-    return e instanceof Error ? tServer(e.message) : t("Could not enrol");
-  }
-
-  async function enrol(cls: Cl, code = "") {
-    setEnrolBusy(true);
-    try {
-      const r = await apiPost<{ waitlisted?: boolean; enrollment?: { status?: string } }>(
-        `/classes/${cls.id}/enroll`,
-        code.trim() ? { promo_code: code.trim() } : {},
-      );
-      toast.success(
-        r.waitlisted
-          ? t("Added to the waitlist")
-          : r.enrollment?.status === "hold"
-            ? t("Seat held. Pay before the timer runs out.")
-            : t("You are enrolled"),
-      );
-      setEnrolling(null);
-      setEnrolCode("");
-      load();
-    } catch (e) {
-      toast.error(enrolError(e));
-    } finally {
-      setEnrolBusy(false);
-    }
-  }
-  const [leaveBusy, setLeaveBusy] = useState(false);
-  // One seat action at a time: asking for a transfer or releasing a hold both settle on the server.
-  const [seatBusy, setSeatBusy] = useState<string | null>(null);
-  async function askTransfer(enrId: string) {
-    if (seatBusy) return;
-    setSeatBusy(enrId);
-    try {
-      await apiPost(`/enrollments/${enrId}/transfer`);
-      toast.success(t("The desk has been told. Your seat stays held."));
-    } catch (e) {
-      toast.error(e instanceof Error ? tServer(e.message) : t("Could not ask the desk"));
-    } finally {
-      setSeatBusy(null);
-      load();
-    }
-  }
-  async function releaseSeat(enrId: string) {
-    if (seatBusy) return;
-    setSeatBusy(enrId);
-    try {
-      await apiDelete(`/enrollments/${enrId}`);
-      toast.success(t("Seat released"));
-    } catch (e) {
-      toast.error(e instanceof Error ? tServer(e.message) : t("Could not release the seat"));
-    } finally {
-      setSeatBusy(null);
-      load();
-    }
-  }
-  async function leave() {
-    if (!leaving || leaveBusy) return;
-    setLeaveBusy(true);
-    try {
-      await apiDelete(`/enrollments/${leaving.enr.id}`);
-      toast.success(leaving.enr.status === "waitlisted" ? t("Left the waitlist") : t("Enrolment cancelled"));
-      setLeaving(null);
-      load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("Could not cancel"));
-    } finally {
-      setLeaveBusy(false);
-    }
-  }
+  const {
+    items, mine, offers, failure, sport, setSport, load, sports, setLimit, detail, setDetail,
+    coach, setCoach, day, setDay, part, setPart, coachNames, matching, shown, byClass, leaving,
+    setLeaving, enrolling, setEnrolling, enrolCode, setEnrolCode, enrolBusy, openQuote, enrol,
+    leaveBusy, seatBusy, askTransfer, releaseSeat, leave,
+  } = useMemberClasses(Route.useSearch);
 
   return (
     <Shell role="member">
@@ -320,7 +148,7 @@ function Page() {
           {shown.map((c) => {
             const full = c.enrolled_count >= c.capacity;
             const pct = Math.min(100, Math.round((c.enrolled_count / Math.max(1, c.capacity)) * 100));
-            // The class runs once it reaches its minimum; until then the bar marks how far that is.
+            // The minimum only flags the class (it still runs); the bar marks how far it is from that number.
             const short = c.min_enrolled ? Math.max(0, c.min_enrolled - c.enrolled_count) : 0;
             const minPct = c.min_enrolled ? Math.min(100, (c.min_enrolled / Math.max(1, c.capacity)) * 100) : null;
             const enr = byClass[c.id];
@@ -377,7 +205,14 @@ function Page() {
                     {t("Class details")}
                   </button>
                   <div className="mt-4 flex items-baseline justify-between gap-2 text-2xs">
-                    <span className="text-muted">{full ? t("Full") : (c.capacity - c.enrolled_count === 1 ? t("1 seat left") : t("{n} seats left", { n: c.capacity - c.enrolled_count }))}</span>
+                    {/* The lime tag on the photo already counts the last few seats; say it once. */}
+                    <span className="text-muted">
+                      {full
+                        ? t("Full")
+                        : c.capacity - c.enrolled_count <= 3
+                          ? t("Seats filled")
+                          : t("{n} seats left", { n: c.capacity - c.enrolled_count })}
+                    </span>
                     <span className="tabular-nums text-subtle">{pct}%</span>
                   </div>
                   <div className="relative mt-1.5 h-1.5 overflow-hidden rounded-full bg-wood">
@@ -393,7 +228,7 @@ function Page() {
                   </div>
                   {short > 0 ? (
                     <p className="mt-1.5 text-2xs text-clay">
-                      {t("{n} more needed for this class to run", { n: short })}
+                      {t("{n} more to reach the class minimum", { n: short })}
                     </p>
                   ) : null}
                   {/* `mt-auto` pins the action to the bottom of the card. The
@@ -401,12 +236,14 @@ function Page() {
                       each button sat directly under its own text — so a row of
                       four classes showed four buttons at four heights. */}
                   <div className="mt-auto pt-5">
-                  {(holding?.price_vnd ?? c.price_vnd) != null && (
+                  {/* The enrol button carries the price; the line above it is for seats already taken or held. */}
+                  {(holding?.price_vnd ?? c.price_vnd) != null && (holding || enr) && (
                     <p className="mb-2 font-display text-xl tabular-nums">{money((holding?.price_vnd ?? c.price_vnd)!)}</p>
                   )}
                   {holding ? (
                     <div className="grid gap-2">
                       <HoldCountdown until={holding.hold_until!} onExpire={load} label={t("Holding your seat")} />
+                      <p className="text-sm text-muted">{t("Tuition is not refunded if you leave.")}</p>
                       {holding.transfer_requested_at ? (
                         <p className="text-sm text-muted">{t("Waiting for the desk to confirm your transfer")}</p>
                       ) : (
@@ -611,6 +448,7 @@ function Page() {
               </Button>
             </div>
             <p className="text-xs text-muted">{t("A code lowers the tuition only.")}</p>
+            <p className="text-muted">{t("Tuition is not refunded if you leave.")}</p>
           </div>
         ) : null}
       </Modal>

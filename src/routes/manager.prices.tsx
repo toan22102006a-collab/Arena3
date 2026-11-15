@@ -1,18 +1,18 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Shell, money } from "@/components/shell";
-import { PageHero } from "@/components/page-hero";
-import { StatStrip } from "@/components/stat-strip";
-import { SportBadge, useSports } from "@/components/sports-ui";
-import { Badge, Button, Card, EmptyState, LoadError, MoneyInput, Skeleton } from "@/components/ui";
-import { Stagger, StaggerItem } from "@/components/motion";
-import { StarBorder } from "@/components/fx";
-import { ApiClientError, apiPut } from "@/lib/arena3/client";
-import { DAY_KIND_LABEL, sportLabel, monthsLabel } from "@/lib/arena3/labels";
-import { t, tk, tServer, tData } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
-import { SectionTitle } from "@/components/section";
+import { Shell, money } from "@/client/components/shell";
+import { PageHero } from "@/client/components/page-hero";
+import { StatStrip } from "@/client/components/stat-strip";
+import { SportBadge, useSports } from "@/client/components/sports-ui";
+import { Badge, Button, Card, EmptyState, LoadError, MoneyInput, Skeleton } from "@/client/components/ui";
+import { Stagger, StaggerItem } from "@/client/components/motion";
+import { StarBorder } from "@/client/components/fx";
+import { ApiClientError, apiPut } from "@/client/arena3/client";
+import { DAY_KIND_LABEL, sportLabel, monthsLabel } from "@/shared/arena3/labels";
+import { t, tk, tServer, tData } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
+import { SectionTitle } from "@/client/components/section";
 import { Banknote, ChevronDown, Percent, Ticket } from "lucide-react";
 
 export const Route = createFileRoute("/manager/prices")({

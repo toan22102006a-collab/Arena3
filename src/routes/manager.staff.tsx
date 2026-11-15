@@ -2,21 +2,21 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Copy, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { Shell, initials, when } from "@/components/shell";
-import { UserAvatar } from "@/components/user-avatar";
-import { Cover } from "@/components/media";
-import { PageHero } from "@/components/page-hero";
-import { StatStrip } from "@/components/stat-strip";
-import { CertificationsModal } from "@/components/coach-certifications";
-import { RowActions } from "@/components/row-actions";
-import { SportBadge, useSports } from "@/components/sports-ui";
-import { Badge, Button, Card, EmptyState, Field, Input, LoadError, Modal, Select, Skeleton, Pagination } from "@/components/ui";
-import { ApiClientError, apiPost, apiPatch } from "@/lib/arena3/client";
-import { roleLabel, sportLabel } from "@/lib/arena3/labels";
-import { cn } from "@/lib/cn";
-import { t, tServer, tData } from "@/lib/i18n";
-import { usePageState } from "@/lib/use-page-state";
-import { useRead } from "@/lib/use-read";
+import { Shell, initials, when, useSessionUser } from "@/client/components/shell";
+import { UserAvatar } from "@/client/components/user-avatar";
+import { Cover } from "@/client/components/media";
+import { PageHero } from "@/client/components/page-hero";
+import { StatStrip } from "@/client/components/stat-strip";
+import { CertificationsModal } from "@/client/components/coach-certifications";
+import { RowActions } from "@/client/components/row-actions";
+import { SportBadge, useSports } from "@/client/components/sports-ui";
+import { Badge, Button, Card, EmptyState, Field, Input, LoadError, Modal, Select, Skeleton, Pagination } from "@/client/components/ui";
+import { ApiClientError, apiPost, apiPatch } from "@/client/arena3/client";
+import { roleLabel, sportLabel } from "@/shared/arena3/labels";
+import { cn } from "@/client/lib/cn";
+import { t, tServer, tData } from "@/client/lib/i18n";
+import { usePageState } from "@/client/lib/use-page-state";
+import { useRead } from "@/client/lib/use-read";
 
 export const Route = createFileRoute("/manager/staff")({ component: Page });
 
@@ -39,6 +39,7 @@ type Staff = {
 type Issued = { name: string; phone: string; password: string; why: string };
 
 function Page() {
+  const user = useSessionUser();
   const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const initialCreating = searchParams?.get("create") === "1" || searchParams?.get("create") === "true";
   const initialRole = searchParams?.get("role") || "receptionist";
@@ -130,7 +131,7 @@ function Page() {
       <PageHero
         slot="banner.manager"
         title={t("Staff")}
-        subtitle={t("Receptionist and coach logins are issued here and nowhere else. Members sign themselves up.")}
+        subtitle={t("Manager, receptionist and coach logins are issued here. Members sign themselves up.")}
       />
       <StatStrip className="mb-6" items={statItems} />
       <div className="mb-4 flex flex-wrap gap-2">
@@ -176,14 +177,14 @@ function Page() {
       ) : !items.length ? (
         <EmptyState
           title={filtered ? t("Nobody matches those filters") : t("No staff accounts yet")}
-          hint={filtered ? t("Clear a filter to see everyone.") : t("Add the first receptionist or coach to give them a login.")}
+          hint={filtered ? t("Clear a filter to see everyone.") : t("Add a manager, receptionist or coach to give them a login.")}
         >
           {!filtered ? <Button onClick={() => setCreating(true)}>{t("Add staff")}</Button> : null}
         </EmptyState>
       ) : (
         <div className="grid gap-3 xl:grid-cols-2">
           {items.map((s) => {
-            const managed = s.role === "receptionist" || s.role === "coach";
+            const managed = !!user && s.id !== user.id && ["receptionist", "coach", "manager"].includes(s.role);
             return (
               <Card key={s.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
                 <div className="flex items-center gap-3.5 min-w-0">
@@ -459,6 +460,7 @@ function CreateModal({
           <Select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
             <option value="receptionist">{t("Receptionist")}</option>
             <option value="coach">{t("Coach")}</option>
+            <option value="manager">{t("Manager")}</option>
           </Select>
         </Field>
         <Field label={t("Full name")} hint={bad("full_name")}>
@@ -582,6 +584,7 @@ function RoleModal({ staff, onClose, onDone }: { staff: Staff | null; onClose: (
           <Select value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="receptionist">{t("Receptionist")}</option>
             <option value="coach">{t("Coach")}</option>
+            <option value="manager">{t("Manager")}</option>
           </Select>
         </Field>
         {role === "coach" ? (

@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
-import { useRead } from "@/lib/use-read";
-import { t } from "@/lib/i18n";
-import { PageHero } from "@/components/page-hero";
+import { useRead } from "@/client/lib/use-read";
+import { t } from "@/client/lib/i18n";
+import { PageHero } from "@/client/components/page-hero";
 import { ArrowLeft, ExternalLink, Search } from "lucide-react";
 
 export const Route = createFileRoute("/credits")({

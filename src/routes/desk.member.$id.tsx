@@ -1,11 +1,12 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, Calendar, CheckCircle2, Mail, Phone } from "lucide-react";
-import { SectionTitle } from "@/components/section";
-import { PayOnlineButton } from "@/components/pay-online";
+import { AlertTriangle, ArrowLeft, Calendar, CheckCircle2, Mail, Phone } from "lucide-react";
+import { SectionTitle } from "@/client/components/section";
+import { PayOnlineButton } from "@/client/components/pay-online";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { Shell, money, useSessionUser, when } from "@/components/shell";
-import { UserAvatar } from "@/components/user-avatar";
+import { Shell, money, useSessionUser, when } from "@/client/components/shell";
+import { UserAvatar } from "@/client/components/user-avatar";
+import { MessageButton } from "@/client/components/message-button";
 import {
   Badge,
   Button,
@@ -22,17 +23,17 @@ import {
   Skeleton,
   StatusBadge,
   Textarea,
-} from "@/components/ui";
-import { TransferQrModal } from "@/components/transfer-qr-modal";
-import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
-import { SpotlightCard } from "@/components/fx";
-import { CancelBookingDialog } from "@/components/cancel-booking";
-import { ApiClientError, apiDelete, apiPatch, apiPost, openInvoice } from "@/lib/arena3/client";
-import type { PaymentCreateResponse } from "@/lib/arena3/contracts";
-import { METHOD_LABEL, formatDate, levelLabel, refTypeLabel, rruleLabel, sportLabel, statusLabel } from "@/lib/arena3/labels";
-import { ageYears } from "@/lib/arena3/time";
-import { t, tServer, tData } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
+} from "@/client/components/ui";
+import { TransferQrModal } from "@/client/components/transfer-qr-modal";
+import { Lift, Reveal, Stagger, StaggerItem } from "@/client/components/motion";
+import { SpotlightCard } from "@/client/components/fx";
+import { CancelBookingDialog } from "@/client/components/cancel-booking";
+import { ApiClientError, apiDelete, apiPatch, apiPost, openInvoice } from "@/client/arena3/client";
+import type { PaymentCreateResponse } from "@/shared/arena3/contracts";
+import { METHOD_LABEL, formatDate, levelLabel, refTypeLabel, rruleLabel, sportLabel, statusLabel } from "@/shared/arena3/labels";
+import { ageYears } from "@/shared/arena3/time";
+import { t, tServer, tData } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
 
 export const Route = createFileRoute("/desk/member/$id")({
   component: Page,
@@ -228,25 +229,18 @@ function Page() {
   }
 
   async function submitRefund() {
-    if (!refunding) return;
+    if (!refunding || !refundReason.trim()) return;
     const amount = parseVnd(refundAmount);
     if (amount <= 0 || amount > refunding.refundable_vnd) return;
     setRefundBusy(true);
     setRefundErr("");
     try {
-      const res = await apiPost<{ payment: { status: string } }>(
+      await apiPost<{ payment: { status: string } }>(
         `/payments/${refunding.id}/refund`,
         { amount_vnd: amount, reason: refundReason.trim() },
         true,
       );
-      // Above a receptionist's limit the server parks it instead of paying it.
-      // Saying "Refunded" either way would have the desk hand over cash for a
-      // refund no manager has signed off yet.
-      toast.success(
-        res.payment?.status === "refund_pending"
-          ? t("Raised: a manager has to sign this off before the money moves")
-          : t("Refunded {amount}", { amount: money(amount) }),
-      );
+      toast.success(t("Refund pending. Pay it in cash from the payments queue after any required manager approval."));
       setRefunding(null);
       reload();
     } catch (e) {
@@ -295,6 +289,11 @@ function Page() {
 
   return (
     <Shell role={role}>
+      {/* History back, not a fixed link: the desk search or the manager's list keeps its filters and scroll. */}
+      <Button size="sm" variant="ghost" className="mb-3 -ml-2" onClick={() => window.history.back()}>
+        <ArrowLeft aria-hidden className="size-4" />
+        {t("Back")}
+      </Button>
       {/* Header block (Task M: Section 5.3) */}
       <div className="mb-6 rounded-[var(--radius-xl)] border border-line bg-surface p-4 sm:p-6 shadow-[var(--shadow-border)]">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -389,6 +388,7 @@ function Page() {
 
           {/* Action buttons */}
           <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+            <MessageButton userId={data.user.id} />
             <Button size="sm" variant="outline" onClick={openEdit}>
               {t("Edit profile")}
             </Button>
@@ -408,10 +408,10 @@ function Page() {
         {/* Health notes callout */}
         <div className="mt-4 pt-3 border-t border-line/60">
           {data.user.health_notes ? (
-            <div className="rounded-[var(--radius-md)] border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200 flex items-start gap-2.5">
-              <AlertTriangle className="size-4 shrink-0 text-amber-400 mt-0.5" />
+            <div className="rounded-[var(--radius-md)] border border-hold/40 bg-hold/10 p-3 text-sm flex items-start gap-2.5">
+              <AlertTriangle className="size-4 shrink-0 text-hold mt-0.5" />
               <div>
-                <span className="font-semibold text-amber-300 mr-2">{t("Health notes:")}</span>
+                <span className="font-semibold text-hold mr-2">{t("Health notes:")}</span>
                 <span className="text-fg">{data.user.health_notes}</span>
               </div>
             </div>
@@ -739,7 +739,7 @@ function Page() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium tabular-nums">{money(Math.abs(p.amount_vnd))}</span>
                     {isRefund ? <Badge tone="danger">{t("Refund")}</Badge> : null}
-                    {p.status === "refund_pending" ? <Badge tone="hold">{t("Awaiting a manager")}</Badge> : null}
+                    {p.status === "refund_pending" ? <Badge tone="hold">{t("Awaiting cash payout")}</Badge> : null}
                     {p.status === "refund_rejected" ? <Badge tone="muted">{t("Rejected")}</Badge> : null}
                   </div>
                   <p className="mt-1 break-words text-xs tabular-nums text-subtle">
@@ -831,7 +831,7 @@ function Page() {
               {t("Cancel")}
             </Button>
             <Button
-              disabled={refundBusy || !!refundInvalid}
+              disabled={refundBusy || !!refundInvalid || !refundReason.trim()}
               onClick={() => void submitRefund()}
             >
               {refundBusy ? t("Working…") : t("Refund {amount}", { amount: money(refundTyped) })}
@@ -865,12 +865,12 @@ function Page() {
                 rows={3}
                 value={refundReason}
                 onChange={(e) => setRefundReason(e.target.value)}
-                placeholder={t("Court closed for maintenance, member cancelled in time, …")}
+                placeholder={t("Court closed for maintenance, …")}
               />
             </Field>
             {me?.role !== "manager" ? (
               <p className="text-xs text-muted">
-                {t("Above your limit this is parked for a manager instead of paid out. You will be told which happened.")}
+                {t("Refund pending. Pay it in cash from the payments queue after any required manager approval.")}
               </p>
             ) : null}
             {refundErr ? (

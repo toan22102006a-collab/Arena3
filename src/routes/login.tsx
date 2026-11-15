@@ -2,16 +2,31 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { GoogleSignIn } from "@/components/google-sign-in";
-import { ArenaMark } from "@/components/mark";
-import { Cover, HeroVideo, MediaCaption } from "@/components/media";
-import { Button, Card, Field, Input } from "@/components/ui";
-import { Reveal, Stagger, StaggerItem } from "@/components/motion";
-import { GLBackground, Magnet, ShinyText, SplitText, SpotlightCard } from "@/components/fx";
-import { ApiClientError, apiPost, homeFor, setSession, takeSessionNotice, type SessionUser } from "@/lib/arena3/client";
-import { roleLabel } from "@/lib/arena3/labels";
-import { LangSwitch } from "@/components/lang-switch";
-import { t, tServer, tk } from "@/lib/i18n";
+import { GoogleSignIn } from "@/client/components/google-sign-in";
+import { ArenaMark } from "@/client/components/mark";
+import { Cover, HeroVideo, MediaCaption } from "@/client/components/media";
+import { Button, Card, Field, Input } from "@/client/components/ui";
+import { Reveal, Stagger, StaggerItem } from "@/client/components/motion";
+import { GLBackground, Magnet, ShinyText, SplitText, SpotlightCard } from "@/client/components/fx";
+import { ApiClientError, apiPost, homeFor, setSession, takeSessionNotice, type SessionUser } from "@/client/arena3/client";
+import { roleLabel } from "@/shared/arena3/labels";
+import { LangSwitch } from "@/client/components/lang-switch";
+import { t, tServer, tk } from "@/client/lib/i18n";
+
+/** Where the member was heading before sign-in (e.g. the desk QR link), else their home. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function navigateAfterLogin(navigate: any, role: SessionUser["role"]) {
+  let next: string | null = null;
+  try {
+    next = sessionStorage.getItem("arena3:after-login");
+    sessionStorage.removeItem("arena3:after-login");
+  } catch {
+    /* storage blocked: go home */
+  }
+  const home = homeFor(role);
+  if (next && next.startsWith(home.split("/").slice(0, 2).join("/") + "/")) navigate({ href: next });
+  else navigate({ to: home });
+}
 
 export const Route = createFileRoute("/login")({ component: Login });
 
@@ -69,7 +84,7 @@ function Login() {
       });
       setSession(res.token, res.user);
       toast.success(t("Welcome, {name}", { name: res.user.full_name }), { id: "login-hello" });
-      navigate({ to: homeFor(res.user.role) });
+      navigateAfterLogin(navigate, res.user.role);
     } catch (err) {
       const msg = err instanceof Error ? tServer(err.message) : t("Could not sign you in");
       toast.error(msg, { id: "login-error-toast" });
@@ -107,7 +122,7 @@ function Login() {
             </ShinyText>
             <SplitText
               as="p"
-              text={t("One schedule for courts, classes and cash.")}
+              text={t("One schedule for your classes, your coach and your courts.")}
               splitBy="words"
               stagger={0.055}
               delay={0.25}
@@ -182,7 +197,7 @@ function Login() {
                 {error.message}
               </p>
             ) : null}
-            <Magnet radius={140} pull={0.22} wrapperClassName="w-full" className="w-full">
+            <Magnet radius={80} pull={0.05} wrapperClassName="w-full" className="w-full">
               <Button type="submit" disabled={busy} className="w-full">
                 {busy ? t("Signing in…") : t("Sign in")}
               </Button>
@@ -192,9 +207,8 @@ function Login() {
             onSignedIn={(res) => {
               setSession(res.token, res.user);
               toast.success(t("Welcome, {name}", { name: res.user.full_name }), { id: "login-hello" });
-              navigate({ to: homeFor(res.user.role) });
+              navigateAfterLogin(navigate, res.user.role);
             }}
-            onNeedsSignup={() => navigate({ to: "/register", search: { via: "google" } })}
             onError={(err) => {
               const msg = err instanceof Error ? tServer(err.message) : t("Could not sign you in");
               toast.error(msg, { id: "login-error-toast" });

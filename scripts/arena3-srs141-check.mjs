@@ -60,7 +60,7 @@ if (!shift.data?.shift) {
 }
 
 const plans = (await req("/plans")).data.items;
-const termPlan = plans.find((p) => p.session_quota == null && p.sport_scope !== "all" && p.price_vnd >= 100000) ?? plans[0];
+const termPlan = plans.find((p) => p.session_quota == null && p.price_vnd >= 100000) ?? plans[0];
 if (!termPlan) fail("no plan in the seed", plans);
 
 async function newMember(prefix, name) {

@@ -1,15 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SectionTitle } from "@/components/section";
+import { SectionTitle } from "@/client/components/section";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Shell, money } from "@/components/shell";
-import { Button, Card, EmptyState, Field, Input, LoadError, Select, Skeleton } from "@/components/ui";
-import { Lift, Reveal, Stagger, StaggerItem } from "@/components/motion";
-import { SpotlightCard } from "@/components/fx";
-import { ApiClientError, apiGet, apiPost } from "@/lib/arena3/client";
-import { sportLabel } from "@/lib/arena3/labels";
-import { t, tServer, tData } from "@/lib/i18n";
-import { readError, useRead } from "@/lib/use-read";
+import { Shell, money } from "@/client/components/shell";
+import { Button, Card, EmptyState, Field, Input, LoadError, Select, Skeleton } from "@/client/components/ui";
+import { Lift, Reveal, Stagger, StaggerItem } from "@/client/components/motion";
+import { SpotlightCard } from "@/client/components/fx";
+import { ApiClientError, apiGet, apiPost } from "@/client/arena3/client";
+import { sportLabel } from "@/shared/arena3/labels";
+import { t, tServer, tData } from "@/client/lib/i18n";
+import { readError, useRead } from "@/client/lib/use-read";
 
 export const Route = createFileRoute("/desk/gear")({ component: Page });
 

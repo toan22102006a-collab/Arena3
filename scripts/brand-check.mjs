@@ -5,7 +5,7 @@
  * those must ship a custom share card — the default og.grok.me placeholder is
  * not acceptable for them (see .grok/skills/og/SKILL.md).
  *
- * Games must also set type=x:game in src/lib/og/site.json so the platform
+ * Games must also set type=x:game in src/server/og/site.json so the platform
  * injector emits og:type for X game-card unfurls, and public/x-banner.jpg for
  * the 50:11 X feed card. A card file is enough for bake to emit /og.jpg, but
  * brand-check still requires site.json `"card": "custom"` so the agent-facing
@@ -137,7 +137,7 @@ function brandWarningsOnDisk({
 
   if (hasCanvas && !siteDeclaresOgTypeGame(site)) {
     warnings.push(
-      'BRAND WARNING: this looks like a game/canvas app but src/lib/og/site.json is missing '
+      'BRAND WARNING: this looks like a game/canvas app but src/server/og/site.json is missing '
         + '"type": "x:game". X uses og:type=x:game to present the unfurl as a game card — set '
         + `it in ${sitePath} per ${skillPath}. Do not invent `
         + "x:type or overload twitter:card as the game signal.",

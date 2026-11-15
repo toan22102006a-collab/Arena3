@@ -1,11 +1,11 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, ArrowLeft, Target } from "lucide-react";
-import { SectionTitle } from "@/components/section";
+import { SectionTitle } from "@/client/components/section";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { StepTabs } from "@/components/coach-ui";
-import { Shell } from "@/components/shell";
-import { useSports } from "@/components/sports-ui";
+import { StepTabs } from "@/client/components/coach-ui";
+import { Shell } from "@/client/components/shell";
+import { useSports } from "@/client/components/sports-ui";
 import {
   Badge,
   Button,
@@ -16,12 +16,12 @@ import {
   Select,
   Skeleton,
   Textarea,
-} from "@/components/ui";
-import { apiPost, apiPut } from "@/lib/arena3/client";
-import { formatDate, levelLabel, sportLabel } from "@/lib/arena3/labels";
-import { cn } from "@/lib/cn";
-import { t, tServer, tk, tData } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
+} from "@/client/components/ui";
+import { apiPost, apiPut } from "@/client/arena3/client";
+import { formatDate, levelLabel, sportLabel } from "@/shared/arena3/labels";
+import { cn } from "@/client/lib/cn";
+import { t, tServer, tk, tData } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
 
 export const Route = createFileRoute("/coach/student/$id")({ component: Page });
 

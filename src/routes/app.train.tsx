@@ -1,19 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SectionTitle } from "@/components/section";
-import { sessionDay } from "@/components/class-detail";
+import { SectionTitle } from "@/client/components/section";
+import { sessionDay } from "@/client/components/class-detail";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Shell, hhmm } from "@/components/shell";
-import { Badge, Card, Check, EmptyState, LoadError, PageHero, Select, Skeleton } from "@/components/ui";
-import { Lift, Stagger, StaggerItem, motion } from "@/components/motion";
-import { SpotlightCard } from "@/components/fx";
-import { ActivityRings, NextMilestoneCard, SessionCountdown, WorkoutStreak } from "@/components/training-progress";
-import { apiPut } from "@/lib/arena3/client";
-import { addDaysISO, formatDate, levelLabel, sportLabel, todayISO } from "@/lib/arena3/labels";
-import { t, tk } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
-import { AddToCalendar } from "@/components/class-extras";
-import { CertificatesSection } from "@/components/member-certificates";
+import { Shell, hhmm } from "@/client/components/shell";
+import { Badge, Card, Check, EmptyState, LoadError, PageHero, Select, Skeleton } from "@/client/components/ui";
+import { Lift, Stagger, StaggerItem, motion } from "@/client/components/motion";
+import { SpotlightCard } from "@/client/components/fx";
+import { ActivityRings, NextMilestoneCard, SessionCountdown, WorkoutStreak } from "@/client/components/training-progress";
+import { apiPut } from "@/client/arena3/client";
+import { addDaysISO, formatDate, levelLabel, sportLabel, todayISO } from "@/shared/arena3/labels";
+import { t, tk } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
+import { AddToCalendar } from "@/client/components/class-extras";
+import { CertificatesSection } from "@/client/components/member-certificates";
 
 export const Route = createFileRoute("/app/train")({ component: Page });
 
@@ -37,6 +37,7 @@ type Plan = {
 };
 
 type Progress = {
+  completed_sessions: number;
   goal: string | null;
   levels: Array<{ sport: string; level: string }>;
   next_sessions: Array<{
@@ -125,7 +126,7 @@ function Page() {
         stats={[
           {
             label: t("Completed sessions"),
-            value: d?.results?.length ?? 0,
+            value: d?.completed_sessions ?? 0,
           },
           {
             label: t("Upcoming sessions"),
@@ -174,7 +175,7 @@ function Page() {
 
           {/* Activity Ring, Streak, Milestone */}
           {(() => {
-            const realDone = d.results.length;
+            const realDone = d.completed_sessions;
             const sessionDates = new Set(
               d.results.map((r) => {
                 const dt = new Date(r.start_at);

@@ -2,10 +2,10 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Dumbbell, Repeat, UserMinus, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { SectionTitle } from "@/components/section";
-import { Shell, money, when } from "@/components/shell";
-import { PageHero } from "@/components/page-hero";
-import { SportBadge } from "@/components/sports-ui";
+import { SectionTitle } from "@/client/components/section";
+import { Shell, money, when } from "@/client/components/shell";
+import { PageHero } from "@/client/components/page-hero";
+import { SportBadge } from "@/client/components/sports-ui";
 import {
   Badge,
   Button,
@@ -19,23 +19,24 @@ import {
   MoneyInput,
   Seg,
   Select,
+  ShowMore,
   Skeleton,
   StatusBadge,
   Pagination,
-} from "@/components/ui";
-import { CountUp, Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
-import { GLBackground, SpotlightCard, StarBorder } from "@/components/fx";
-import { freeHours, useNowMinute, type Court, type OccSlot } from "@/components/court-grid";
-import { apiGet, apiPost, openInvoice } from "@/lib/arena3/client";
-import type { PaymentCreateResponse } from "@/lib/arena3/contracts";
-import { sportLabel, todayISO, monthsLabel } from "@/lib/arena3/labels";
-import { ageYears } from "@/lib/arena3/time";
-import { UserAvatar } from "@/components/user-avatar";
-import { t, tData, tServer } from "@/lib/i18n";
-import { lastPageOffset } from "@/lib/paging";
-import { usePageState } from "@/lib/use-page-state";
-import { readError, useRead } from "@/lib/use-read";
-import { useLimits } from "@/lib/use-centre";
+} from "@/client/components/ui";
+import { CountUp, Reveal, Stagger, StaggerItem, motion } from "@/client/components/motion";
+import { GLBackground, SpotlightCard, StarBorder } from "@/client/components/fx";
+import { freeHours, useNowMinute, type Court, type OccSlot } from "@/client/components/court-grid";
+import { apiGet, apiPost, openInvoice } from "@/client/arena3/client";
+import type { PaymentCreateResponse } from "@/shared/arena3/contracts";
+import { todayISO, monthsLabel } from "@/shared/arena3/labels";
+import { ageYears } from "@/shared/arena3/time";
+import { UserAvatar } from "@/client/components/user-avatar";
+import { t, tData, tServer } from "@/client/lib/i18n";
+import { lastPageOffset } from "@/client/lib/paging";
+import { usePageState } from "@/client/lib/use-page-state";
+import { readError, useRead } from "@/client/lib/use-read";
+import { useLimits } from "@/client/lib/use-centre";
 
 export const Route = createFileRoute("/desk/")({
   component: Page,
@@ -196,11 +197,6 @@ function Page() {
         slot="banner.gate"
         title={t("Front desk")}
         subtitle={t("Find a member, sell a plan, take payment.")}
-        stats={[
-          { label: t("Current shift"), value: shift?.shift ? t("Shift open") : t("No open shift") },
-          { label: t("Cash in till"), value: shift?.totals?.cash ? money(shift.totals.cash) : "0 đ" },
-          { label: t("Waiting payments"), value: waiting },
-        ]}
       />
       {/* Kept well under the text: this console is stared at all shift, so the
           field is a texture, not a feature. */}
@@ -271,7 +267,7 @@ function Page() {
             </span>
           ) : null}
         </ButtonLink>
-        <ButtonLink to="/desk/courts" variant="espresso">
+        <ButtonLink to="/desk/courts" variant="outline">
           {t("Court map")}
         </ButtonLink>
       </Reveal>
@@ -765,7 +761,6 @@ function Page() {
  * without opening the map.
  */
 function DeskNow() {
-  const { desk_upcoming } = useLimits();
   const today = todayISO();
   const { data, error } = useRead<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${today}`);
   const now = useNowMinute();
@@ -776,12 +771,8 @@ function DeskNow() {
   );
   const live = (s: OccSlot) => s.kind === "booking" || s.kind === "session";
   const playing = data.slots.filter((s) => live(s) && Date.parse(s.start) <= now && Date.parse(s.end) > now);
-  const soon = data.slots
-    .filter((s) => live(s) && Date.parse(s.start) > now && Date.parse(s.start) <= now + 3_600_000)
-    .sort((a, b) => a.start.localeCompare(b.start));
+  const soon = data.slots.filter((s) => live(s) && Date.parse(s.start) > now && Date.parse(s.start) <= now + 3_600_000);
   const freeNow = freeHours(data.courts, data.slots, today, now).filter((f) => f.hour === hour).length;
-  const hhmm = (iso: string) =>
-    new Date(iso).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
   return (
     <SpotlightCard className="rounded-[var(--radius-xl)]" size={260} strength={0.1}>
     <Card className="relative z-[2] p-4">
@@ -806,35 +797,20 @@ function DeskNow() {
           </div>
         ))}
       </dl>
-      {soon.length ? (
-        <ul className="mt-3 grid gap-1 text-sm">
-          {soon.slice(0, desk_upcoming).map((s) => {
-            const court = data.courts.find((c) => c.id === s.court_id);
-            const cCode = court?.court_code ?? "";
-            const sport = court ? sportLabel(court.sport) : "";
-            return (
-              <li key={`${s.court_id}-${s.start}`} className="flex justify-between gap-2">
-                <span className="font-medium">
-                  {cCode ? `${t("Court")} ${cCode}` : t("Court")}
-                </span>
-                <span className="tabular-nums text-muted">
-                  {hhmm(s.start)} · {s.kind === "session" ? t("Class") : sport || t("Court")}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
     </Card>
     </SpotlightCard>
   );
 }
+
+const ARRIVING_STEP = 6;
 
 function DeskArrivingTimeline() {
   const today = todayISO();
   const { data, reload } = useRead<{ courts: Court[]; slots: OccSlot[] }>(`/occupancy?date=${today}`);
   const now = useNowMinute();
   const [checking, setChecking] = useState<string | null>(null);
+  // A busy evening is two dozen rows; the desk needs the next few, the rest on demand.
+  const [shown, setShown] = useState(ARRIVING_STEP);
 
   if (!data || !now) return null;
   const live = (s: OccSlot) => s.kind === "booking" || s.kind === "session";
@@ -859,7 +835,7 @@ function DeskArrivingTimeline() {
         </Card>
       ) : (
         <div className="mt-3 grid gap-2">
-          {arriving.map((s) => {
+          {arriving.slice(0, shown).map((s) => {
             const court = data.courts.find((c) => c.id === s.court_id);
             const key = `${s.court_id}-${s.start}`;
             return (
@@ -892,8 +868,8 @@ function DeskArrivingTimeline() {
                       }
                       toast.success(t("Checked in"));
                       reload();
-                    } catch {
-                      toast.success(t("Checked in"));
+                    } catch (e) {
+                      toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
                     } finally {
                       setChecking(null);
                     }
@@ -904,6 +880,7 @@ function DeskArrivingTimeline() {
               </Card>
             );
           })}
+          <ShowMore shown={shown} total={arriving.length} step={ARRIVING_STEP} onMore={() => setShown((n) => n + ARRIVING_STEP)} />
         </div>
       )}
     </div>

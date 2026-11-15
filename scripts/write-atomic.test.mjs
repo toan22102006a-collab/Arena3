@@ -80,9 +80,9 @@ test("handOver creates a missing target directory", () => {
   const staged = join(root, ".grok/site.json.tmp");
   writeFileSync(staged, '{"title":"Sky Strike"}');
 
-  handOver(staged, join(root, "src/lib/og/site.json"));
+  handOver(staged, join(root, "src/server/og/site.json"));
 
-  assert.equal(readFileSync(join(root, "src/lib/og/site.json"), "utf8"), '{"title":"Sky Strike"}');
+  assert.equal(readFileSync(join(root, "src/server/og/site.json"), "utf8"), '{"title":"Sky Strike"}');
 });
 
 test("an interrupted pass leaves the target on its old bytes, temp-free", () => {
@@ -101,7 +101,7 @@ test("an interrupted pass leaves the target on its old bytes, temp-free", () => 
 test("a failed hand-over creates no directory for the target it never wrote", () => {
   const root = makeWorkspace();
   const missing = join(root, ".grok/absent.tmp");
-  assert.throws(() => handOver(missing, join(root, "src/lib/og/site.json")), { code: "ENOENT" });
+  assert.throws(() => handOver(missing, join(root, "src/server/og/site.json")), { code: "ENOENT" });
   assert.equal(existsSync(join(root, "src")), false);
 });
 

@@ -1,17 +1,18 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { AlertCircle, ArrowLeft, Check, CheckCheck, Clock, MessageSquare, RefreshCw, Send } from "lucide-react";
+import { AlertCircle, ArrowLeft, PenSquare, Check, CheckCheck, Clock, MessageSquare, RefreshCw, Send } from "lucide-react";
 import { toast } from "sonner";
-import { Guard, Shell, roleLabel, useSessionUser } from "@/components/shell";
-import { Badge, Button, EmptyState, Input, LoadError, Skeleton } from "@/components/ui";
-import { UserAvatar } from "@/components/user-avatar";
-import { apiGet, apiPost, getToken } from "@/lib/arena3/client";
-import { locale, t, tServer } from "@/lib/i18n";
-import { HighlightBadge, useLive } from "@/lib/use-live";
-import { useRead } from "@/lib/use-read";
-import { P2PRoom } from "@/lib/multiplayer/p2p";
-import { cn } from "@/lib/cn";
-import { scrollBehavior } from "@/lib/calm";
+import { Guard, Shell, roleLabel, useSessionUser } from "@/client/components/shell";
+import { Badge, Button, EmptyState, Input, LoadError, Skeleton } from "@/client/components/ui";
+import { UserAvatar } from "@/client/components/user-avatar";
+import { NewChat } from "@/client/components/new-chat";
+import { apiGet, apiPost, getToken } from "@/client/arena3/client";
+import { locale, t, tServer } from "@/client/lib/i18n";
+import { HighlightBadge, useLive } from "@/client/lib/use-live";
+import { useRead } from "@/client/lib/use-read";
+import { P2PRoom } from "@/client/lib/multiplayer/p2p";
+import { cn } from "@/client/lib/cn";
+import { scrollBehavior } from "@/client/lib/calm";
 
 export const Route = createFileRoute("/chat")({
   validateSearch: (search: Record<string, unknown>): { conv?: string } => ({
@@ -91,6 +92,7 @@ function ChatPage() {
   const [isP2PDirect, setIsP2PDirect] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [composing, setComposing] = useState(false);
 
   const p2pRef = useRef<P2PRoom | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -341,15 +343,32 @@ function ChatPage() {
               activeConvId ? "hidden lg:flex" : "flex",
             )}
           >
+            {composing ? (
+              <NewChat
+                onClose={() => setComposing(false)}
+                onOpen={(id) => {
+                  setComposing(false);
+                  reloadConvs();
+                  navigate({ to: "/chat", search: { conv: id } });
+                }}
+              />
+            ) : (
+            <>
             {/* Conversations Header */}
             <div className="border-b border-line p-3.5">
               <div className="mb-2.5 flex items-center justify-between">
                 <h2 className="text-base font-semibold text-fg">{t("Conversations")}</h2>
+                <div className="flex items-center gap-2">
+                <Button size="sm" onClick={() => setComposing(true)}>
+                  <PenSquare className="size-4" />
+                  {t("New message")}
+                </Button>
                 <Badge tone="accent">
                   <HighlightBadge value={conversations.reduce((acc, c) => acc + (Number(c.unread_count) || 0), 0)}>
                     {t("{n} unread", { n: conversations.reduce((acc, c) => acc + (Number(c.unread_count) || 0), 0) })}
                   </HighlightBadge>
                 </Badge>
+                </div>
               </div>
               <Input
                 value={searchQuery}
@@ -372,7 +391,7 @@ function ChatPage() {
               ) : filteredConvs.length === 0 ? (
                 <EmptyState
                   title={t("No conversations")}
-                  hint={t("Your conversations with coaches and members will appear here.")}
+                  hint={t("Tap New message to chat with anyone at the centre.")}
                 />
               ) : (
                 <ul className="grid gap-1">
@@ -434,6 +453,8 @@ function ChatPage() {
                 </ul>
               )}
             </div>
+            </>
+            )}
           </div>
 
           {/* Right Column: Chat Box */}
@@ -619,7 +640,7 @@ function ChatPage() {
                   </div>
                   <h3 className="text-base font-semibold text-fg">{t("Select a conversation")}</h3>
                   <p className="text-xs text-muted">
-                    {t("Choose a chat from the left sidebar or click 'Message coach' in any class to start a conversation.")}
+                    {t("Choose a chat on the left, or tap New message to start one with anyone.")}
                   </p>
                 </div>
               </div>

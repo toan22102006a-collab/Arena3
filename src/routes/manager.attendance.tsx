@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { AtRiskPanel, AttendancePanel } from "@/components/attendance-panels";
-import { Shell } from "@/components/shell";
-import { Seg } from "@/components/ui";
-import { t } from "@/lib/i18n";
+import { AtRiskPanel, AttendancePanel } from "@/client/components/attendance-panels";
+import { Shell } from "@/client/components/shell";
+import { Seg } from "@/client/components/ui";
+import { t } from "@/client/lib/i18n";
 
 export const Route = createFileRoute("/manager/attendance")({ component: Page });
 

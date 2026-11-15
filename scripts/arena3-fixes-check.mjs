@@ -102,7 +102,7 @@ const member = await login("0901230101");
   const memberUser = created.data?.user;
   ok(created.status === 201 && memberUser?.id, "B-02 made a member to refund", created);
   const plans = (await req("/plans")).data.items;
-  const plan = plans.find((p) => p.is_on_sale !== false && p.price_vnd > 0 && p.sport_scope !== "all") ?? plans[0];
+  const plan = plans.find((p) => p.is_on_sale !== false && p.price_vnd > 0) ?? plans[0];
   const order = await req("/subscriptions", {
     method: "POST",
     token: desk.token,

@@ -1,17 +1,18 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Shell } from "@/components/shell";
-import { PageHero } from "@/components/page-hero";
-import { StatStrip } from "@/components/stat-strip";
-import { SportBadge, useSports } from "@/components/sports-ui";
-import { Badge, Button, Card, EmptyState, FilterChip, Input, LoadError, Pagination, Select, Skeleton, StatusBadge } from "@/components/ui";
-import { formatDate } from "@/lib/arena3/labels";
-import { cn } from "@/lib/cn";
-import { ageYears } from "@/lib/arena3/time";
-import { locale, t, tk, tData } from "@/lib/i18n";
-import { UserAvatar } from "@/components/user-avatar";
-import { useRead } from "@/lib/use-read";
-import { usePageState } from "@/lib/use-page-state";
+import { Shell } from "@/client/components/shell";
+import { PageHero } from "@/client/components/page-hero";
+import { StatStrip } from "@/client/components/stat-strip";
+import { useSports } from "@/client/components/sports-ui";
+import { Badge, Button, Card, EmptyState, FilterChip, Input, LoadError, Pagination, Select, Skeleton, StatusBadge } from "@/client/components/ui";
+import { formatDate } from "@/shared/arena3/labels";
+import { cn } from "@/client/lib/cn";
+import { ageYears } from "@/shared/arena3/time";
+import { locale, t, tk, tData } from "@/client/lib/i18n";
+import { UserAvatar } from "@/client/components/user-avatar";
+import { MessageButton } from "@/client/components/message-button";
+import { useRead } from "@/client/lib/use-read";
+import { usePageState } from "@/client/lib/use-page-state";
 
 export const Route = createFileRoute("/manager/members")({
   component: Page,
@@ -156,7 +157,7 @@ function Page() {
             {total === 1 ? t("1 member") : t("{n} members", { n: total.toLocaleString(locale()) })}
           </p>
           <Card className="overflow-hidden p-0">
-            <div className="hidden grid-cols-[minmax(0,1.6fr)_4rem_minmax(0,1.3fr)_minmax(0,1.4fr)_5rem] gap-4 border-b border-line bg-wood/50 px-4 py-2 text-xs font-medium text-muted md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.6fr)_4rem_minmax(0,1.3fr)_minmax(0,1.4fr)_7.5rem] gap-4 border-b border-line bg-wood/50 px-4 py-2 text-xs font-medium text-muted md:grid">
               <span>{t("Member")}</span>
               <span>{t("Age")}</span>
               <span>{t("Phone")}</span>
@@ -169,7 +170,7 @@ function Page() {
                   <Link
                     to="/desk/member/$id"
                     params={{ id: m.id }}
-                    className="grid gap-x-4 gap-y-0.5 px-4 py-2.5 transition-colors duration-150 hover:bg-wood/60 md:grid-cols-[minmax(0,1.6fr)_4rem_minmax(0,1.3fr)_minmax(0,1.4fr)_5rem] md:items-center"
+                    className="grid gap-x-4 gap-y-0.5 px-4 py-2.5 transition-colors duration-150 hover:bg-wood/60 md:grid-cols-[minmax(0,1.6fr)_4rem_minmax(0,1.3fr)_minmax(0,1.4fr)_7.5rem] md:items-center"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="size-8 shrink-0">
@@ -201,9 +202,12 @@ function Page() {
                         </span>
                       ) : null}
                     </div>
-                    <p className="text-sm tabular-nums text-muted md:text-right">
-                      {m.classes === 1 ? t("1 class") : t("{n} classes", { n: m.classes })}
-                    </p>
+                    <div className="flex items-center gap-2 md:justify-end">
+                      <p className="text-sm tabular-nums text-muted">
+                        {m.classes === 1 ? t("1 class") : t("{n} classes", { n: m.classes })}
+                      </p>
+                      {m.status === "active" ? <MessageButton userId={m.id} compact /> : null}
+                    </div>
                   </Link>
                 </li>
               ))}

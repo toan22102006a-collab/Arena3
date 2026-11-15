@@ -26,7 +26,7 @@ function appEnvFetch(env) {
   });
 }
 
-test("the flag predicate matches src/lib/auth", () => {
+test("the flag predicate matches src/server/auth", () => {
   assert.equal(authEnabledFromEnvValue("false"), false);
   assert.equal(authEnabledFromEnvValue("true"), true);
   assert.equal(authEnabledFromEnvValue(undefined), true);

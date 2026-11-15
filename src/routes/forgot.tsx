@@ -1,12 +1,14 @@
+import { Captcha, useCaptcha } from "@/client/components/captcha";
+import { OtpInput, OtpResend } from "@/client/components/otp-input";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-import { Button, Card, Field, Input } from "@/components/ui";
-import { AnimatePresence, motion } from "@/components/motion";
-import { ApiClientError, apiPost } from "@/lib/arena3/client";
-import { LangSwitch } from "@/components/lang-switch";
-import { t, tServer } from "@/lib/i18n";
+import { Button, Card, Field, Input } from "@/client/components/ui";
+import { AnimatePresence, motion } from "@/client/components/motion";
+import { ApiClientError, apiPost } from "@/client/arena3/client";
+import { LangSwitch } from "@/client/components/lang-switch";
+import { t, tServer } from "@/client/lib/i18n";
 
 /**
  * Recover an account with a code sent to the email on file.
@@ -43,6 +45,8 @@ const slot = (text: string, node: ReactNode) => {
 
 function Forgot() {
   const navigate = useNavigate();
+  const captcha = useCaptcha();
+  const [resendAt, setResendAt] = useState(0);
   const [step, setStep] = useState<"phone" | "reset">("phone");
   const [phone, setPhone] = useState("");
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -64,23 +68,26 @@ function Forgot() {
   const tooWeak =
     password.length > 0 && !(password.length >= 8 && /[A-Za-z]/.test(password) && /\d/.test(password));
 
-  async function requestCode(e: FormEvent) {
-    e.preventDefault();
+  async function requestCode(e?: FormEvent) {
+    e?.preventDefault();
     setError(null);
     setBusy(true);
     try {
       const res = await apiPost<{ sent_to?: string | null; otp?: string }>("/auth/password/forgot", {
-        phone,
+        phone, captcha_token: captcha.token, website: captcha.website,
       });
       setSentTo(res.sent_to ?? null);
       setDemoOtp(res.otp ?? null);
       setStep("reset");
+      setOtp("");
+      setResendAt(Date.now() + 60_000);
     } catch (err) {
       setError({
         message: err instanceof Error ? tServer(err.message) : t("Could not send a code"),
         field: err instanceof ApiClientError ? (err.body.field ?? null) : null,
       });
     } finally {
+      captcha.reset();
       setBusy(false);
     }
   }
@@ -112,6 +119,9 @@ function Forgot() {
       <Card className="relative w-full p-6">
         <LangSwitch className="absolute right-4 top-4" />
         <h1 className="pr-28 font-display text-3xl">{t("Forgot your password")}</h1>
+        <p className="mt-1 text-xs font-medium tabular-nums text-muted">
+          {t("Step {n} of {total}", { n: step === "phone" ? 1 : 2, total: 2 })}
+        </p>
 
         <AnimatePresence mode="wait">
           {step === "phone" ? (
@@ -124,6 +134,7 @@ function Forgot() {
               className="mt-6 grid gap-4"
               onSubmit={requestCode}
             >
+              <Captcha state={captcha} />
               <p className="text-sm text-muted">
                 {t("Enter the phone number on your account. We will email a code to the address we hold for it.")}
               </p>
@@ -181,16 +192,7 @@ function Forgot() {
                 </p>
               ) : null}
 
-              <Field label={t("6-digit code")}>
-                <Input
-                  required
-                  value={otp}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  onChange={(e) => setOtp(e.target.value)}
-                  {...faulted("otp")}
-                />
-              </Field>
+              <OtpInput value={otp} onChange={setOtp} invalid={error?.field === "otp"} errorId="forgot-error" />
               <Field label={t("New password")} hint={tooWeak ? t("At least 8 characters, letters and digits.") : undefined}>
                 <div className="relative">
                   <Input
@@ -236,6 +238,8 @@ function Forgot() {
               >
                 {busy ? t("Changing…") : t("Change the password")}
               </Button>
+              <Captcha state={captcha} />
+              <OtpResend until={resendAt} disabled={busy} onResend={() => void requestCode()} />
             </motion.form>
           )}
         </AnimatePresence>

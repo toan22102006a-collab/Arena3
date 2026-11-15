@@ -1,19 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SectionTitle } from "@/components/section";
+import { SectionTitle } from "@/client/components/section";
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
-import { Shell, hhmm, money, useSessionUser } from "@/components/shell";
-import { UserAvatar } from "@/components/user-avatar";
-import { PageHero } from "@/components/page-hero";
-import { StatStrip } from "@/components/stat-strip";
-import { Badge, Button, Card, EmptyState, Field, Input, LoadError, Pagination, Select, Seg, Skeleton } from "@/components/ui";
-import { ApiClientError, apiGet, apiPost } from "@/lib/arena3/client";
-import { sportLabel } from "@/lib/arena3/labels";
-import { t, tk, tServer, tData } from "@/lib/i18n";
-import { usePageState } from "@/lib/use-page-state";
-import { readError, useRead } from "@/lib/use-read";
-import { HighlightBadge, useLive } from "@/lib/use-live";
+import { Shell, hhmm, useSessionUser } from "@/client/components/shell";
+import { UserAvatar } from "@/client/components/user-avatar";
+import { QrScanner, tokenFromScan } from "@/client/components/qr-scanner";
+import { PageHero } from "@/client/components/page-hero";
+import { Badge, Button, Card, EmptyState, Field, Input, LoadError, Pagination, Select, Seg, Skeleton } from "@/client/components/ui";
+import { ApiClientError, apiGet, apiPost } from "@/client/arena3/client";
+import { sportLabel } from "@/shared/arena3/labels";
+import { t, tk, tServer, tData } from "@/client/lib/i18n";
+import { usePageState } from "@/client/lib/use-page-state";
+import { readError, useRead } from "@/client/lib/use-read";
+import { useLive } from "@/client/lib/use-live";
 
 export const Route = createFileRoute("/desk/gate")({ component: Page });
 
@@ -92,9 +92,6 @@ function Page() {
     todayRead.reload();
   });
   const today = todayRead.data?.items ?? null;
-  const shiftRead = useRead<{ shift: { id: string; opened_at: string } | null; totals?: { cash: number } | null }>("/shifts/current?optional=1");
-  const shift = shiftRead.data?.shift ? { shift: shiftRead.data.shift, totals: shiftRead.data.totals ?? undefined } : null;
-  const waiting = useRead<{ waiting: number }>("/payments/pending?brief=1").data?.waiting ?? 0;
 
   const refocus = (id: string) => setTimeout(() => document.getElementById(id)?.focus(), 0);
 
@@ -137,7 +134,7 @@ function Page() {
   function submitScan(e: React.FormEvent) {
     e.preventDefault();
     const v = scan.trim();
-    if (v) void send({ kind: "qr", token: v });
+    if (v) void send({ kind: "qr", token: tokenFromScan(v) });
   }
 
   function submitManual(e: React.FormEvent) {
@@ -156,15 +153,6 @@ function Page() {
         title={t("Gate & check-in")}
         subtitle={t("Scan a member's code to let them in. Type a phone number only when the code can't be used.")}
       />
-      <StatStrip
-        className="mb-6"
-        items={[
-          { label: t("Today's check-ins"), value: todayRead.data?.total ?? 0 },
-          { label: t("Current shift"), value: shift?.shift ? t("Shift open") : t("No open shift") },
-          { label: t("Cash in till"), value: shift?.totals?.cash ? money(shift.totals.cash) : "0 đ" },
-          { label: t("Waiting payments"), value: waiting },
-        ]}
-      />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
         <div className="grid content-start gap-4">
           <Card className="grid gap-3">
@@ -178,7 +166,7 @@ function Page() {
             />
             {mode === "qr" ? (
               <form onSubmit={submitScan} className="grid gap-3">
-                <CameraScanner onCode={(c) => void send({ kind: "qr", token: c })} />
+                <QrScanner onCode={(c) => void send({ kind: "qr", token: tokenFromScan(c) })} hint={t("Hold the member's phone up to the camera.")} />
                 <Field tone="muted" label={t("Scanner input")} hint={t("A handheld scanner types here. Focus stays on this box.")}>
                   <Input
                     id="gate-scan"
@@ -274,7 +262,7 @@ function Page() {
                 </div>
               </div>
               {result.flagged ? <Badge tone="hold">{t("Flagged for the manager")}</Badge> : null}
-              {result.warnings.map((w) => (
+              {(result.warnings ?? []).map((w) => (
                 <p
                   key={w.kind + w.message}
                   className={`rounded-[var(--radius-sm)] px-3 py-2 text-sm font-medium ${
@@ -286,7 +274,7 @@ function Page() {
                   {tServer(w.message)}
                 </p>
               ))}
-              {result.plans.map((p) => (
+              {(result.plans ?? []).map((p) => (
                 <p key={p.id} className="text-sm">
                   {tData(p.name)}
                   <span className="text-muted">
@@ -295,7 +283,7 @@ function Page() {
                   </span>
                 </p>
               ))}
-              {result.today.sessions.length || result.today.bookings.length ? (
+              {result.today?.sessions?.length || result.today?.bookings?.length ? (
                 <div className="text-base font-semibold">
                   <p
                     className={`kicker text-2xs ${
@@ -305,12 +293,12 @@ function Page() {
                     {t("Today")}
                   </p>
                   <ul className="mt-1 grid gap-1">
-                    {result.today.sessions.map((s) => (
+                    {(result.today?.sessions ?? []).map((s) => (
                       <li key={s.id}>
                         {hhmm(s.start_at)} · {t("{sport} class", { sport: sportLabel(s.sport) })} · {s.court_code}
                       </li>
                     ))}
-                    {result.today.bookings.map((b) => (
+                    {(result.today?.bookings ?? []).map((b) => (
                       <li key={b.id}>
                         {hhmm(b.start_at)} · {t("court {code}", { code: b.court_code })} <span className="opacity-70">({b.code})</span>
                       </li>
@@ -361,7 +349,14 @@ function Page() {
       </div>
 
       <div className="mt-10">
-        <SectionTitle text={t("Through the gate today")} className="font-display text-2xl" />
+        <div className="flex items-baseline justify-between gap-2">
+          <SectionTitle text={t("Through the gate today")} className="font-display text-2xl" />
+          {todayRead.data ? (
+            <span className="text-sm tabular-nums text-muted">
+              {t("Today's check-ins")}: <span className="font-semibold text-fg">{todayRead.data.total}</span>
+            </span>
+          ) : null}
+        </div>
         <div className="mt-3 grid gap-2">
           {todayRead.error ? (
             <LoadError
@@ -418,77 +413,15 @@ function Page() {
   );
 }
 
-/**
- * Reads the member's phone with the device camera where the browser can
- * (BarcodeDetector); everywhere else the scanner-input box above is the way in.
- */
-function CameraScanner({ onCode }: { onCode: (code: string) => void }) {
-  const [on, setOn] = useState(false);
-  const video = useRef<HTMLVideoElement>(null);
-  const supported = typeof window !== "undefined" && "BarcodeDetector" in window;
-  // The latest handler, read at scan time. Listing `onCode` itself as a dependency restarted the
-  // camera on every keystroke elsewhere on the screen, because the parent makes a new one each render.
-  const handler = useRef(onCode);
-  useEffect(() => {
-    handler.current = onCode;
-  });
+/** The address a member's phone can open: VITE_PUBLIC_URL when set, else this page's own origin. */
+function publicOrigin() {
+  const env = (import.meta.env.VITE_PUBLIC_URL as string | undefined)?.replace(/\/+$/, "");
+  return env || window.location.origin;
+}
 
-  useEffect(() => {
-    if (!on) return;
-    let stop = false;
-    let stream: MediaStream | null = null;
-    let last = "";
-    (async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        if (stop) {
-          // Switched off while the browser was still asking: do not leave the camera running.
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        if (!video.current) return;
-        video.current.srcObject = stream;
-        await video.current.play();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const detector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
-        const loop = async () => {
-          if (stop || !video.current) return;
-          try {
-            const found = await detector.detect(video.current);
-            const raw: string | undefined = found[0]?.rawValue;
-            if (raw && raw !== last) {
-              last = raw;
-              handler.current(raw);
-              setTimeout(() => (last = ""), 4000);
-            }
-          } catch {
-            /* a frame that cannot be read is skipped */
-          }
-          setTimeout(() => void loop(), 250);
-        };
-        void loop();
-      } catch {
-        toast.error(t("The camera is not available. Use the scanner box instead."));
-        setOn(false);
-      }
-    })();
-    return () => {
-      stop = true;
-      stream?.getTracks().forEach((track) => track.stop());
-    };
-  }, [on]);
-
-  if (!supported) return null;
-  return (
-    <div className="grid gap-2">
-      {on ? <video ref={video} muted playsInline className="aspect-video w-full rounded-[var(--radius-md)] bg-black object-cover" /> : null}
-      <div>
-        <Button type="button" variant="outline" size="sm" onClick={() => setOn((v) => !v)}>
-          {on ? t("Turn camera off") : t("Use the camera")}
-        </Button>
-      </div>
-    </div>
-  );
+/** A phone cannot open "localhost": that address points at the phone itself. */
+function phoneCannotReach() {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(publicOrigin());
 }
 
 /** The 30-second code members scan to check themselves in, when the centre allows it. */
@@ -514,7 +447,7 @@ function SelfCheckinCode() {
         const res = await apiGet<{ enabled: boolean; token: string; expires_at: string }>("/desk/checkin-qr");
         if (stop) return;
         if (res.enabled) {
-          const url = `${window.location.origin}/app/pass?d=${encodeURIComponent(res.token)}`;
+          const url = `${publicOrigin()}/app/pass?d=${encodeURIComponent(res.token)}`;
           const drawn = await QRCode.toDataURL(url, { margin: 1, width: 280, errorCorrectionLevel: "M" });
           if (stop) return;
           setImg(drawn);
@@ -560,6 +493,11 @@ function SelfCheckinCode() {
         <p className="text-sm text-muted">{t("Self check-in is switched off. A manager can turn it on in Settings.")}</p>
       ) : null}
       {open && !problem && enabled !== false && !img ? <Skeleton className="mx-auto size-56" /> : null}
+      {open && !problem && enabled && img && phoneCannotReach() ? (
+        <p className="text-xs text-hold">
+          {t("This screen is open on localhost, which a phone cannot reach. Open the desk at this computer's network address (for example http://192.168.1.10:8080), or set VITE_PUBLIC_URL.")}
+        </p>
+      ) : null}
       {open && !problem && enabled && img ? (
         <img src={img} alt={t("Self check-in code")} className="mx-auto size-56 rounded-[var(--radius-md)] bg-white p-2" />
       ) : null}

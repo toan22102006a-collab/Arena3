@@ -1,12 +1,13 @@
 import { createFileRoute, useBlocker } from "@tanstack/react-router";
-import { Download, Eye, EyeOff, KeyRound, MonitorSmartphone, Receipt, UserRound } from "lucide-react";
+import { Check, Circle, Download, Eye, EyeOff, KeyRound, MonitorSmartphone, Receipt, UserRound } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { Guard, Shell, money, useF6, useSessionUser, when } from "@/components/shell";
-import { Badge, Button, Card, EmptyState, Field, Input, Label, LoadError, Pagination, Seg, Skeleton, Textarea } from "@/components/ui";
-import { UserAvatar } from "@/components/user-avatar";
-import { Lift, Stagger, StaggerItem } from "@/components/motion";
-import { SpotlightCard, StarBorder } from "@/components/fx";
+import { Guard, Shell, money, useF6, useSessionUser, when } from "@/client/components/shell";
+import { Badge, Button, Card, EmptyState, Field, Input, Label, LoadError, Pagination, Seg, Skeleton, Textarea } from "@/client/components/ui";
+import { UserAvatar } from "@/client/components/user-avatar";
+import { GoogleButton } from "@/client/components/google-sign-in";
+import { Lift, Stagger, StaggerItem } from "@/client/components/motion";
+import { SpotlightCard, StarBorder } from "@/client/components/fx";
 import {
   ApiClientError,
   api,
@@ -18,12 +19,12 @@ import {
   openInvoice,
   setStoredUser,
   type SessionUser,
-} from "@/lib/arena3/client";
-import { formatDate, sportLabel } from "@/lib/arena3/labels";
-import { usePageState } from "@/lib/use-page-state";
-import { useRead } from "@/lib/use-read";
-import { cn } from "@/lib/cn";
-import { t, tk, tServer } from "@/lib/i18n";
+} from "@/client/arena3/client";
+import { formatDate, roleLabel, sportLabel } from "@/shared/arena3/labels";
+import { usePageState } from "@/client/lib/use-page-state";
+import { useRead } from "@/client/lib/use-read";
+import { cn } from "@/client/lib/cn";
+import { t, tk, tServer } from "@/client/lib/i18n";
 
 export const Route = createFileRoute("/account")({ component: Page });
 
@@ -201,8 +202,8 @@ function AvatarEditor({ user }: { user: SessionUser }) {
   return (
     <div className="mb-6 grid gap-3 border-b border-line pb-6">
       <div className="flex flex-col gap-1.5">
-        <label className="grid gap-1.5">
-          <Label>{t("Profile photo")}</Label>
+        <label className="sr-only">
+          {t("Profile photo")}
           <input
             ref={fileInputRef}
             type="file"
@@ -229,7 +230,14 @@ function AvatarEditor({ user }: { user: SessionUser }) {
             )}
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="truncate font-display text-xl">{user.full_name}</span>
+                <Badge tone="accent">{roleLabel(user.role)}</Badge>
+              </div>
+              <div className="truncate text-sm text-muted">{user.email ?? user.phone}</div>
+            </div>
             {previewUrl ? (
               <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" type="button" disabled={busy} onClick={savePhoto}>
@@ -352,7 +360,10 @@ function Profile({ user }: { user: SessionUser | null }) {
             <h2 className="font-display text-xl">{t("Your details")}</h2>
           </div>
           <AvatarEditor user={user} />
-          <form className="grid gap-4" onSubmit={save}>
+          <form className="grid gap-6" onSubmit={save}>
+            <section className="grid gap-4">
+              <Label>{t("Identity")}</Label>
+              <div className="grid gap-4 sm:grid-cols-2">
             <Field
               label={t("Full name")}
               tone={fieldErrors.full_name ? "danger" : undefined}
@@ -369,7 +380,21 @@ function Profile({ user }: { user: SessionUser | null }) {
                 aria-invalid={fieldErrors.full_name ? true : undefined}
               />
             </Field>
+            {user.member_code ? <ReadOnly label={t("Member code")} value={user.member_code} mono /> : null}
+            <ReadOnly label={t("Phone")} value={user.phone} />
+            <ReadOnly label={t("Email")} value={user.email ?? t("Not set")} />
+            <ReadOnly
+              label={t("Date of birth")}
+              value={user.date_of_birth ? formatDate(user.date_of_birth) : t("Not set")}
+            />
+              </div>
+              <p className="text-xs text-subtle">
+                {t("Phone, email and date of birth are changed at the front desk: an OTP or an ID is needed.")}
+              </p>
+            </section>
             {isMember ? (
+              <section className="grid gap-4 border-t border-line pt-6">
+                <Label>{t("Health")}</Label>
               <Field
                 label={t("Health notes")}
                 tone={fieldErrors.health_notes ? "danger" : "muted"}
@@ -395,13 +420,14 @@ function Profile({ user }: { user: SessionUser | null }) {
                   </div>
                 ) : null}
               </Field>
+              </section>
             ) : null}
             {error ? (
               <p role="alert" className="text-sm text-danger">
                 {error}
               </p>
             ) : null}
-            <div className="flex items-center gap-3 pt-1">
+            <div className="flex items-center gap-3 border-t border-line pt-5">
               <StarBorder speed={4}>
                 <Button type="submit" disabled={busy || !dirty || !form.full_name.trim()}>
                   {busy ? t("Saving…") : t("Save changes")}
@@ -418,19 +444,7 @@ function Profile({ user }: { user: SessionUser | null }) {
       </SpotlightCard>
 
       <div className="flex flex-col gap-4">
-        <Card className="h-fit p-6">
-          <Label>{t("Cannot be changed here")}</Label>
-          <dl className="mt-4 grid gap-4">
-            <Row label={t("Phone")} value={user.phone} note={t("Ask the desk. Changing it needs an OTP.")} />
-            <Row label={t("Email")} value={user.email ?? t("Not set")} note={t("Ask the desk. Changing it needs an OTP.")} />
-            <Row
-              label={t("Date of birth")}
-              value={user.date_of_birth ? formatDate(user.date_of_birth) : t("Not set")}
-              note={t("The front desk updates it, with an ID.")}
-            />
-            {user.member_code ? <Row label={t("Member code")} value={user.member_code} mono /> : null}
-          </dl>
-        </Card>
+        <GoogleLink />
 
         {profileRead.error ? (
           <LoadError
@@ -496,6 +510,79 @@ function Profile({ user }: { user: SessionUser | null }) {
   );
 }
 
+/**
+ * Linking Google is the only way Google sign-in starts working for an account:
+ * the sign-in page never creates one, and a matching email alone is not enough.
+ */
+function GoogleLink() {
+  const read = useRead<{ client_id: string | null; google_email: string | null }>("/me/google");
+  const [busy, setBusy] = useState(false);
+  if (!read.data?.client_id) return null;
+  const linked = read.data.google_email;
+
+  async function link(credential: string) {
+    setBusy(true);
+    try {
+      await apiPost("/me/google", { credential });
+      toast.success(t("Google is linked. You can now sign in with it."));
+      read.reload();
+    } catch (err) {
+      toast.error(err instanceof Error ? tServer(err.message) : t("Could not link Google"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unlink() {
+    setBusy(true);
+    try {
+      await api("/me/google", { method: "DELETE" });
+      toast.success(t("Google is unlinked."));
+      read.reload();
+    } catch (err) {
+      toast.error(err instanceof Error ? tServer(err.message) : t("Could not unlink Google"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="h-fit p-6">
+      <Label>{t("Sign in with Google")}</Label>
+      {linked ? (
+        <div className="mt-4 grid gap-3">
+          <Row label={t("Linked Google account")} value={linked} note={t("You can sign in with this Google account.")} />
+          <div>
+            <Button size="sm" variant="outline" type="button" disabled={busy} onClick={unlink}>
+              {busy ? t("Unlinking…") : t("Unlink Google")}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 grid gap-3">
+          <p className="text-sm text-muted">
+            {t("Link your Google account to sign in with it next time. Google cannot be used to create an account.")}
+          </p>
+          <GoogleButton clientId={read.data.client_id} text="signin_with" onCredential={link} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ReadOnly({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <Field label={label}>
+      <Input
+        readOnly
+        tabIndex={-1}
+        value={value}
+        className={cn("cursor-default bg-bg text-muted focus:ring-0", mono && "font-mono tracking-wider")}
+      />
+    </Field>
+  );
+}
+
 function Row({ label, value, note, mono }: { label: string; value: string; note?: string; mono?: boolean }) {
   return (
     <div>
@@ -555,8 +642,8 @@ function Security({ forced }: { forced: boolean }) {
   }
 
   return (
-    <div className="grid gap-4">
-      <SpotlightCard className="max-w-xl rounded-[var(--radius-xl)]" size={420} strength={0.09}>
+    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+      <SpotlightCard className="rounded-[var(--radius-xl)]" size={420} strength={0.09}>
         <Card className="relative z-[2] p-6">
           <div className="mb-5 flex items-center gap-2.5">
             <KeyRound className="size-4 text-accent" strokeWidth={1.75} />
@@ -569,7 +656,8 @@ function Security({ forced }: { forced: boolean }) {
               )}
             </p>
           ) : null}
-          <form className="grid gap-4" onSubmit={submit}>
+          <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+            <div className="sm:col-span-2">
             <Field label={t("Current password")}>
               <Input
                 required
@@ -580,6 +668,7 @@ function Security({ forced }: { forced: boolean }) {
                 {...faulted("current_password")}
               />
             </Field>
+            </div>
             <Field
               label={t("New password")}
               hint={tooWeak ? t("At least 8 characters, with a letter and a number.") : undefined}
@@ -619,12 +708,28 @@ function Security({ forced }: { forced: boolean }) {
                 aria-invalid={mismatch || error?.field === "confirm_password" ? true : undefined}
               />
             </Field>
+            <ul className="grid gap-1.5 rounded-[var(--radius-md)] bg-bg/60 p-3 text-xs sm:col-span-2" aria-label={t("Password rules")}>
+              {[
+                { ok: form.new_password.length >= 8, label: t("At least 8 characters") },
+                { ok: /[A-Za-z]/.test(form.new_password), label: t("A letter") },
+                { ok: /\d/.test(form.new_password), label: t("A number") },
+                {
+                  ok: form.confirm_password.length > 0 && form.confirm_password === form.new_password,
+                  label: t("Both passwords match"),
+                },
+              ].map((r) => (
+                <li key={r.label} className={cn("flex items-center gap-2", r.ok ? "text-accent" : "text-subtle")}>
+                  {r.ok ? <Check className="size-3.5" /> : <Circle className="size-3.5" />}
+                  {r.label}
+                </li>
+              ))}
+            </ul>
             {error ? (
-              <p id="password-error" role="alert" className="text-sm text-danger">
+              <p id="password-error" role="alert" className="text-sm text-danger sm:col-span-2">
                 {error.message}
               </p>
             ) : null}
-            <div className="pt-1">
+            <div className="border-t border-line pt-5 sm:col-span-2">
               <Button type="submit" disabled={busy || !ready}>
                 {busy ? t("Changing…") : t("Change password")}
               </Button>
@@ -677,7 +782,7 @@ function SignedInDevices({
   }
 
   return (
-    <SpotlightCard className="max-w-xl rounded-[var(--radius-xl)]" size={420} strength={0.09}>
+    <SpotlightCard className="rounded-[var(--radius-xl)]" size={420} strength={0.09}>
       <Card className="relative z-[2] p-6">
         <div className="mb-5 flex items-center gap-2.5">
           <MonitorSmartphone className="size-4 text-accent" strokeWidth={1.75} />
@@ -983,6 +1088,7 @@ function Receipts() {
 
   return (
     <>
+      <p className="mb-3 text-sm text-muted">{t("Collect your refund in cash at the front desk.")}</p>
       <Stagger className="grid gap-2.5" gap={0.05}>
         {items.map((r) => (
           <StaggerItem key={r.id}>

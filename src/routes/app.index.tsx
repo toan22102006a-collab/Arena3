@@ -1,25 +1,25 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { SectionTitle } from "@/components/section";
-import { ArrowRight, Map, Star, Ticket, Wallet } from "lucide-react";
-import { AssistantMark } from "@/components/mark";
+import { SectionTitle } from "@/client/components/section";
+import { ArrowRight, QrCode, Star, Ticket, Wallet } from "lucide-react";
+import { AssistantMark } from "@/client/components/mark";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { NotificationList, type Notification } from "@/components/notifications";
-import { CancelBookingDialog } from "@/components/cancel-booking";
-import { PayOnlineButton } from "@/components/pay-online";
-import { freeHours, useNowMinute, type Court, type OccSlot } from "@/components/court-grid";
-import { Shell, hhmm } from "@/components/shell";
-import { Button, ButtonLink, Card, LoadError, Skeleton, StatusBadge } from "@/components/ui";
-import { CountUp, Lift, Reveal, Stagger, StaggerItem, useReducedMotionAfterMount } from "@/components/motion";
-import { ShinyText, SplitText, SpotlightCard } from "@/components/fx";
-import { apiGet, apiPost, getStoredUser } from "@/lib/arena3/client";
-import { formatDate, levelLabel, sportLabel, statusLabel, todayISO } from "@/lib/arena3/labels";
-import { cn } from "@/lib/cn";
-import { t, tData, tk, tServer } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
-import { useLimits } from "@/lib/use-centre";
-import { DEFAULT_VENUE, hoursOf, venueFrom, type Venue, type VenueRaw } from "@/lib/venue";
-import { AddToCalendar } from "@/components/class-extras";
+import { NotificationList, type Notification } from "@/client/components/notifications";
+import { CancelBookingDialog } from "@/client/components/cancel-booking";
+import { PayOnlineButton } from "@/client/components/pay-online";
+import { freeHours, useNowMinute, type Court, type OccSlot } from "@/client/components/court-grid";
+import { Shell, hhmm } from "@/client/components/shell";
+import { Button, ButtonLink, Card, LoadError, Skeleton, StatusBadge } from "@/client/components/ui";
+import { CountUp, Lift, Reveal, Stagger, StaggerItem, useReducedMotionAfterMount } from "@/client/components/motion";
+import { ShinyText, SplitText, SpotlightCard } from "@/client/components/fx";
+import { apiGet, apiPost, getStoredUser } from "@/client/arena3/client";
+import { formatDate, levelLabel, sportLabel, statusLabel, todayISO } from "@/shared/arena3/labels";
+import { cn } from "@/client/lib/cn";
+import { t, tData, tk, tServer } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
+import { useLimits } from "@/client/lib/use-centre";
+import { DEFAULT_VENUE, hoursOf, venueFrom, type Venue, type VenueRaw } from "@/client/lib/venue";
+import { AddToCalendar } from "@/client/components/class-extras";
 
 export const Route = createFileRoute("/app/")({
   component: Page,
@@ -100,7 +100,6 @@ function Page() {
   const u = getStoredUser();
   const live = me?.subscriptions.filter((s) => s.status === "active") ?? [];
   const frozen = me?.subscriptions.filter((s) => s.status === "frozen") ?? [];
-  const first = live[0];
   const expiring = live.filter((s) => {
     const d = daysUntil(s.end_on);
     return Number.isFinite(d) && d >= 0 && d <= 7;
@@ -172,10 +171,11 @@ function Page() {
             className="font-display text-3xl font-bold tracking-tight sm:text-5xl"
           />
         </div>
-        {u?.member_code ? (
-          <span className="shrink-0 rounded-[var(--radius-sm)] border border-line bg-surface px-2.5 py-1 font-mono text-xs font-semibold text-muted">
-            {u.member_code}
-          </span>
+        {/* One filled action per view: with nothing booked, the empty card below carries it instead. */}
+        {next ? (
+          <ButtonLink to="/app/book" className="shrink-0 shadow-[var(--shadow-accent)]">
+            {t("Book a court")}
+          </ButtonLink>
         ) : null}
       </div>
 
@@ -227,7 +227,7 @@ function Page() {
           <Skeleton className="h-48" />
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[1.25fr_1fr]">
+        <div className="grid gap-4 *:min-w-0 lg:grid-cols-[1.25fr_1fr]">
           {/* Next up comes first: it is the one thing on this page that changes what you do next. */}
           <Reveal className="lg:row-span-2">
             {next ? (
@@ -254,7 +254,20 @@ function Page() {
                       event={{ title: `${t(next.kind)} · ${next.title}`, start: next.start, end: next.end, details: next.meta, location: "Lê Long Sport" }}
                     />
                   ) : null}
-                  <div className="ml-auto flex flex-wrap gap-2">{actions(next, true)}</div>
+                  <div className="ml-auto flex flex-wrap gap-2">
+                    {actions(next, true)}
+                    {/* Confirmed means the next step is the gate: the pass is one tap away. */}
+                    {next.status === "confirmed" ? (
+                      <ButtonLink
+                        to="/app/pass"
+                        size="sm"
+                        className="bg-accent-fg text-accent hover:bg-accent-fg/90"
+                      >
+                        <QrCode className="size-4" aria-hidden />
+                        {t("Show pass")}
+                      </ButtonLink>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             ) : (
@@ -298,11 +311,6 @@ function Page() {
                       <p className="mt-2 font-display text-xl tracking-tight">
                         <span className="tabular-nums">{hhmm(ev.start)}</span> · {ev.title}
                       </p>
-                      {ev.status === "confirmed" && new Date(ev.end) > new Date() ? (
-                        <AddToCalendar
-                          event={{ title: `${t(ev.kind)} · ${ev.title}`, start: ev.start, end: ev.end, details: ev.meta, location: "Lê Long Sport" }}
-                        />
-                      ) : null}
                       <div className="mt-1 flex min-h-8 items-center justify-between gap-2">
                         <p className="font-mono text-xs text-muted">{ev.meta}</p>
                         <div className="flex gap-2">{actions(ev)}</div>
@@ -316,10 +324,9 @@ function Page() {
 
           <div className="hidden lg:col-span-2 lg:block">
             <SectionTitle text={t("Quick actions")} className="font-display text-lg tracking-tight" />
-            <Stagger className="mt-3 grid grid-cols-5 gap-3" gap={0.06}>
+            <Stagger className="mt-3 grid grid-cols-4 gap-3" gap={0.06}>
               {(
                 [
-                  { to: "/app/book" as const, label: t("Book a court"), Icon: Map },
                   { to: "/app/classes" as const, label: t("Classes"), Icon: Ticket },
                   { to: "/app/plans" as const, label: t("Plans"), Icon: Wallet },
                   { to: "/app/points" as const, label: t("Points"), Icon: Star },
@@ -328,7 +335,7 @@ function Page() {
               ).map((a) => (
                 <StaggerItem key={a.to}>
                   <Lift>
-                    <SpotlightCard className="h-full rounded-[var(--radius-lg)]" size={200} strength={0.12}>
+                    <SpotlightCard className="h-full rounded-[var(--radius-lg)]" size={200} strength={0.08}>
                       <Link
                         to={a.to}
                         className="group relative z-[2] flex h-full items-center gap-3 rounded-[var(--radius-lg)] border border-line bg-surface/85 px-4 py-3.5 transition-colors duration-200 hover:border-accent/40"

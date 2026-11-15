@@ -1,16 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { SectionTitle } from "@/components/section";
+import { SectionTitle } from "@/client/components/section";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Shell } from "@/components/shell";
-import { MenuSettings } from "@/components/menu-settings";
-import { PageHero } from "@/components/page-hero";
-import { StatStrip } from "@/components/stat-strip";
-import { Button, Card, Check, Field, Input, LoadError, MoneyInput, Skeleton } from "@/components/ui";
-import { Reveal, Stagger, StaggerItem, motion } from "@/components/motion";
-import { ApiClientError, apiPatch } from "@/lib/arena3/client";
-import { t, tk, tServer } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
+import { Shell } from "@/client/components/shell";
+import { MenuSettings } from "@/client/components/menu-settings";
+import { PageHero } from "@/client/components/page-hero";
+import { StatStrip } from "@/client/components/stat-strip";
+import { Button, Card, Check, Field, Input, LoadError, MoneyInput, Skeleton } from "@/client/components/ui";
+import { Reveal, Stagger, StaggerItem, motion } from "@/client/components/motion";
+import { ApiClientError, apiPatch } from "@/client/arena3/client";
+import { t, tk, tServer } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
 
 export const Route = createFileRoute("/manager/settings")({
   component: Page,
@@ -36,6 +36,7 @@ const SETTINGS_FORM_KEYS = [
   "self_checkin_enabled",
   "freeze_max_days_year",
   "waitlist_offer_hours",
+  "max_active_classes",
   "member_court_fee_vnd",
   "series_min_weeks",
   "series_max_weeks",
@@ -193,6 +194,7 @@ function Page() {
         {f("at_risk_idle_days", t("At-risk after no visit for (days)"), "number")}
         {f("freeze_max_days_year", t("Freeze cap (days per year)"), "number")}
         {f("waitlist_offer_hours", t("Waitlist offer window (hours)"), "number")}
+        {f("max_active_classes", t("Most classes a member can be in at once"), "number")}
         <p className="mt-2 font-medium md:col-span-2">{t("Membership")}</p>
         {f("member_court_fee_vnd", t("Member court fee per hour"), "money")}
         <p className="mt-2 font-medium md:col-span-2">{t("Fixed weekly bookings and points")}</p>

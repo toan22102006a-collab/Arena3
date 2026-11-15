@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AtRiskPanel } from "@/components/attendance-panels";
-import { Shell, useSessionUser } from "@/components/shell";
-import { t } from "@/lib/i18n";
+import { AtRiskPanel } from "@/client/components/attendance-panels";
+import { Shell, useSessionUser } from "@/client/components/shell";
+import { t } from "@/client/lib/i18n";
 
 export const Route = createFileRoute("/desk/at-risk")({ component: Page });
 

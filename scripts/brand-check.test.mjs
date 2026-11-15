@@ -32,7 +32,7 @@ function makeWorkspace({
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "brand-check-"));
   mkdirSync(join(root, "public"), { recursive: true });
-  mkdirSync(join(root, "src/lib/og"), { recursive: true });
+  mkdirSync(join(root, "src/server/og"), { recursive: true });
   mkdirSync(join(root, ".grok"), { recursive: true });
   if (pendingAgeMs !== undefined) {
     const marker = join(root, OG_PENDING_REL_PATH);
@@ -41,7 +41,7 @@ function makeWorkspace({
     utimesSync(marker, when, when);
   }
   if (siteJson !== undefined) {
-    writeFileSync(join(root, "src/lib/og/site.json"), siteJson);
+    writeFileSync(join(root, "src/server/og/site.json"), siteJson);
   }
   if (cardFile !== undefined) {
     writeFileSync(join(root, "public", cardFile), Buffer.alloc(cardBytes, 7));

@@ -1,17 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { monthsLabel } from "@/lib/arena3/labels";
+import { monthsLabel } from "@/shared/arena3/labels";
 import { toast } from "sonner";
-import { Cover } from "@/components/media";
-import { Shell, money } from "@/components/shell";
-import { PageHero } from "@/components/page-hero";
-import { StatStrip } from "@/components/stat-strip";
-import { Badge, Button, Card, Check, EmptyState, Field, Input, LoadError, Modal, MoneyInput, Skeleton } from "@/components/ui";
-import { Lift, Stagger, StaggerItem } from "@/components/motion";
-import { GlareHover, SpotlightCard } from "@/components/fx";
-import { ApiClientError, apiGet, apiPatch, apiPost } from "@/lib/arena3/client";
-import { t, tk, tServer, tData } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
+import { Cover } from "@/client/components/media";
+import { Shell, money } from "@/client/components/shell";
+import { PageHero } from "@/client/components/page-hero";
+import { StatStrip } from "@/client/components/stat-strip";
+import { Badge, Button, Card, Check, EmptyState, Field, Input, LoadError, Modal, MoneyInput, Skeleton } from "@/client/components/ui";
+import { Lift, Stagger, StaggerItem } from "@/client/components/motion";
+import { GlareHover, SpotlightCard } from "@/client/components/fx";
+import { ApiClientError, apiGet, apiPatch, apiPost } from "@/client/arena3/client";
+import { t, tk, tServer, tData } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
 
 export const Route = createFileRoute("/manager/plans")({
   component: Page,

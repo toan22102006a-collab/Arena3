@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Printer, ShieldCheck } from "lucide-react";
-import { ArenaMark } from "@/components/mark";
-import { LangSwitch } from "@/components/lang-switch";
-import { Button, LoadError, Skeleton } from "@/components/ui";
-import { formatDate, levelLabel, sportLabel } from "@/lib/arena3/labels";
-import { t, tData } from "@/lib/i18n";
-import { useRead } from "@/lib/use-read";
+import { ArenaMark } from "@/client/components/mark";
+import { LangSwitch } from "@/client/components/lang-switch";
+import { Button, LoadError, Skeleton } from "@/client/components/ui";
+import { formatDate, levelLabel, sportLabel } from "@/shared/arena3/labels";
+import { t, tData } from "@/client/lib/i18n";
+import { useRead } from "@/client/lib/use-read";
 
 export const Route = createFileRoute("/verify/$code")({
   head: () => ({ meta: [{ title: "Certificate · Lê Long Sport" }] }),

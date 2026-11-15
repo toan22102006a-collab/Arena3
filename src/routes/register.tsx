@@ -1,24 +1,23 @@
+import { Captcha, useCaptcha } from "@/client/components/captcha";
+import { OtpInput, OtpResend } from "@/client/components/otp-input";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-import { ArenaMark } from "@/components/mark";
-import { Cover } from "@/components/media";
-import { Button, Card, Check, DateField, Field, Input, Modal } from "@/components/ui";
+import { ArenaMark } from "@/client/components/mark";
+import { Cover } from "@/client/components/media";
+import { Button, Card, Check, DateField, Field, Input, Modal } from "@/client/components/ui";
 import { AnimatePresence, motion } from "motion/react";
-import { Reveal } from "@/components/motion";
-import { GLBackground, Magnet, SplitText, SpotlightCard } from "@/components/fx";
-import { ApiClientError, apiPost, homeFor, setSession, type SessionUser } from "@/lib/arena3/client";
-import { LangSwitch } from "@/components/lang-switch";
-import { t, tServer } from "@/lib/i18n";
-import { ageYears } from "@/lib/arena3/time";
-import { LegalBody } from "@/components/legal-page";
-import { clearGoogleSignup, readGoogleSignup, type GoogleSignup } from "@/components/google-sign-in";
-import { PRIVACY, TERMS } from "@/lib/legal";
+import { Reveal } from "@/client/components/motion";
+import { GLBackground, Magnet, SplitText, SpotlightCard } from "@/client/components/fx";
+import { ApiClientError, apiPost, homeFor, setSession, type SessionUser } from "@/client/arena3/client";
+import { LangSwitch } from "@/client/components/lang-switch";
+import { t, tServer } from "@/client/lib/i18n";
+import { ageYears } from "@/shared/arena3/time";
+import { LegalBody } from "@/client/components/legal-page";
+import { PRIVACY, TERMS } from "@/client/lib/legal";
 
 export const Route = createFileRoute("/register")({
-  // `via=google`: the sign-in page sent someone whose Google email has no account yet.
-  validateSearch: (s: Record<string, unknown>): { via?: "google" } => (s.via === "google" ? { via: "google" } : {}),
   component: Register,
 });
 
@@ -75,9 +74,8 @@ const slot = (text: string, node: ReactNode) => {
 
 function Register() {
   const navigate = useNavigate();
-  const { via } = Route.useSearch();
-  /** Signing up with a Google token: no password and no OTP, and the email is Google's. */
-  const [google, setGoogle] = useState<GoogleSignup | null>(null);
+  const captcha = useCaptcha();
+  const [resendAt, setResendAt] = useState(0);
   const [step, setStep] = useState<"form" | "otp">("form");
   const [otp, setOtp] = useState("");
   const [shown, setShown] = useState("");
@@ -123,50 +121,9 @@ function Register() {
   const tooWeak =
     form.password.length > 0 && !(form.password.length >= 8 && /[A-Za-z]/.test(form.password) && /\d/.test(form.password));
 
-  // After mount, because session storage does not exist while the server renders this page.
-  useEffect(() => {
-    const g = via === "google" ? readGoogleSignup() : null;
-    setGoogle(g);
-    if (g) setForm((f) => ({ ...f, full_name: f.full_name || g.full_name, email: g.email }));
-  }, [via]);
-
-  async function finishGoogle(g: GoogleSignup) {
-    setBusy(true);
-    try {
-      const res = await apiPost<{ token: string; user: SessionUser }>("/auth/google/register", {
-        credential: g.credential,
-        full_name: form.full_name,
-        phone: form.phone,
-        dob: form.dob,
-        pii_consent: form.pii_consent,
-        ...(needGuardian ? { guardian_name: guardian.name, guardian_phone: guardian.phone } : {}),
-      });
-      clearGoogleSignup();
-      setSession(res.token, res.user);
-      toast.success(t("Welcome, {name}", { name: res.user.full_name }), { id: "login-hello" });
-      navigate({ to: homeFor(res.user.role) });
-    } catch (err) {
-      const field = err instanceof ApiClientError ? (err.body.field ?? null) : null;
-      if (field === "guardian_name") setAskGuardian(true);
-      // Google's token lasts an hour; past that, the way on is to press the Google button again.
-      const expired = err instanceof ApiClientError && err.status === 401;
-      setError({
-        message: expired
-          ? t("Your Google sign-in has expired. Sign in with Google again.")
-          : err instanceof Error
-            ? tServer(err.message)
-            : t("Could not create the account"),
-        field,
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function send(e: FormEvent) {
-    e.preventDefault();
+  async function send(e?: FormEvent) {
+    e?.preventDefault();
     setError(null);
-    if (google) return finishGoogle(google);
     if (form.password !== confirm) {
       setError({ message: t("The two passwords do not match."), field: "confirm" });
       return;
@@ -175,11 +132,13 @@ function Register() {
     try {
       const res = await apiPost<{ otp?: string; sent_to?: string | null }>(
         "/auth/register",
-        needGuardian ? { ...form, guardian_name: guardian.name, guardian_phone: guardian.phone } : form,
+        { ...form, ...(needGuardian ? { guardian_name: guardian.name, guardian_phone: guardian.phone } : {}), captcha_token: captcha.token, website: captcha.website },
       );
       setShown(res.otp ?? "");
       setSentTo(res.sent_to ?? null);
       setStep("otp");
+      setOtp("");
+      setResendAt(Date.now() + 60_000);
       toast.message(
         res.sent_to ? t("Code sent to {email}", { email: res.sent_to }) : t("Code generated. Check with the front desk."),
       );
@@ -188,6 +147,7 @@ function Register() {
       if (field === "guardian_name") setAskGuardian(true);
       setError({ message: err instanceof Error ? tServer(err.message) : t("Could not create the account"), field });
     } finally {
+      captcha.reset();
       setBusy(false);
     }
   }
@@ -231,7 +191,7 @@ function Register() {
             <div className="max-w-sm rounded-[var(--radius-xl)] bg-pass/92 p-6 text-pass-fg">
               <SplitText
                 as="p"
-                text={t("Book a court by the hour, or pay for one class at a time.")}
+                text={t("Join a class with a coach, or book a court by the hour.")}
                 splitBy="words"
                 stagger={0.05}
                 delay={0.2}
@@ -248,11 +208,15 @@ function Register() {
         <Reveal className="w-full max-w-md" from="up">
         <SpotlightCard className="rounded-[var(--radius-xl)]" size={360} strength={0.1}>
         <Card className="relative z-[2] w-full p-6">
-          <div className="flex items-center gap-2">
+          {/* The photo panel already carries the mark on wide screens. */}
+          <div className="flex items-center gap-2 lg:hidden">
             <ArenaMark className="size-7" />
             <p className="text-2xs text-muted">Lê Long Sport</p>
           </div>
-          <h1 className="mt-3 font-display text-3xl">{t("Create an account")}</h1>
+          <h1 className="mt-3 font-display text-3xl lg:mt-0">{t("Create an account")}</h1>
+          <p className="mt-1 text-xs font-medium tabular-nums text-muted">
+            {t("Step {n} of {total}", { n: step === "form" ? 1 : 2, total: 2 })}
+          </p>
           <AnimatePresence mode="wait">
           {step === "form" ? (
             <motion.form
@@ -264,6 +228,7 @@ function Register() {
               className="mt-6 grid gap-4"
               onSubmit={send}
             >
+              <Captcha state={captcha} />
               <Field label={t("Full name")}>
                 <Input
                   required
@@ -287,11 +252,7 @@ function Register() {
               <Field
                 label={t("Email")}
                 tone="muted"
-                hint={
-                  google
-                    ? t("From your Google account. No password needed: you sign in with Google.")
-                    : t("Where your verification code is sent, and how you recover the account.")
-                }
+                hint={t("Where your verification code is sent, and how you recover the account.")}
               >
                 <Input
                   required
@@ -299,7 +260,6 @@ function Register() {
                   autoComplete="email"
                   placeholder="you@example.com"
                   value={form.email}
-                  readOnly={!!google}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                 />
               </Field>
@@ -339,8 +299,6 @@ function Register() {
                   </Field>
                 </>
               ) : null}
-              {google ? null : (
-              <>
               <Field label={t("Password")} hint={tooWeak ? t("At least 8 characters, with a letter and a number.") : undefined}>
                 <div className="relative">
                   <Input
@@ -374,8 +332,6 @@ function Register() {
                   aria-invalid={mismatch || error?.field === "confirm" ? true : undefined}
                 />
               </Field>
-              </>
-              )}
               <Check
                 className="text-muted"
                 checked={form.pii_consent}
@@ -395,11 +351,11 @@ function Register() {
                     !form.email ||
                     !form.dob ||
                     !form.pii_consent ||
-                    (!google && (mismatch || tooWeak || !form.password))
+                    mismatch || tooWeak || !form.password
                   }
                   className="w-full"
                 >
-                  {google ? (busy ? t("Creating…") : t("Create account")) : busy ? t("Sending…") : t("Send OTP")}
+                  {busy ? t("Sending…") : t("Send the code")}
                 </Button>
               </Magnet>
             </motion.form>
@@ -431,15 +387,7 @@ function Register() {
                   {slot(t("Demo build: the code is {code}.", { code: SLOT }), <span className="font-medium tabular-nums">{shown}</span>)}
                 </p>
               ) : null}
-              <Field label={t("6-digit OTP")}>
-                <Input
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  {...faulted("otp")}
-                />
-              </Field>
+              <OtpInput value={otp} onChange={setOtp} invalid={error?.field === "otp"} errorId="register-error" />
               {error ? (
                 <p id="register-error" role="alert" className="text-sm text-danger">
                   {error.message}
@@ -450,6 +398,8 @@ function Register() {
                   {t("Verify")}
                 </Button>
               </Magnet>
+              <Captcha state={captcha} />
+              <OtpResend until={resendAt} disabled={busy} onResend={() => void send()} />
             </motion.form>
           )}
           </AnimatePresence>
