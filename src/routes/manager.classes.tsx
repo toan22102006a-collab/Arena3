@@ -150,7 +150,9 @@ function Page() {
     form.price.trim() === "" || Number.isInteger(whole(form.price)) ? null : t("Price must be a whole number of dong, or empty.");
   const startError =
     form.start_on && form.start_on < todayISO() ? t("A class cannot start or end in the past. Pick today or a later first day.") : null;
-  const invalid = !!(capacityError || minError || priceError || startError);
+  // No day picked used to fall back to Monday and then report a clash nobody asked for.
+  const daysError = days.length ? null : t("Pick at least one day of the week.");
+  const invalid = !!(capacityError || minError || priceError || startError || daysError);
 
   function toggleDay(k: string) {
     setDays((prev) => (prev.includes(k) ? prev.filter((d) => d !== k) : [...prev, k]));
@@ -261,6 +263,11 @@ function Page() {
               </button>
             ))}
           </div>
+          {daysError ? (
+            <p role="alert" className="mt-1.5 text-sm text-danger">
+              {daysError}
+            </p>
+          ) : null}
         </div>
         <Field label={t("Start time")}>
           <Select value={String(hour)} onChange={(e) => setHour(Number(e.target.value))}>

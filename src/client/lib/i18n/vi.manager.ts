@@ -224,6 +224,7 @@ export const manager: Record<string, string> = {
   "No active coach teaches this sport yet.": "Chưa có HLV nào đang dạy môn này.",
   "There is no court for this sport.": "Chưa có sân cho môn này.",
   "Pick the days and the hour. Clashes on court or coach are blocked for you.": "Chọn các ngày và giờ học. Hệ thống sẽ tự chặn lịch trùng sân hoặc trùng HLV.",
+  "Pick at least one day of the week.": "Hãy chọn ít nhất một ngày trong tuần.",
   "Squad": "Đội tuyển",
   "Repeats weekly on": "Lặp lại hằng tuần vào",
   "Start time": "Giờ bắt đầu",

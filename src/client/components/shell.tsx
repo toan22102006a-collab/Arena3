@@ -176,6 +176,8 @@ const PAGE_INFO: Record<NavRole, Record<string, PageInfo>> = {
     "/desk/series": { label: tk("Fixed bookings"), icon: Repeat, group: G_OPS },
     "/manager/courts": { label: tk("Courts"), icon: LandPlot, group: G_OPS },
     "/manager/sports": { label: tk("Sports"), icon: Trophy, group: G_OPS },
+    // The manager adds gear lines here, e.g. for a sport that has just been created.
+    "/desk/gear": { label: tk("Gear"), icon: Dumbbell, group: G_OPS },
     "/desk/maintenance": { label: tk("Maintenance"), icon: Wrench, group: G_OPS },
     "/chat": { label: tk("Messages"), icon: MessageSquare, group: G_OPS },
     "/manager/staff": { label: tk("Staff"), icon: UserCog, group: G_SYSTEM },

@@ -2,12 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { SectionTitle } from "@/client/components/section";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Shell, money } from "@/client/components/shell";
+import { Shell, money, useSessionUser } from "@/client/components/shell";
 import { Button, Card, EmptyState, Field, Input, LoadError, Select, Skeleton } from "@/client/components/ui";
 import { Lift, Reveal, Stagger, StaggerItem } from "@/client/components/motion";
 import { SpotlightCard } from "@/client/components/fx";
 import { ApiClientError, apiGet, apiPost } from "@/client/arena3/client";
 import { sportLabel } from "@/shared/arena3/labels";
+import { useSports } from "@/client/components/sports-ui";
 import { t, tServer, tData } from "@/client/lib/i18n";
 import { readError, useRead } from "@/client/lib/use-read";
 
@@ -26,7 +27,16 @@ type Loan = {
 };
 type Hit = { id: string; member_code: string | null; full_name: string; phone: string };
 
+const BLANK = { name: "", sku: "", sport: "", stock: "0", rent_vnd: "0" };
+
 function Page() {
+  const user = useSessionUser();
+  const isManager = user?.role === "manager";
+  const sports = useSports();
+  // Only the manager adds lines to the shelf; the desk rents out what is listed.
+  const [draft, setDraft] = useState(BLANK);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<{ field: string; message: string } | null>(null);
   // null = not known yet (still asking, or the question failed) — never "nothing": an empty shelf and an
   // empty loan list are claims about the stock room, and a screen that has not heard back cannot make them.
   const equipmentRead = useRead<{ items: Item[] }>("/equipment");
@@ -116,6 +126,33 @@ function Page() {
     }
   }
 
+  async function addItem() {
+    setAddError(null);
+    setAdding(true);
+    try {
+      await apiPost("/equipment", {
+        name: draft.name,
+        sku: draft.sku,
+        sport: draft.sport || null,
+        stock: draft.stock,
+        rent_vnd: draft.rent_vnd,
+      });
+      toast.success(t("Gear added"));
+      setDraft(BLANK);
+      reloadAll();
+    } catch (e) {
+      if (e instanceof ApiClientError && e.body.field) setAddError({ field: e.body.field, message: tServer(e.message) });
+      else toast.error(e instanceof Error ? tServer(e.message) : t("Something went wrong"));
+    } finally {
+      setAdding(false);
+    }
+  }
+  const addHint = (field: string) => (addError?.field === field ? addError.message : undefined);
+  const edit = (k: keyof typeof BLANK) => (e: { target: { value: string } }) => {
+    setDraft((d) => ({ ...d, [k]: e.target.value }));
+    setAddError(null);
+  };
+
   async function takeBack(l: Loan) {
     setReturning(l.id);
     try {
@@ -133,10 +170,49 @@ function Page() {
 
   return (
     <Shell
-      role="receptionist"
+      role={isManager ? "manager" : "receptionist"}
       title={t("Gear")}
       subtitle={t("Rent to a member's account or to a guest by phone. The hire is charged to the till, stock comes down on the way out and back up on return.")}
     >
+      {isManager ? (
+        <Card className="mb-4">
+          <p className="font-medium">{t("Add gear")}</p>
+          <p className="text-sm text-muted">{t("List a new item, for example for a sport you have just added.")}</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-[1.6fr_1fr_1fr_0.7fr_1fr_auto]">
+            <Field label={t("Name")} hint={addHint("name")} tone={addHint("name") ? "danger" : "muted"}>
+              <Input value={draft.name} maxLength={80} placeholder={t("e.g. Squash racket")} onChange={edit("name")} />
+            </Field>
+            <Field label={t("Code")} hint={addHint("sku")} tone={addHint("sku") ? "danger" : "muted"}>
+              <Input value={draft.sku} maxLength={24} placeholder="SQ-RACKET" onChange={edit("sku")} />
+            </Field>
+            <Field label={t("Sport")} hint={addHint("sport")} tone={addHint("sport") ? "danger" : "muted"}>
+              <Select value={draft.sport} onChange={edit("sport")}>
+                <option value="">{t("General")}</option>
+                {sports.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name ?? sportLabel(s.code)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={t("Stock")} hint={addHint("stock")} tone={addHint("stock") ? "danger" : "muted"}>
+              <Input inputMode="numeric" value={draft.stock} onChange={edit("stock")} />
+            </Field>
+            <Field label={t("Hire price (VND)")} hint={addHint("rent_vnd")} tone={addHint("rent_vnd") ? "danger" : "muted"}>
+              <Input inputMode="numeric" value={draft.rent_vnd} onChange={edit("rent_vnd")} />
+            </Field>
+            <div className="flex items-end">
+              <Button
+                className="w-full"
+                disabled={adding || !draft.name.trim() || !draft.sku.trim()}
+                onClick={() => void addItem()}
+              >
+                {t("Add")}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ) : null}
       {equipmentRead.error ? (
         <div className="mb-4">
           <LoadError

@@ -145,6 +145,9 @@ export async function classesCreate(sql: Sql, request: Request, user: PublicUser
       return [k ?? "", v ?? ""];
     }),
   );
+  if (rruleParts.BYDAY !== undefined && !rruleParts.BYDAY.trim()) {
+    throw err.field("rrule", "Pick at least one day of the week.");
+  }
   if (rruleParts.BYHOUR !== undefined) {
     const byHour = Number(rruleParts.BYHOUR);
     if (!Number.isInteger(byHour) || byHour < 0 || byHour > 23) {
