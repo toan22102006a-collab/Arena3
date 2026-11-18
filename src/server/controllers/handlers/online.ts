@@ -294,11 +294,8 @@ async function bookingOnlineOrder(sql: Sql, refId: string, staff: boolean, user:
  * @returns Đối tượng OnlineOrder chứa số tiền sau giảm giá, ID người mua, nhãn "plan" và thời hạn giữ chỗ (null).
  * @throws Lỗi 403 nếu hội viên tự gọi, lỗi 404 nếu không tìm thấy gói, lỗi conflictState nếu gói không ở trạng thái pending.
  */
-async function subscriptionOnlineOrder(sql: Sql, refId: string, staff: boolean): Promise<OnlineOrder> {
-  // Bước 1: Kiểm tra quyền hạn — chỉ nhân viên quầy mới được phép tạo link thanh toán cho gói hội viên.
-  // Members order plans in the app but pay at the desk, so raising a link for
-  // one is reception's job.
-  if (!staff) throw err.forbidden("Ask the front desk to take payment for a plan.");
+async function subscriptionOnlineOrder(sql: Sql, refId: string, staff: boolean, user: PublicUser): Promise<OnlineOrder> {
+  // Bước 1: Quyền hạn — lễ tân tạo link cho bất kỳ đơn nào; hội viên chỉ trả đơn của chính mình (kiểm tra ở bước 2).
   // Bước 2: Truy vấn thông tin đăng ký gói hội viên từ bảng subscriptions và kiểm tra trạng thái chờ thanh toán (pending).
   const sub = await one<{
     user_id: string;
@@ -312,6 +309,7 @@ async function subscriptionOnlineOrder(sql: Sql, refId: string, staff: boolean):
     [refId],
   );
   if (!sub) throw err.notFound();
+  if (!staff && sub.user_id !== user.id) throw err.forbidden();
   // A link settles by activating the order, so it only makes sense for one
   // still waiting for money (D-01).
   if (sub.status !== "pending") throw err.conflictState("That plan is not waiting for payment.");
@@ -375,7 +373,7 @@ async function enrollmentOnlineOrder(sql: Sql, refId: string, staff: boolean, us
  */
 async function onlineOrder(sql: Sql, refType: string, refId: string, staff: boolean, user: PublicUser) {
   if (refType === "booking") return bookingOnlineOrder(sql, refId, staff, user);
-  if (refType === "subscription") return subscriptionOnlineOrder(sql, refId, staff);
+  if (refType === "subscription") return subscriptionOnlineOrder(sql, refId, staff, user);
   if (refType === "enrollment") return enrollmentOnlineOrder(sql, refId, staff, user);
   throw err.validation("Online payment covers courts, plans and class seats.");
 }

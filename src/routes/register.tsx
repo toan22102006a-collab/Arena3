@@ -95,7 +95,6 @@ function Register() {
   const [resendAt, setResendAt] = useState(0);
   const [step, setStep] = useState<"form" | "otp">("form");
   const [otp, setOtp] = useState("");
-  const [shown, setShown] = useState("");
   const [busy, setBusy] = useState(false);
   const [legalDoc, setLegalDoc] = useState<"terms" | "privacy" | null>(null);
   // Nothing about the password is pre-filled. It used to arrive holding the
@@ -138,6 +137,7 @@ function Register() {
   // Kiểm tra độ mạnh mật khẩu: tối thiểu 8 ký tự, phải gồm cả chữ cái và chữ số để đảm bảo an toàn tài khoản.
   const tooWeak =
     form.password.length > 0 && !(form.password.length >= 8 && /[A-Za-z]/.test(form.password) && /\d/.test(form.password));
+  const cannotSend = busy || !form.email || !form.dob || !form.pii_consent || mismatch || tooWeak || !form.password;
 
   /**
    * Làm gì: Xử lý gửi form đăng ký tài khoản tới API /auth/register, kèm thông tin người giám hộ (nếu chưa thành niên) và captcha; sau đó chuyển sang bước xác thực OTP.
@@ -162,7 +162,6 @@ function Register() {
         { ...form, ...(needGuardian ? { guardian_name: guardian.name, guardian_phone: guardian.phone } : {}), captcha_token: captcha.token, website: captcha.website },
       );
       // Bước 3: Đăng ký bước đầu thành công: lưu mã OTP demo (nếu có), email nhận mã, chuyển sang bước nhập OTP và đặt thời gian chờ gửi lại sau 60 giây.
-      setShown(res.otp ?? "");
       setSentTo(res.sent_to ?? null);
       setStep("otp");
       setOtp("");
@@ -386,16 +385,10 @@ function Register() {
                   {error.message}
                 </p>
               ) : null}
-              <Magnet radius={140} pull={0.22} wrapperClassName="w-full" className="w-full">
+              <Magnet radius={80} pull={0.05} off={cannotSend} wrapperClassName="w-full" className="w-full">
                 <Button
                   type="submit"
-                  disabled={
-                    busy ||
-                    !form.email ||
-                    !form.dob ||
-                    !form.pii_consent ||
-                    mismatch || tooWeak || !form.password
-                  }
+                  disabled={cannotSend}
                   className="w-full"
                 >
                   {busy ? t("Sending…") : t("Send the code")}
@@ -425,18 +418,13 @@ function Register() {
                   <>{t("We could not email the code. Ask the front desk to verify you in person.")}</>
                 )}
               </p>
-              {shown ? (
-                <p className="rounded-[var(--radius-md)] border border-hold/40 px-3 py-2 text-sm text-hold">
-                  {slot(t("Demo build: the code is {code}.", { code: SLOT }), <span className="font-medium tabular-nums">{shown}</span>)}
-                </p>
-              ) : null}
               <OtpInput value={otp} onChange={setOtp} invalid={error?.field === "otp"} errorId="register-error" />
               {error ? (
                 <p id="register-error" role="alert" className="text-sm text-danger">
                   {error.message}
                 </p>
               ) : null}
-              <Magnet radius={140} pull={0.22} wrapperClassName="w-full" className="w-full">
+              <Magnet radius={80} pull={0.05} off={busy} wrapperClassName="w-full" className="w-full">
                 <Button type="submit" disabled={busy} className="w-full">
                   {t("Verify")}
                 </Button>

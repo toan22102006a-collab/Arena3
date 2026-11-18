@@ -7,6 +7,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { PayOnlineButton } from "@/client/components/pay-online";
 import { Cover } from "@/client/components/media";
 import { Shell, money } from "@/client/components/shell";
 import { Badge, Button, Card, EmptyState, Input, LoadError, PageHero, Skeleton } from "@/client/components/ui";
@@ -66,7 +67,7 @@ function Page() {
   // Plans already ordered this visit. The desk has not taken the money yet, so
   // pressing the button again does nothing useful — say so instead of firing a
   // request the rate limiter will reject.
-  const [ordered, setOrdered] = useState<Record<string, string>>({});
+  const [ordered, setOrdered] = useState<Record<string, { end: string; subId: string; paid?: boolean }>>({});
   const [promoCode, setPromoCode] = useState("");
   // The plan that costs least per month is the one filled button on the page.
   const bestId = (items ?? []).reduce<Plan | null>(
@@ -87,6 +88,7 @@ function Page() {
     try {
       // Bước 2: Gửi request POST /subscriptions để tạo gói tập ở trạng thái pending, kèm mã ưu đãi nếu có.
       const res = await apiPost<{
+        subscription: { id: string };
         preview_end: string;
         amount_due_vnd: number;
         promo?: { code: string; discount_vnd: number } | null;
@@ -95,9 +97,9 @@ function Page() {
         ...(promoCode.trim() ? { promo_code: promoCode.trim() } : {}),
       });
       // Bước 3: Cập nhật ngày hết hạn dự kiến vào state ordered để vô hiệu hóa nút đặt lại, và hiển thị toast hướng dẫn hội viên thanh toán tại quầy.
-      setOrdered((o) => ({ ...o, [p.id]: res.preview_end }));
+      setOrdered((o) => ({ ...o, [p.id]: { end: res.preview_end, subId: res.subscription.id } }));
       toast.success(
-        t("Order placed, valid through {date}. Pay at the desk.", { date: res.preview_end }),
+        t("Order placed, valid through {date}. Pay online now or at the desk.", { date: res.preview_end }),
         {
           description: res.promo
             ? t("{code} takes {off} off, so you pay {total}.", {
@@ -195,22 +197,38 @@ function Page() {
                     </li>
                   </ul>
                   <div className="mt-auto pt-5">
+                    {ordered[p.id] && !ordered[p.id]!.paid ? (
+                      <PayOnlineButton
+                        className="w-full"
+                        refType="subscription"
+                        refId={ordered[p.id]!.subId}
+                        label={t("Pay online")}
+                        size="md"
+                        variant="primary"
+                        onPaid={() => {
+                          setOrdered((o) => ({ ...o, [p.id]: { ...o[p.id]!, paid: true } }));
+                          meRead.reload();
+                        }}
+                      />
+                    ) : null}
                     <Button
-                      className="w-full"
-                      variant="primary"
+                      className={ordered[p.id] && !ordered[p.id]!.paid ? "mt-2 w-full" : "w-full"}
+                      variant={ordered[p.id] ? "ghost" : "primary"}
                       disabled={busy !== null || ordered[p.id] !== undefined}
                       onClick={() => void order(p)}
                     >
                       {busy === p.id
                         ? t("Placing order…")
-                        : ordered[p.id]
-                          ? t("Ordered: pay at the desk")
+                        : ordered[p.id]?.paid
+                          ? t("Paid: plan active")
+                          : ordered[p.id]
+                          ? t("Or pay at the desk")
                           : activeSub
                             ? t("Extend")
                             : t("Buy")}
                     </Button>
                     {ordered[p.id] ? (
-                      <p className="mt-2 text-center text-xs text-muted">{t("Valid through {date}", { date: ordered[p.id] })}</p>
+                      <p className="mt-2 text-center text-xs text-muted">{t("Valid through {date}", { date: ordered[p.id]!.end })}</p>
                     ) : null}
                   </div>
                 </div>

@@ -70,6 +70,7 @@ export function PayOnlineButton({
   size = "sm",
   variant = "outline",
   onPaid,
+  className,
 }: {
   refType: "booking" | "subscription" | "enrollment";
   refId: string;
@@ -78,6 +79,7 @@ export function PayOnlineButton({
   variant?: "primary" | "outline" | "ghost";
   /** Called once, after payOS confirms. Refresh the list from here. */
   onPaid?: () => void;
+  className?: string;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [raised, setRaised] = useState<Raised | null>(null);
@@ -207,7 +209,7 @@ export function PayOnlineButton({
 
   return (
     <>
-      <Button size={size} variant={variant} onClick={() => void raise()} disabled={phase === "raising"}>
+      <Button className={className} size={size} variant={variant} onClick={() => void raise()} disabled={phase === "raising"}>
         {phase === "raising" ? t("Starting…") : (label ?? t("Pay online"))}
       </Button>
 
